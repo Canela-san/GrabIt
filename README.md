@@ -1,5 +1,6 @@
-![Logo](logo.png)
-
+<p align='center'>
+<img width=300 src='logo.png'>  
+</p>
 
 # GrabIt! - Firefox Extension for Easy Video and Audio Downloads
 
