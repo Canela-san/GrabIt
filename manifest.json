@@ -1,0 +1,13 @@
+{
+    "manifest_version": 2,
+    "name": "GrabIt!",
+    "version": "0.1",
+    "description": "Like a video? Then just grab it!",
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["/src/main.js"]
+        }
+    ],
+    "permissions": ["activeTab", "contextMenus"]
+}
