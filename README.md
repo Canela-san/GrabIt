@@ -1,3 +1,6 @@
+![Logo](logo.png)
+
+
 # GrabIt! - Firefox Extension for Easy Video and Audio Downloads
 
 GrabIt! is a Firefox extension designed to streamline the process of downloading videos, audio, and subtitles from a wide range of websites. It works by making a request to a web service that runs the powerful **yt-dlp** tool in the background, ensuring that you can download content in various formats and resolutions effortlessly.
