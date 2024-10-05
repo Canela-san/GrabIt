@@ -3,9 +3,7 @@ const css = `
         position: fixed;
         z-index: 100000000000000;
         color: #111111;
-        display: flex;
-        justify-content: center;
-        align-items: center;
+        padding-left: 10px;
         cursor: pointer;
         display: flex;
         background-color: #acf5d6;
@@ -15,7 +13,7 @@ const css = `
         width: 90px;
         border: none;
         border-radius: 0 30px 30px 0;
-        transform: translateX(-60px);
+        transform: translateX(-70px);
         transition: 500ms;
     }
         
@@ -36,7 +34,7 @@ style.appendChild(document.createTextNode(css))
 const button = document.createElement("div")
 const img = document.createElement("img")
 img.id = "grabit-img"
-img.src = "icon.png"
+img.src = browser.runtime.getURL('/images/icon.png');
 button.id = 'grabit-button'
 button.appendChild(img);
 
