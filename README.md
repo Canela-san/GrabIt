@@ -29,9 +29,6 @@ GrabIt! supports downloading from a wide variety of websites, including but not 
 - **Twitch**
 - **SoundCloud**
 - **Reddit**
-- **Pornhub**
-- **XVideos**
-- **Xnxx**
 - **MetaCafe**
 - **Veoh**
 - **NicoNico**
