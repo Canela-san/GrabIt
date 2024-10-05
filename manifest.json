@@ -9,5 +9,8 @@
             "js": ["/src/main.js"]
         }
     ],
-    "permissions": ["activeTab", "contextMenus"]
+    "permissions": ["activeTab", "contextMenus"],
+    "web_accessible_resources": [
+        "images/icon.png"
+    ]   
 }
