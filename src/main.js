@@ -34,7 +34,7 @@ style.appendChild(document.createTextNode(css))
 const button = document.createElement("div")
 const img = document.createElement("img")
 img.id = "grabit-img"
-img.src = browser.runtime.getURL('/images/icon.png');
+img.src = browser.runtime.getURL('/assets/images/icon.png');
 button.id = 'grabit-button'
 button.appendChild(img);
 

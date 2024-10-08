@@ -11,6 +11,6 @@
     ],
     "permissions": ["activeTab", "contextMenus"],
     "web_accessible_resources": [
-        "images/icon.png"
+        "/assets/images/icon.png"
     ]   
 }
