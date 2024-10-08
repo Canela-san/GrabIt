@@ -1,5 +1,5 @@
 <p align='center'>
-<img width=300 src='images/logo.png'>  
+<img width=300 src='/assets/images/logo.png'>  
 </p>
 
 # GrabIt! - Firefox Extension for Easy Video and Audio Downloads
