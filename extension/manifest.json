@@ -9,7 +9,7 @@
             "js": ["/src/main.js"]
         }
     ],
-    "permissions": ["activeTab", "contextMenus"],
+    "permissions": ["nativeMessaging"],
     "web_accessible_resources": [
         "/assets/images/icon.png"
     ]   
