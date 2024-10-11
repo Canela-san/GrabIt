@@ -1,0 +1,8 @@
+{
+    "name": "grabit_script",
+    "description": "Native messaging host for GrabIt!",
+    "path": "./start.bat",
+    "type": "stdio",
+    "allowed_extensions": ["grabit@grabit.org"]
+  }
+  
