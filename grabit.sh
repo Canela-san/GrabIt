@@ -23,6 +23,8 @@
 #        grabit https://youtu.be/xxxx outra_lista.txt
 #  • Nos arquivos: linhas vazias e comentários (# …, inclusive no fim da linha)
 #    são ignorados, assim como texto em volta do link; repetidos são descartados.
+#  • Links baixados com sucesso vão para a seção "# ===== BAIXADOS =====" no fim
+#    do próprio arquivo. Tudo nessa seção é ignorado: vira o seu histórico de links.
 #  • Cada download roda com a saída do yt-dlp isolada em um log. O terminal
 #    mostra só um painel ao vivo + uma linha por vídeo concluído.
 #  • Cada vídeo baixado entra no histórico (Downloads/.grabit-historico.txt): da
@@ -133,9 +135,10 @@ VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; 
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
-FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""
+FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0
+MARCA_BAIXADOS="# ==================== BAIXADOS ===================="
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
-TENTATIVA=(); FEITO=(); REBAIXAR=(); ARQUIVOS_ENTRADA=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -655,6 +658,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     N_ERRO=$(( N_ERRO + 1 ))
     salva_log "$idx"
   fi
+  (( rc == 0 )) && SUCESSO[$idx]=1
 
   FEITO[$idx]=1
   FINALIZADOS=$(( FINALIZADOS + 1 ))
@@ -779,6 +783,9 @@ resumo() {
   printf '  %s◷%s  Tempo             %s\n'       "$DIM" "$R" "$t"
   printf '  %s▣%s  Baixado agora     %s%s\n'     "$DIM" "$R" "$b" "$media"
   printf '  %s▸%s  Pasta             %s\n'       "$DIM" "$R" "$PASTA_SAIDA"
+  if (( N_MOVIDOS > 0 )); then
+    printf '  %s✎%s  Lista             %s link(s) movidos para a seção BAIXADOS\n' "$DIM" "$R" "$N_MOVIDOS"
+  fi
   salva_falhas
   printf '\n'
 }
@@ -789,6 +796,7 @@ limpa() {                                     # trap EXIT: sempre devolve o term
   mata_jobs
   descarta_parciais
   if (( CANCELADO && COMECOU )); then
+    move_baixados
     desenha final
     printf '\n  %s⚠ Cancelado.%s O que estava pela metade foi descartado e recomeça do zero na próxima vez.\n' \
       "$AMARELO" "$R"
@@ -957,15 +965,53 @@ sonda() {
   return $ok
 }
 
+# A seção BAIXADOS de um arquivo de links começa numa linha como
+#   # ==================== BAIXADOS ====================
+# e vai até o fim do arquivo: o GrabIt ignora tudo o que estiver nela.
+eh_marca_baixados() {
+  local l=${1%$'\r'}
+  [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*baixados[[:space:]]*=+[[:space:]]*$ ]]
+}
+
+# links_da_linha LINHA → PALAVRAS_LINK: os links da linha, sem o comentário do fim
+# ("www." vira "https://www.")
+links_da_linha() {
+  local palavras=() p
+  PALAVRAS_LINK=()
+  IFS=$' \t\r' read -ra palavras <<<"${1#$'﻿'}"
+  for p in "${palavras[@]}"; do
+    [[ $p == \#* ]] && break
+    [[ $p == www.* ]] && p="https://$p"
+    [[ $p =~ ^https?:// ]] && PALAVRAS_LINK+=("$p")
+  done
+  return 0
+}
+
+# le_lista ARQUIVO: as linhas antes da seção BAIXADOS vão para "bruto" (de ler_links);
+# os links dentro da seção só são contados
+le_lista() {
+  local conteudo=() linha secao=0
+  mapfile -t conteudo < "$1"
+  for linha in "${conteudo[@]}"; do
+    if (( secao )); then
+      links_da_linha "$linha"; N_NA_SECAO=$(( N_NA_SECAO + ${#PALAVRAS_LINK[@]} ))
+    elif eh_marca_baixados "$linha"; then
+      secao=1
+    else
+      bruto+=("$linha")
+    fi
+  done
+}
+
 # Junta os links do arquivo (-l), dos argumentos e dos arquivos passados como argumento.
 ler_links() {
-  local bruto=() fontes=() a linha palavra palavras=() achou soltos=0
+  local bruto=() fontes=() a linha palavra palavras=() soltos=0
   local -A visto=()
   if (( ${#ARGS_LINKS[@]} == 0 || LISTA_EXPLICITA )); then
     if [[ $ARQUIVO_LINKS == - ]]; then
-      mapfile -t bruto; fontes+=("entrada padrão")
+      le_lista /dev/stdin; fontes+=("entrada padrão")
     elif [[ -f $ARQUIVO_LINKS && -r $ARQUIVO_LINKS ]]; then
-      mapfile -t bruto < "$ARQUIVO_LINKS"; fontes+=("$ARQUIVO_LINKS"); ARQUIVOS_ENTRADA+=("$ARQUIVO_LINKS")
+      le_lista "$ARQUIVO_LINKS"; fontes+=("$ARQUIVO_LINKS"); ARQUIVOS_ENTRADA+=("$ARQUIVO_LINKS")
     else
       erro "O arquivo '$ARQUIVO_LINKS' não foi encontrado."
       printf '     Crie-o com um link por linha, use  -l CAMINHO  ou passe os links no próprio comando.\n\n'
@@ -974,7 +1020,7 @@ ler_links() {
   fi
   for a in "${ARGS_LINKS[@]}"; do
     if [[ -f $a ]]; then
-      mapfile -t -O "${#bruto[@]}" bruto < "$a"; fontes+=("$a"); ARQUIVOS_ENTRADA+=("$a")
+      le_lista "$a"; fontes+=("$a"); ARQUIVOS_ENTRADA+=("$a")
     else
       bruto+=("$a"); soltos=1
     fi
@@ -982,27 +1028,75 @@ ler_links() {
   (( soltos )) && fontes+=("linha de comando")
 
   for linha in "${bruto[@]}"; do
-    linha=${linha#$'﻿'}                  # BOM do Bloco de Notas do Windows
-    IFS=$' \t\r' read -ra palavras <<<"$linha"
+    IFS=$' \t\r' read -ra palavras <<<"${linha#$'﻿'}"   # ﻿ do Bloco de Notas do Windows
     (( ${#palavras[@]} )) || continue
     [[ ${palavras[0]} == \#* ]] && continue
-    achou=0
-    for palavra in "${palavras[@]}"; do
-      [[ $palavra == \#* ]] && break          # comentário no fim da linha
-      [[ $palavra == www.* ]] && palavra="https://$palavra"
-      [[ $palavra =~ ^https?:// ]] || continue
-      achou=1
+    links_da_linha "$linha"
+    if (( ${#PALAVRAS_LINK[@]} == 0 )); then INVALIDAS=$(( INVALIDAS + 1 )); continue; fi
+    for palavra in "${PALAVRAS_LINK[@]}"; do
       if [[ -n ${visto[$palavra]:-} ]]; then DUPLICADOS=$(( DUPLICADOS + 1 ))
       else visto[$palavra]=1; LINKS+=("$palavra"); fi
     done
-    (( achou )) || INVALIDAS=$(( INVALIDAS + 1 ))
   done
   TOTAL=${#LINKS[@]}
   FONTE_LINKS=$(IFS=,; printf '%s' "${fontes[*]}"); FONTE_LINKS=${FONTE_LINKS//,/, }
   if (( TOTAL == 0 )); then
+    if (( N_NA_SECAO > 0 )); then
+      if (( N_NA_SECAO == 1 )); then
+        printf '  %s✔%s Nada para baixar: o único link de %s já está na seção BAIXADOS.\n\n' "$VERDE" "$R" "$FONTE_LINKS"
+      else
+        printf '  %s✔%s Nada para baixar: os %d links de %s já estão na seção BAIXADOS.\n\n' \
+          "$VERDE" "$R" "$N_NA_SECAO" "$FONTE_LINKS"
+      fi
+      exit 0
+    fi
     erro "Nenhum link válido (http/https) em: ${FONTE_LINKS:-nada}."
     exit 1
   fi
+}
+
+# move_baixados: nos arquivos de links usados, as linhas cujos links terminaram todos com
+# sucesso saem da parte de cima e vão para o fim da seção BAIXADOS (criada se preciso).
+# O arquivo é relido agora: o que você acrescentou durante a execução não se perde.
+move_baixados() {
+  local -A ok=()
+  local i arq
+  for (( i = 1; i <= TOTAL; i++ )); do
+    [[ -n ${SUCESSO[$i]:-} ]] && ok[${LINKS[$(( i - 1 ))]}]=1
+  done
+  (( ${#ok[@]} )) || return 0
+  for arq in "${ARQUIVOS_ENTRADA[@]}"; do
+    [[ -f $arq && -w $arq ]] || continue
+    [[ $arq -ef $ARQUIVO_FALHAS ]] && continue          # esse é regravado a cada execução
+    move_no_arquivo "$arq"
+  done
+  return 0
+}
+
+move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" de move_baixados)
+  local arq=$1 linha p todos secao=0 bom="" eol=""
+  local conteudo=() ativa=() resto=() movidas=()
+  mapfile -t conteudo < "$arq" || return 0
+  (( ${#conteudo[@]} )) || return 0
+  if [[ ${conteudo[0]} == $'﻿'* ]]; then bom=$'﻿'; conteudo[0]=${conteudo[0]#$'﻿'}; fi
+  [[ ${conteudo[0]} == *$'\r' ]] && eol=$'\r'          # mantém o fim de linha do Windows
+  for linha in "${conteudo[@]}"; do
+    if (( secao )); then resto+=("$linha"); continue; fi
+    if eh_marca_baixados "$linha"; then secao=1; resto+=("$linha"); continue; fi
+    links_da_linha "$linha"
+    todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
+    for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${ok[$p]:-} ]] || { todos=0; break; }; done
+    if (( todos )); then movidas+=("$linha"); else ativa+=("$linha"); fi
+  done
+  (( ${#movidas[@]} )) || return 0
+  if (( ! secao )); then
+    (( ${#ativa[@]} )) && [[ -n ${ativa[-1]//[[:space:]]/} ]] && resto+=("$eol")
+    resto+=("${MARCA_BAIXADOS}${eol}" "# Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo.${eol}")
+  fi
+  { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}"; } > "$arq.grabit-tmp" &&
+    cat "$arq.grabit-tmp" > "$arq"
+  rm -f -- "$arq.grabit-tmp"
+  N_MOVIDOS=$(( N_MOVIDOS + ${#movidas[@]} ))
 }
 
 monta_args_ytdlp() {
@@ -1094,6 +1188,7 @@ if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}indisponível${R}"
 elif (( TENTATIVAS > 1 )); then txt_imp="nas novas tentativas"
 else txt_imp="desligado (TENTATIVAS=1)"; fi
 
+(( N_NA_SECAO > 0 )) && extras+=" · ${N_NA_SECAO} já na seção BAIXADOS"
 kv "Links"    "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 kv "Destino"  "$PASTA_SAIDA"
 if (( USAR_HISTORICO )); then
@@ -1179,6 +1274,7 @@ done
 
 desenha final
 descarta_parciais
+move_baixados
 resumo
 (( N_ERRO > 0 )) && exit 1
 exit 0

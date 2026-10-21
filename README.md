@@ -75,6 +75,20 @@ E rode na mesma pasta:
 grabit
 ```
 
+Os links baixados com sucesso **saem da lista e vão para a seção `BAIXADOS`**, no fim do próprio `links.txt`, exatamente como você os escreveu (anotações incluídas). Tudo o que está nessa seção é ignorado: ela vira o seu histórico de links, e o GrabIt não perde tempo reprocessando nem listando o que já foi baixado. Os que falharam continuam em cima, prontos para a próxima vez.
+
+```text
+# comentários e linhas vazias são ignorados
+https://vimeo.com/XXXXXXXXX          # este falhou e continua aqui
+
+# ==================== BAIXADOS ====================
+# Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo.
+https://www.youtube.com/watch?v=XXXXXXXXXXX
+https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
+```
+
+> Pode editar o arquivo enquanto o GrabIt roda: ele é relido no fim, e o que você acrescentou não se perde. Quer baixar de novo algo da seção? Mova a linha para cima e rode com `-i` (veja o histórico em [Como funciona](#como-funciona)).
+
 Mais exemplos:
 
 ```bash
