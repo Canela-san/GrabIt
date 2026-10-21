@@ -28,7 +28,7 @@
 - **Painel ao vivo.** Progresso, velocidade, tempo restante e a qualidade de cada download, sem a enxurrada de texto do yt-dlp. No fim, cada vídeo mostra o que *realmente* foi gravado (lido do arquivo com `ffprobe`).
 - **Tudo dentro do arquivo.** Legendas, capa, capítulos e metadados vão embutidos no MKV.
 - **Resiliente.** Falhas passageiras ganham nova tentativa automática, downloads interrompidos são retomados de onde pararam e os erros vêm explicados em português.
-- **Não baixa duas vezes.** O que já existe na pasta é reconhecido e pulado.
+- **Não baixa duas vezes.** Cada vídeo baixado entra num histórico; na próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo — mesmo que você já o tenha movido para outra pasta.
 
 ## Instalação
 
@@ -97,6 +97,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
 | `-s` | marca patrocínios e intros como capítulos ([SponsorBlock](https://sponsor.ajay.app)) | — |
+| `-i` | ignora o histórico de baixados e confere arquivo por arquivo | — |
 | `-h` | mostra a ajuda | — |
 
 Algumas configurações também podem vir de variáveis de ambiente:
@@ -106,6 +107,7 @@ Algumas configurações também podem vir de variáveis de ambiente:
 | `IDIOMAS_LEGENDAS` | idiomas das legendas (`all` = todas) | `pt.*,en.*` |
 | `TENTATIVAS` | tentativas por link (`1` = sem repetir) | `2` |
 | `ARQUIVO_FALHAS` | onde salvar os links que falharam | `links_falhos.txt` |
+| `ARQUIVO_HISTORICO` | onde fica o histórico de baixados | `<pasta>/.grabit-historico.txt` |
 | `NO_COLOR` | desliga as cores | — |
 
 ```bash
@@ -121,7 +123,7 @@ IDIOMAS_LEGENDAS=all TENTATIVAS=3 grabit
 | Símbolo | Significado |
 |---|---|
 | ✔ | baixado agora |
-| ↷ | já existia na pasta, foi pulado |
+| ↷ | já tinha sido baixado (pelo histórico ou porque o arquivo já estava na pasta), foi pulado |
 | ✖ | falhou, com o motivo explicado logo abaixo |
 | ⚠ | o vídeo está completo, mas algum detalhe falhou (ex.: converter a capa) |
 
@@ -132,6 +134,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Formato:** `bv*+ba/b` do yt-dlp (melhor vídeo + melhor áudio) com saída em **MKV**, que aceita qualquer codec. Nada é recodificado.
 - **Arquivos parciais** ficam em `Downloads/.parciais` e só o arquivo final pronto vai para a pasta. Cancelou com <kbd>Ctrl</kbd>+<kbd>C</kbd>? É só rodar de novo: o download continua de onde parou, e os links que ainda faltavam também vão para `links_falhos.txt`.
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
+- **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
 - **Logs:** a saída completa do yt-dlp para cada link com problema fica em `Downloads/logs/<data>/`.
 - **Terminal:** o painel se adapta à largura da janela (inclusive se você redimensionar no meio), alinha títulos com emoji e caracteres asiáticos e, se a saída for redirecionada para um arquivo, troca o painel por linhas simples, sem cores.
 
@@ -140,6 +143,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Mantenha o yt-dlp atualizado** (`yt-dlp -U` ou `pipx upgrade yt-dlp`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
 - **Vídeo pede login ou confirmação de idade?** Use `-b firefox` (ou o navegador em que você está logado).
 - **Retomar o que falhou:** `grabit -l links_falhos.txt`.
+- **Apagou um vídeo e quer baixá-lo de novo?** Rode com `-i` (ignora o histórico) ou apague a linha dele em `Downloads/.grabit-historico.txt`.
 
 ## Aviso
 

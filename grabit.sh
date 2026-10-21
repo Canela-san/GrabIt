@@ -15,6 +15,7 @@
 #    -p            só o vídeo, se o link tiver vídeo + playlist
 #    -a            inclui legendas automáticas (a manual continua tendo prioridade)
 #    -s            marca patrocínios/intros como capítulos (SponsorBlock)
+#    -i            ignora o histórico de baixados (confere arquivo por arquivo)
 #    -h            mostra esta ajuda
 #
 #  • Links e arquivos de links também podem vir direto no comando (aí o
@@ -24,6 +25,9 @@
 #    são ignorados, assim como texto em volta do link; repetidos são descartados.
 #  • Cada download roda com a saída do yt-dlp isolada em um log. O terminal
 #    mostra só um painel ao vivo + uma linha por vídeo concluído.
+#  • Cada vídeo baixado entra no histórico (Downloads/.grabit-historico.txt): da
+#    próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo.
+#    Apagou um vídeo e quer baixá-lo de novo? Use -i ou apague a linha dele lá.
 #  • Link que falha por motivo passageiro (rede, 403…) ganha nova tentativa no
 #    fim da fila, imitando um navegador (--impersonate) se houver curl_cffi.
 #  • Links que falharem vão para links_falhos.txt, prontos para reexecutar:
@@ -66,6 +70,8 @@ SPONSORBLOCK="${SPONSORBLOCK:-0}"                     # 1 = marca patrocínios/i
 SEM_PLAYLIST="${SEM_PLAYLIST:-0}"                     # 1 = link vídeo+playlist baixa só o vídeo
 COOKIES_NAVEGADOR="${COOKIES_NAVEGADOR:-}"            # ex.: firefox, chrome, brave
 ARQUIVO_FALHAS="${ARQUIVO_FALHAS:-links_falhos.txt}"
+USAR_HISTORICO="${USAR_HISTORICO:-1}"                 # 0 = não pula o que já foi baixado antes
+ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"            # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
 
 # ───────────────────────────── Cores e terminal ───────────────────────────────
@@ -91,7 +97,7 @@ uso() {                                       # a ajuda é o próprio cabeçalho
 }
 
 OPCOES=(); LISTA_EXPLICITA=0
-while getopts ":l:o:j:c:b:pash" op; do
+while getopts ":l:o:j:c:b:pasih" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; continue ;;
     o) PASTA_SAIDA=$OPTARG ;;
@@ -101,6 +107,7 @@ while getopts ":l:o:j:c:b:pash" op; do
     p) SEM_PLAYLIST=1 ;;
     a) LEGENDAS_AUTOMATICAS=1 ;;
     s) SPONSORBLOCK=1 ;;
+    i) USAR_HISTORICO=0 ;;
     h) uso; exit 0 ;;
     :) erro "A opção -$OPTARG precisa de um valor."; exit 2 ;;
     *) erro "Opção inválida: -$OPTARG"; uso; exit 2 ;;
@@ -109,6 +116,7 @@ while getopts ":l:o:j:c:b:pash" op; do
 done
 shift $(( OPTIND - 1 ))
 ARGS_LINKS=("$@")
+[[ -z $ARQUIVO_HISTORICO ]] && ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico.txt"
 
 for par in DOWNLOADS_SIMULTANEOS:-j CONEXOES_POR_VIDEO:-c TENTATIVAS:; do
   nome=${par%%:*}; flag=${par#*:}; valor=${!nome}
@@ -345,6 +353,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     "[Fixup"*)                                                     ETAPA="corrigindo o arquivo" ;;
     *"Downloading subtitles"*|*"Writing video subtitles"*)         ETAPA="baixando legendas" ;;
     *"Downloading video thumbnail"*|*"Writing video thumbnail"*)   ETAPA="baixando a capa" ;;
+    *" has already been recorded in the archive")                  ETAPA="já baixado antes (histórico)" ;;
     *" has already been downloaded")                               ETAPA="arquivo já existe" ;;
     "[download] Destination"*|"[info] "*" format(s): "*|"[hlsnative]"*|"[dashsegments]"*)
                                                                    ETAPA="iniciando download" ;;
@@ -516,7 +525,7 @@ salva_log() {                                 # guarda o log de todas as tentati
 }
 
 processa_resultado() {                        # processa_resultado IDX CÓDIGO_DE_SAÍDA
-  local idx=$1 rc=$2 url idxs d n_done n_ja t tent logs=() dones=()
+  local idx=$1 rc=$2 url idxs d n_done n_ja n_hist t tent logs=() dones=() hist=()
   local tipo h fps hdr vc ac canais dur titulo caminho tam glifo cor det
   url=${LINKS[$(( idx - 1 ))]}
   tent=${TENTATIVA[$idx]:-1}
@@ -562,7 +571,26 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     PERM+=("$LINHA")
   done
 
-  if (( n_done == 0 && rc == 0 )); then
+  # Pulados pelo histórico: o yt-dlp nem abre o vídeo, então não há @@D@@.
+  # A linha é "<id>: has already…" (pulado antes de acessar o site) ou
+  # "<id>: <título> has already…" (pulado depois de ler a página).
+  mapfile -t hist < <(cat "${logs[@]}" 2>/dev/null | grep -a 'has already been recorded in the archive$' | sort -u)
+  n_hist=${#hist[@]}
+  if (( n_hist > 0 )); then
+    N_JA=$(( N_JA + n_hist ))
+    if (( n_done == 0 && n_hist == 1 )); then
+      titulo=${hist[0]#\[download\] }
+      titulo=${titulo% has already been recorded in the archive}
+      if [[ $titulo == *": "* ]]; then titulo=${titulo#*: }; else titulo=""; fi
+      titulo=${titulo//[[:cntrl:]]/ }
+      linha_resultado "↷" "$AMARELO" "$idxs" "${titulo:-${TITULO[$idx]:-$url}}" "já baixado antes"
+    else
+      linha_resultado "↷" "$AMARELO" "$idxs" "$url" "${n_hist} já baixados antes"
+    fi
+    PERM+=("$LINHA")
+  fi
+
+  if (( n_done == 0 && n_hist == 0 && rc == 0 )); then
     titulo=${TITULO[$idx]:-$url}
     n_ja=$(cat "${logs[@]}" 2>/dev/null | grep -ac 'has already been downloaded')
     if (( n_ja > 0 )); then
@@ -779,7 +807,9 @@ kv() {                                        # kv RÓTULO VALOR (o valor pode t
   local v=$2 plano=${2//$'\e['+([0-9;])m/}
   # não cabe? corta com reticências (sem as cores) em vez de quebrar no meio da palavra
   if (( ${#plano} > COLS - 16 )); then corta "$plano" $(( COLS - 16 )); v=$FMT; fi
-  printf '  %s%-12s%s %s\n' "$DIM" "$1" "$R" "$v"
+  local pad                                   # alinha por caracteres: o %-12s do printf conta bytes ("ó" = 2)
+  printf -v pad '%*s' $(( 12 - ${#1} )) ''
+  printf '  %s%s%s%s %s\n' "$DIM" "$1" "$R" "$pad" "$v"
 }
 
 comando_instalar() {                          # comando_instalar PACOTE → FMT (conforme o sistema)
@@ -969,6 +999,10 @@ monta_args_ytdlp() {
   (( LEGENDAS_AUTOMATICAS )) && YTDLP_ARGS+=(--write-subs --write-auto-subs --compat-options no-keep-subs)
   (( SPONSORBLOCK ))         && YTDLP_ARGS+=(--sponsorblock-mark all)
   (( SEM_PLAYLIST ))         && YTDLP_ARGS+=(--no-playlist)
+  # Histórico: o que já foi baixado é pulado antes de tudo (na maioria dos sites,
+  # sem nem acessar a página). Sem ele, o yt-dlp reextrai o vídeo, baixa a capa de
+  # novo e reescreve o arquivo inteiro só para dizer que ele já existe.
+  (( USAR_HISTORICO ))       && YTDLP_ARGS+=(--download-archive "$ARQUIVO_HISTORICO")
   [[ -n $COOKIES_NAVEGADOR ]] && YTDLP_ARGS+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
   (( TEM_JS_RUNTIMES ))       && [[ -n $JS_RUNTIME ]] && YTDLP_ARGS+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
   return 0
@@ -1014,6 +1048,12 @@ else txt_imp="desligado (TENTATIVAS=1)"; fi
 
 kv "Links"    "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 kv "Destino"  "$PASTA_SAIDA"
+if (( USAR_HISTORICO )); then
+  n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0
+  kv "Histórico" "${n_registrados} vídeo(s) registrados · os já baixados são pulados"
+else
+  kv "Histórico" "${AMARELO}ignorado (-i)${R}: confere arquivo por arquivo"
+fi
 txt_paralelo="${J} vídeo(s) × ${CONEXOES_POR_VIDEO} conexões"
 (( TENTATIVAS > 1 )) && txt_paralelo+=" · até ${TENTATIVAS} tentativas"
 kv "Paralelo" "$txt_paralelo"
