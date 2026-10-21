@@ -132,10 +132,10 @@ N_OK=0; N_JA=0; N_ERRO=0; N_AVISOS=0; N_FATAIS=0; N_COSMETICOS=0; AVISO_CTX=""; 
 VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; COMECOU=0
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
-FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1
+FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
 FONTE_LINKS=""; LOG_DIR=""
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
-TENTATIVA=(); FEITO=(); ARQUIVOS_ENTRADA=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); ARQUIVOS_ENTRADA=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -314,9 +314,10 @@ analisa_log() {
   MOTIVO=${MOTIVO//[[:cntrl:]]/ }
 }
 
-# classifica_erro TEXTO → DICA (explicação curta) e REPETE (0 = não adianta tentar de novo)
+# classifica_erro TEXTO → DICA (explicação curta), REPETE (0 = não adianta tentar de
+# novo) e ARQUIVO_RUIM (1 = o arquivo baixado está corrompido: refazer do zero)
 classifica_erro() {
-  DICA=""; REPETE=1
+  DICA=""; REPETE=1; ARQUIVO_RUIM=0
   case ${1,,} in
     *"private video"*)                                      DICA="vídeo privado"; REPETE=0 ;;
     *"confirm your age"*|*"age-restricted"*|*"inappropriate for some users"*)
@@ -331,6 +332,8 @@ classifica_erro() {
     *"live event will begin"*|*"premieres in"*)             DICA="a live/estreia ainda não começou"; REPETE=0 ;;
     *"http error 404"*|*"http error 410"*)                  DICA="não encontrado (404)"; REPETE=0 ;;
     *"no space left"*)                                      DICA="disco cheio"; REPETE=0 ;;
+    *"invalid data found when processing input"*|*"moov atom not found"*|*"ebml header parsing failed"*)
+                                                            DICA="o arquivo baixado não é um vídeo válido"; ARQUIVO_RUIM=1 ;;
     *"http error 403"*)                                     DICA="acesso negado (403)" ;;
     *"http error 429"*|*"too many requests"*)               DICA="muitas requisições (429)" ;;
     *"timed out"*|*"connection reset"*|*"name resolution"*|*"name or service not known"*|*"network is unreachable"*)
@@ -526,7 +529,8 @@ salva_log() {                                 # guarda o log de todas as tentati
 
 processa_resultado() {                        # processa_resultado IDX CÓDIGO_DE_SAÍDA
   local idx=$1 rc=$2 url idxs d n_done n_ja n_hist t tent logs=() dones=() hist=()
-  local tipo h fps hdr vc ac canais dur titulo caminho tam glifo cor det
+  local tipo h fps hdr vc ac canais dur titulo vid caminho tam glifo cor det l hid filtrados=()
+  local -A baixados=()
   url=${LINKS[$(( idx - 1 ))]}
   tent=${TENTATIVA[$idx]:-1}
   printf -v idxs "%0${#TOTAL}d/%d" "$idx" "$TOTAL"
@@ -551,7 +555,8 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   n_done=${#dones[@]}
 
   for d in "${dones[@]}"; do
-    IFS=$SEP read -r tipo h fps hdr vc ac dur titulo caminho <<<"$d"
+    IFS=$SEP read -r tipo h fps hdr vc ac dur titulo vid caminho <<<"$d"
+    [[ -n $vid ]] && baixados[$vid]=1
     titulo=${titulo//[[:cntrl:]]/ }
     canais=0; tam=0
     # os dados do arquivo gravado (ffprobe) valem mais que os do extrator
@@ -575,6 +580,12 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   # A linha é "<id>: has already…" (pulado antes de acessar o site) ou
   # "<id>: <título> has already…" (pulado depois de ler a página).
   mapfile -t hist < <(cat "${logs[@]}" 2>/dev/null | grep -a 'has already been recorded in the archive$' | sort -u)
+  # Um vídeo baixado na 1ª tentativa aparece como "já no histórico" na 2ª: não conta duas vezes.
+  for l in "${hist[@]}"; do
+    hid=${l#\[download\] }; hid=${hid%%: *}
+    [[ -n ${baixados[$hid]:-} ]] || filtrados+=("$l")
+  done
+  hist=("${filtrados[@]}")
   n_hist=${#hist[@]}
   if (( n_hist > 0 )); then
     N_JA=$(( N_JA + n_hist ))
@@ -623,7 +634,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   if (( rc != 0 )); then
     classifica_erro "$MOTIVO"
     MOTIVO=$(sed -E 's/^ERROR: //; s/^\[[^]]+\] //; s/^[^ :]+: //; s/ \(caused by .*$//; s/; please report this issue.*$//' <<<"$MOTIVO")
-    if (( n_done > 0 )); then
+    if (( n_done > 0 || n_hist > 0 )); then
       linha_resultado "⚠" "$AMARELO" "$idxs" "${TITULO[$idx]:-$url}" "parcial"
     elif (( tent > 1 )); then
       linha_resultado "✖" "$VERMELHO" "$idxs" "${TITULO[$idx]:-$url}" "falhou ${tent}×"
@@ -654,6 +665,10 @@ lanca_job() {                                 # lanca_job IDX
   # Só a nova tentativa força a imitação de navegador: o próprio yt-dlp avisa que
   # forçá-la sempre pode deixar os downloads mais lentos e instáveis.
   (( tent > 1 )) && [[ -n $IMPERSONATE ]] && extra=(--impersonate "$IMPERSONATE")
+  # O arquivo da tentativa anterior veio corrompido: sem isso o yt-dlp o reaproveitaria
+  # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
+  # histórico e continuam sendo pulados.
+  (( ${REBAIXAR[$i]:-0} )) && extra+=(--force-overwrites)
   yt-dlp "${YTDLP_ARGS[@]}" "${extra[@]}" -- "$url" </dev/null >"$TMP/$i.log" 2>&1 &
   ULTIMO_PID=$!
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
@@ -671,6 +686,7 @@ vale_repetir() {
   (( N_FATAIS == 0 && N_COSMETICOS > 0 )) && return 1   # o vídeo saiu inteiro: repetir não muda nada
   classifica_erro "$MOTIVO"
   (( REPETE )) || return 1
+  (( ARQUIVO_RUIM )) && REBAIXAR[$idx]=1
   mv -f "$TMP/$idx.log" "$TMP/$idx.t$tent.log"
   (( tent == 1 )) && EM_REPETICAO=$(( EM_REPETICAO + 1 ))
   TENTATIVA[$idx]=$(( tent + 1 ))
@@ -973,7 +989,7 @@ monta_args_ytdlp() {
 
     # Linhas "máquina" lidas pelo painel (ficam só no log, nunca no terminal)
     --progress-template "download:@@P@@%(progress.downloaded_bytes|0)s${SEP}%(progress.total_bytes,progress.total_bytes_estimate|0)s${SEP}%(progress.speed|0)s${SEP}%(progress.eta|0)s${SEP}%(info.playlist_index|)s${SEP}%(info.n_entries|)s${SEP}%(info.vcodec|?)s${SEP}%(info.height|)s${SEP}%(info.fps|)s${SEP}%(info.ext|)s${SEP}%(info.title|?)s"
-    --print "after_move:@@D@@%(height|0)s${SEP}%(fps|0)s${SEP}%(dynamic_range|SDR)s${SEP}%(vcodec|?)s${SEP}%(acodec|?)s${SEP}%(duration|0)s${SEP}%(title|?)s${SEP}%(filepath)s"
+    --print "after_move:@@D@@%(height|0)s${SEP}%(fps|0)s${SEP}%(dynamic_range|SDR)s${SEP}%(vcodec|?)s${SEP}%(acodec|?)s${SEP}%(duration|0)s${SEP}%(title|?)s${SEP}%(id)s${SEP}%(filepath)s"
 
     # Destino: parciais ficam em .parciais e só o arquivo final vai para a pasta
     -P "$PASTA_SAIDA" -P "temp:.parciais" -o "$TEMPLATE_SAIDA"
