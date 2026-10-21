@@ -13,6 +13,7 @@
   <img alt="Bash 4.4+" src="https://img.shields.io/badge/bash-4.4%2B-4EAA25?logo=gnubash&logoColor=white">
   <img alt="Motor: yt-dlp" src="https://img.shields.io/badge/motor-yt--dlp-red">
   <img alt="Linux e macOS" src="https://img.shields.io/badge/plataforma-Linux%20%7C%20macOS-informational">
+  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-blue"></a>
 </p>
 
 <p align="center">
@@ -147,3 +148,9 @@ O GrabIt é só uma ferramenta. Baixe apenas conteúdo que você tem direito de 
 ## Créditos
 
 Feito sobre o [yt-dlp](https://github.com/yt-dlp/yt-dlp) e o [FFmpeg](https://ffmpeg.org), que fazem o trabalho pesado.
+
+## Licença
+
+Distribuído sob a [licença MIT](LICENSE). Você pode usar, copiar, modificar e redistribuir o GrabIt à vontade, inclusive em projetos comerciais. A única condição é manter o aviso de copyright, com o crédito a **Gabriel Canela ([Canela-san](https://github.com/Canela-san))**, em todas as cópias ou partes substanciais do código.
+
+Se o GrabIt te ajudou, um link para este repositório também é sempre bem-vindo.

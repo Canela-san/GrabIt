@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ==============================================================================
 #  GrabIt (grabit.sh)  —  yt-dlp em lote · máxima qualidade · terminal limpo
+#  https://github.com/Canela-san/GrabIt
+#  Copyright (c) 2026 Gabriel Canela (Canela-san) · Licença MIT (veja LICENSE)
+#  SPDX-License-Identifier: MIT
 # ==============================================================================
 #  Uso:  grabit [opções] [LINK ou ARQUIVO ...]
 #
