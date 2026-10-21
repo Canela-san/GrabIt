@@ -1,0 +1,11 @@
+# Suas listas e seus downloads ficam fora do repositório
+links.txt
+links_falhos.txt
+Downloads/
+
+# Restos de downloads interrompidos
+*.part
+*.ytdl
+
+# Cookies exportados do navegador
+cookies*.txt
