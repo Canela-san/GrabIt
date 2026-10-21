@@ -22,12 +22,12 @@
 
 ## Por que o GrabIt?
 
-- **Qualidade máxima, sempre.** Pega o melhor vídeo e o melhor áudio disponíveis (4K, 60 fps, HDR, som 5.1 — o que existir) e junta tudo num MKV, sem recomprimir nada.
+- **Qualidade máxima, sempre.** Pega o melhor vídeo e o melhor áudio disponíveis (4K, 60 fps, HDR, som 5.1 — o que existir) e junta tudo num MKV, sem recomprimir nada. E nunca entrega um vídeo incompleto: se faltar um pedaço, o download falha e recomeça do zero.
 - **Qualquer site.** Funciona com tudo o que o yt-dlp suporta: milhares de sites, playlists, canais e páginas com vídeo embutido.
 - **Em lote e em paralelo.** Você entrega uma lista de links; ele baixa vários vídeos ao mesmo tempo, cada um com várias conexões.
 - **Painel ao vivo.** Progresso, velocidade, tempo restante e a qualidade de cada download, sem a enxurrada de texto do yt-dlp. No fim, cada vídeo mostra o que *realmente* foi gravado (lido do arquivo com `ffprobe`).
 - **Tudo dentro do arquivo.** Legendas, capa, capítulos e metadados vão embutidos no MKV.
-- **Resiliente.** Falhas passageiras ganham nova tentativa automática, downloads interrompidos são retomados de onde pararam e os erros vêm explicados em português.
+- **Resiliente.** Falhas passageiras ganham nova tentativa automática e os erros vêm explicados em português.
 - **Não baixa duas vezes.** Cada vídeo baixado entra num histórico; na próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo — mesmo que você já o tenha movido para outra pasta.
 
 ## Instalação
@@ -132,7 +132,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 ## Como funciona
 
 - **Formato:** `bv*+ba/b` do yt-dlp (melhor vídeo + melhor áudio) com saída em **MKV**, que aceita qualquer codec. Nada é recodificado.
-- **Arquivos parciais** ficam em `Downloads/.parciais` e só o arquivo final pronto vai para a pasta. Cancelou com <kbd>Ctrl</kbd>+<kbd>C</kbd>? É só rodar de novo: o download continua de onde parou, e os links que ainda faltavam também vão para `links_falhos.txt`.
+- **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um download que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de rede) **recomeça do zero** na próxima vez, em vez de retomar os pedaços: a retomada pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam vão para `links_falhos.txt`.
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
 - **Logs:** a saída completa do yt-dlp para cada link com problema fica em `Downloads/logs/<data>/`.

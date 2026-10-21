@@ -32,9 +32,9 @@
 #    fim da fila, imitando um navegador (--impersonate) se houver curl_cffi.
 #  • Links que falharem vão para links_falhos.txt, prontos para reexecutar:
 #        grabit -l links_falhos.txt
-#  • Se você cancelar (Ctrl+C), os arquivos parciais ficam em Downloads/.parciais
-#    e o yt-dlp retoma de onde parou na próxima execução; os links que ainda
-#    faltavam também vão para links_falhos.txt.
+#  • Download que não terminou (Ctrl+C, erro) recomeça do zero na próxima vez:
+#    retomar pedaços não garante a qualidade. A pasta Downloads/.parciais só existe
+#    enquanto o GrabIt roda. Os links que faltavam vão para links_falhos.txt.
 #
 #  Variáveis de ambiente também funcionam, ex.: DOWNLOADS_SIMULTANEOS=3 grabit
 #  Só por variável: IDIOMAS_LEGENDAS="pt.*,en.*" ("all" = todas) · TENTATIVAS=2 · NO_COLOR=1
@@ -133,7 +133,7 @@ VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; 
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
-FONTE_LINKS=""; LOG_DIR=""
+FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); ARQUIVOS_ENTRADA=()
 declare -A TITULO=() CACHE_CORTA=()
@@ -334,6 +334,7 @@ classifica_erro() {
     *"no space left"*)                                      DICA="disco cheio"; REPETE=0 ;;
     *"invalid data found when processing input"*|*"moov atom not found"*|*"ebml header parsing failed"*)
                                                             DICA="o arquivo baixado não é um vídeo válido"; ARQUIVO_RUIM=1 ;;
+    *"fragment"*"not found"*|*"unable to download fragment"*) DICA="um pedaço do vídeo não baixou" ;;
     *"http error 403"*)                                     DICA="acesso negado (403)" ;;
     *"http error 429"*|*"too many requests"*)               DICA="muitas requisições (429)" ;;
     *"timed out"*|*"connection reset"*|*"name resolution"*|*"name or service not known"*|*"network is unreachable"*)
@@ -786,10 +787,11 @@ limpa() {                                     # trap EXIT: sempre devolve o term
   local rc=$?
   trap - EXIT INT TERM HUP WINCH
   mata_jobs
+  descarta_parciais
   if (( CANCELADO && COMECOU )); then
     desenha final
-    printf '\n  %s⚠ Cancelado.%s Parciais guardados em %s/.parciais — retomam na próxima execução.\n' \
-      "$AMARELO" "$R" "$PASTA_SAIDA"
+    printf '\n  %s⚠ Cancelado.%s O que estava pela metade foi descartado e recomeça do zero na próxima vez.\n' \
+      "$AMARELO" "$R"
     resumo
   elif (( CANCELADO )); then
     printf '\n  %s⚠ Cancelado.%s\n\n' "$AMARELO" "$R"
@@ -804,6 +806,30 @@ limpa() {                                     # trap EXIT: sempre devolve o term
   # "for l in ...; do grabit ...; done") também para no Ctrl+C.
   if [[ -n $SINAL ]]; then trap - "$SINAL"; kill -s "$SINAL" "$$"; fi
   exit "$rc"
+}
+
+# Pasta temporária desta execução: .parciais/<pid>-<data>. Como nada é retomado entre
+# execuções, o que sobrou de execuções anteriores é lixo e vai embora — menos a pasta de
+# outro GrabIt que esteja rodando agora na mesma pasta de destino.
+prepara_parciais() {
+  local raiz="$PASTA_SAIDA/.parciais" item
+  if [[ -d $raiz ]]; then
+    for item in "$raiz"/* "$raiz"/.[!.]*; do
+      [[ -e $item ]] || continue
+      if [[ -d $item && ${item##*/} =~ ^([0-9]+)- ]] && kill -0 "${BASH_REMATCH[1]}" 2>/dev/null; then
+        continue
+      fi
+      rm -rf -- "$item"
+    done
+  fi
+  printf -v TEMP_REL '.parciais/%s-%(%Y%m%d%H%M%S)T' "$$" -1
+  DIR_TEMP="$PASTA_SAIDA/$TEMP_REL"
+}
+
+descarta_parciais() {                         # apaga a pasta temporária desta execução
+  [[ -n $TEMP_REL && -d $DIR_TEMP ]] && rm -rf -- "$DIR_TEMP"
+  rmdir -- "$PASTA_SAIDA/.parciais" 2>/dev/null
+  return 0
 }
 
 # ───────────────────────────── Verificações iniciais ──────────────────────────
@@ -991,8 +1017,9 @@ monta_args_ytdlp() {
     --progress-template "download:@@P@@%(progress.downloaded_bytes|0)s${SEP}%(progress.total_bytes,progress.total_bytes_estimate|0)s${SEP}%(progress.speed|0)s${SEP}%(progress.eta|0)s${SEP}%(info.playlist_index|)s${SEP}%(info.n_entries|)s${SEP}%(info.vcodec|?)s${SEP}%(info.height|)s${SEP}%(info.fps|)s${SEP}%(info.ext|)s${SEP}%(info.title|?)s"
     --print "after_move:@@D@@%(height|0)s${SEP}%(fps|0)s${SEP}%(dynamic_range|SDR)s${SEP}%(vcodec|?)s${SEP}%(acodec|?)s${SEP}%(duration|0)s${SEP}%(title|?)s${SEP}%(id)s${SEP}%(filepath)s"
 
-    # Destino: parciais ficam em .parciais e só o arquivo final vai para a pasta
-    -P "$PASTA_SAIDA" -P "temp:.parciais" -o "$TEMPLATE_SAIDA"
+    # Destino: os temporários ficam em .parciais/<esta execução> e só o arquivo final
+    # vai para a pasta
+    -P "$PASTA_SAIDA" -P "temp:$TEMP_REL" -o "$TEMPLATE_SAIDA"
 
     # Qualidade máxima: melhor vídeo + melhor áudio, empacotados em MKV
     -f 'bv*+ba/b' --merge-output-format mkv --remux-video mkv
@@ -1008,6 +1035,10 @@ monta_args_ytdlp() {
     -N "$CONEXOES_POR_VIDEO"
     --retries 10 --fragment-retries 10 --extractor-retries 3
     --retry-sleep exp=1:30 --retry-sleep fragment:exp=1:30
+    # Qualidade garantida: nunca pula um fragmento que falhou (por padrão o yt-dlp pula
+    # em silêncio e entrega o vídeo com um salto) e nunca retoma pedaços de um download
+    # interrompido (a retomada pode deixar buracos); nesses casos, recomeça do zero.
+    --abort-on-unavailable-fragments --no-continue
     --socket-timeout 30 --throttled-rate 100K
   )
   # Com --write-auto-subs o yt-dlp para de pedir as legendas manuais sozinho:
@@ -1038,6 +1069,7 @@ ler_links
 
 mkdir -p "$PASTA_SAIDA" || { erro "Não consegui criar a pasta '$PASTA_SAIDA'."; exit 1; }
 printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
+prepara_parciais
 
 J=$DOWNLOADS_SIMULTANEOS
 (( J > TOTAL )) && J=$TOTAL
@@ -1095,7 +1127,7 @@ if [[ -z $JS_RUNTIME ]]; then
   aviso "Sem runtime JavaScript: o YouTube pode falhar ou vir em qualidade menor."
   printf '     Instale o Deno (https://deno.com) e mantenha o yt-dlp atualizado.\n'
 fi
-printf '  %sCtrl+C cancela · downloads parciais são retomados depois%s\n\n' "$DIM" "$R"
+printf '  %sCtrl+C cancela · o que estiver pela metade recomeça do zero%s\n\n' "$DIM" "$R"
 
 # Redimensionou a janela? O painel se ajusta no próximo quadro. (O trap só entra
 # agora: antes ele interromperia o "wait" das consultas ao yt-dlp.)
@@ -1146,7 +1178,7 @@ while (( FINALIZADOS < TOTAL )); do
 done
 
 desenha final
-rmdir "$PASTA_SAIDA/.parciais" 2>/dev/null
+descarta_parciais
 resumo
 (( N_ERRO > 0 )) && exit 1
 exit 0
