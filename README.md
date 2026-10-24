@@ -174,6 +174,8 @@ COOKIES_NAVEGADOR=firefox
 | `COOKIES_NAVEGADOR` | navegador cujo login será usado | — |
 | `USAR_HISTORICO` | `0` desliga o histórico de baixados | `1` |
 | `ARQUIVO_FALHAS` | onde salvar os links que falharam | `links_falhos.txt` |
+| `NOTIFICAR` | sino e notificação na área de trabalho no fim de lotes de 1 min ou mais (`0` = silêncio) | `1` |
+| `NTFY_TOPICO` | tópico do [ntfy](https://ntfy.sh) (ou URL de um servidor seu) para avisar no celular | — |
 
 A prioridade é: **`grabit.config` < variável de ambiente < opção do comando**. Assim dá para mudar algo só uma vez sem editar o arquivo:
 
@@ -245,6 +247,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 
 - **Mantenha o yt-dlp atualizado** (`yt-dlp -U` ou `pipx upgrade yt-dlp`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
 - **Vídeo pede login ou confirmação de idade?** Use `-b firefox` (ou o navegador em que você está logado).
+- **Deixou baixando e saiu?** Com `NTFY_TOPICO=um-nome-dificil` no `grabit.config` e o app do [ntfy](https://ntfy.sh) assinando o mesmo tópico, o celular avisa quando o lote acabar. Só vai o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
 - **Retomar o que falhou:** `grabit -l links_falhos.txt`.
 - **Apagou um vídeo e quer baixá-lo de novo?** Rode com `-i` (ignora o histórico) ou apague a linha dele em `Downloads/.grabit-historico.txt`.
 

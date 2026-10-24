@@ -177,6 +177,8 @@ COOKIES_NAVEGADOR=firefox
 | `COOKIES_NAVEGADOR` | browser whose login will be used | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
 | `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
+| `NOTIFICAR` | bell and desktop notification at the end of batches of 1 min or more (`0` = silence) | `1` |
+| `NTFY_TOPICO` | [ntfy](https://ntfy.sh) topic (or your own server's URL) to notify your phone | — |
 
 The keys keep their original (Portuguese) names in both languages, so the same `grabit.config` works whichever language you use.
 
@@ -250,6 +252,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 
 - **Keep yt-dlp up to date** (`yt-dlp -U` or `pipx upgrade yt-dlp`): sites change all the time. GrabIt warns you when the installed version is old.
 - **Video asks for a login or age confirmation?** Use `-b firefox` (or the browser you're logged in with).
+- **Left it downloading and walked away?** With `NTFY_TOPICO=a-hard-name` in `grabit.config` and the [ntfy](https://ntfy.sh) app subscribed to the same topic, your phone tells you when the batch is done. Only the summary goes out (how many downloaded and how many failed), never links or titles.
 - **Retry what failed:** `grabit -l links_falhos.txt`.
 - **Deleted a video and want it again?** Run with `-i` (ignores the history) or delete its line in `Downloads/.grabit-historico.txt`.
 

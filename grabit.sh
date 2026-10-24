@@ -119,7 +119,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USAR_HISTORICO ARQUIVO_FALHAS)
+  USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -145,6 +145,8 @@ VERIFICAR=0                                   # 1 = decodifica cada vídeo intei
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
+NOTIFICAR=1                                   # sino + notificação no fim (lotes de 1 min ou mais)
+NTFY_TOPICO=                                  # tópico do ntfy.sh (ou URL completa) para avisar no celular
 ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
 CONFIG_CRIADO=0; AVISOS_CONFIG=(); N_AJUSTES_CONFIG=0
@@ -299,6 +301,10 @@ idioma_pt() {
     [k_pausado]="pausado · p continua"
     [k_parando]="terminando os downloads atuais · q de novo cancela"
     [k_simultaneos]="%d download(s) ao mesmo tempo"
+    [notif_msg]="Terminou: %d baixado(s), %d já existia(m), %d com erro · %s"
+    [notif_sem_curl]="Para avisar no celular (NTFY_TOPICO) é preciso o curl."
+    [notif_falhou]="Não consegui enviar o aviso para %s."
+    [kv_ntfy]=", aviso no celular"
     [dep_faltando]="Faltando: %s"
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
@@ -522,6 +528,15 @@ EOF
 
 # Onde salvar os links que falharam
 #ARQUIVO_FALHAS=links_falhos.txt
+
+# No fim de um lote que levou 1 minuto ou mais: sino do terminal e notificação na área
+# de trabalho (notify-send no Linux, central de notificações no macOS). 0 = silêncio.
+#NOTIFICAR=1
+
+# Aviso no celular pelo ntfy (https://ntfy.sh): instale o app, assine um tópico com um
+# nome difícil de adivinhar e coloque-o aqui (ou a URL completa de um servidor seu).
+# Vai só o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
+#NTFY_TOPICO=
 EOF
 )
 }
@@ -605,6 +620,10 @@ idioma_en() {
     [k_pausado]="paused · p resumes"
     [k_parando]="finishing the current downloads · q again cancels"
     [k_simultaneos]="%d download(s) at once"
+    [notif_msg]="Done: %d downloaded, %d already there, %d failed · %s"
+    [notif_sem_curl]="Phone notifications (NTFY_TOPICO) need curl."
+    [notif_falhou]="Couldn't send the notification to %s."
+    [kv_ntfy]=", phone notification"
     [dep_faltando]="Missing: %s"
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
@@ -832,6 +851,15 @@ EOF
 
 # Where to save the links that failed
 #ARQUIVO_FALHAS=links_falhos.txt
+
+# At the end of a batch that took 1 minute or more: terminal bell and desktop
+# notification (notify-send on Linux, Notification Center on macOS). 0 = silence.
+#NOTIFICAR=1
+
+# Phone notification through ntfy (https://ntfy.sh): install the app, subscribe to a
+# topic with a hard-to-guess name and put it here (or the full URL of your own server).
+# Only the summary goes out (how many downloaded and how many failed), never links or titles.
+#NTFY_TOPICO=
 EOF
 )
 }
@@ -929,7 +957,7 @@ for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
     exit 2
   fi
 done
-for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_HISTORICO; do
+for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_HISTORICO NOTIFICAR; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
     origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
@@ -2299,6 +2327,30 @@ monta_args_ytdlp() {
   return 0
 }
 
+# notifica: avisa que o lote acabou — sino e notificação na área de trabalho (se levou 1 min
+# ou mais: lote rápido você viu acabar) e, com NTFY_TOPICO, no celular. Só o resumo sai daqui.
+notifica() {
+  local msg tempo url etiqueta=white_check_mark
+  fmt_tempo "$SECONDS"; tempo=$FMT
+  t notif_msg "$N_OK" "$N_JA" "$N_ERRO" "$tempo"; msg=$TXT
+  if (( NOTIFICAR && SECONDS >= 60 )); then
+    (( INTERATIVO )) && printf '\a'
+    if command -v notify-send >/dev/null 2>&1; then
+      notify-send -a GrabIt -i folder-download "GrabIt" "$msg" 2>/dev/null
+    elif command -v osascript >/dev/null 2>&1; then
+      osascript -e "display notification \"${msg//\"/}\" with title \"GrabIt\"" >/dev/null 2>&1
+    fi
+  fi
+  [[ -n $NTFY_TOPICO ]] || return 0
+  url=$NTFY_TOPICO; [[ $url == http?(s)://* ]] || url="https://ntfy.sh/$url"
+  (( N_ERRO > 0 )) && etiqueta=warning
+  if ! command -v curl >/dev/null 2>&1; then aviso "${T[notif_sem_curl]}"; return 0; fi
+  if ! curl -fsS -m 15 -H "Title: GrabIt" -H "Tags: $etiqueta" -d "$msg" "$url" >/dev/null 2>&1; then
+    t notif_falhou "$url"; aviso "$TXT"
+  fi
+  return 0
+}
+
 # descreve_limites RESOLUÇÃO POR_SITE PAUSA VELOCIDADE → TXT ("até 1080p · 1 vídeo(s) por site…")
 descreve_limites() {
   local p=() x
@@ -2352,6 +2404,7 @@ else
 fi
 (( SO_PRINCIPAL )) && txt_extras+=${T[kv_principal]}
 (( VERIFICAR ))    && txt_extras+=${T[kv_verificar]}
+[[ -n $NTFY_TOPICO ]] && txt_extras+=${T[kv_ntfy]}
 (( MIDIA ))        && txt_extras+=${T[kv_nfo]}
 (( SPONSORBLOCK )) && txt_extras+=", SponsorBlock"
 if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}${T[imp_indisp]}${R}"
@@ -2488,5 +2541,6 @@ desenha final
 descarta_parciais
 move_baixados
 resumo
+notifica
 (( N_ERRO > 0 || FINALIZADOS < TOTAL )) && exit 1
 exit 0
