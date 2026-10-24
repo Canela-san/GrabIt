@@ -102,6 +102,7 @@ grabit https://youtu.be/XXXXXXXXXXX          # links direto no comando
 grabit -l cursos.txt -o ~/Vídeos/Cursos      # outra lista, outra pasta
 grabit -j 4 -c 8                             # 4 vídeos por vez, 8 conexões cada
 grabit -b firefox                            # usa o login do navegador (vídeos restritos)
+grabit -x -l musicas.txt -o ~/Música         # só o áudio, na melhor qualidade
 cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 ```
 
@@ -117,6 +118,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-F` | força: ignora os limites do `grabit.config` nesta execução | — |
 | `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
+| `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
 | `-u` | em páginas com vários vídeos (prévias, relacionados…), baixa só o principal: o mais longo | — |
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
 | `-s` | marca patrocínios e intros como capítulos ([SponsorBlock](https://sponsor.ajay.app)) | — |
@@ -142,6 +144,8 @@ COOKIES_NAVEGADOR=firefox
 | `ARQUIVO_LINKS` | lista lida quando você roda só `grabit` | `links.txt` |
 | `PASTA_SAIDA` | onde os vídeos são salvos | `./Downloads` |
 | `RESOLUCAO_MAXIMA` | resolução máxima (`1080`, `2160`, `4k`…); `0` = sem limite | `0` |
+| `SO_AUDIO` | `1` baixa só o áudio (o mesmo que `-x`) | `0` |
+| `FORMATO_AUDIO` | `original` (sem recomprimir) ou `mp3`, `m4a`, `aac`, `opus`, `flac`, `wav`, `alac`, `vorbis` | `original` |
 | `RESOLUCAO_ALERTA` | avisa quando a melhor versão disponível fica abaixo disso; `0` = nunca | `720` |
 | `DOWNLOADS_SIMULTANEOS` | vídeos ao mesmo tempo | `2` |
 | `CONEXOES_POR_VIDEO` | conexões por vídeo | `4` |
@@ -203,6 +207,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um download que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de rede) **recomeça do zero** na próxima vez, em vez de retomar os pedaços: a retomada pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam vão para `links_falhos.txt`.
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
+- **Só áudio (`-x`):** baixa a melhor faixa de som e a guarda no formato em que o site entrega (opus, m4a…), sem recomprimir, com capa, capítulos e metadados. Com `FORMATO_AUDIO=mp3` (ou outro), converte na melhor qualidade. O histórico de áudio é separado (`.grabit-historico-audio.txt`): ter baixado o vídeo não impede de baixar o áudio, e vice-versa.
 - **Verificação completa (`-v`):** depois de baixar, o ffmpeg decodifica o vídeo inteiro, quadro a quadro, com o progresso no painel. Qualquer defeito reprova o arquivo: ele não entra no histórico, fica guardado com `.com-erros` no nome e o vídeo é baixado de novo do zero. Se o defeito vier do próprio site e se repetir, o link vai para `links_falhos.txt`. Garante o arquivo perfeito, ao custo de CPU e tempo.
 - **Vídeo principal (`-u`):** quando uma página tem vários vídeos, o GrabIt consulta antes a duração de cada um (pelo site ou, se ele não informar, lendo só o cabeçalho do vídeo) e baixa só o mais longo — prévias e relacionados costumam ser curtos. Links com um único vídeo não passam por essa etapa. Não use com playlists e canais: deles também sairia um vídeo só.
 - **Logs:** a saída completa do yt-dlp para cada link com problema fica em `Downloads/logs/<data>/`.

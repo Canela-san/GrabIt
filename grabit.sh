@@ -77,7 +77,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
-CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
+CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
@@ -88,6 +88,8 @@ ARQUIVO_LINKS=links.txt
 PASTA_SAIDA=./Downloads
 RESOLUCAO_MAXIMA=0                            # altura máxima (1080, 2160…); 0 = sem limite
 RESOLUCAO_ALERTA=720                          # avisa quando o melhor disponível é menor; 0 = nunca
+SO_AUDIO=0                                    # 1 = baixa só o áudio
+FORMATO_AUDIO=original                        # original (sem recomprimir), mp3, m4a, opus, flac…
 DOWNLOADS_SIMULTANEOS=2                       # vídeos ao mesmo tempo
 CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
 TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
@@ -189,6 +191,7 @@ idioma_pt() {
     [val_numero]="%s precisa ser um número inteiro maior que zero (recebi '%s', de: %s)."
     [val_01]="%s precisa ser 0 ou 1 (recebi '%s', de: %s)."
     [val_resolucao]="%s precisa ser uma altura como 720, 1080 ou 2160, ou 0 para não limitar (recebi '%s', de: %s)."
+    [val_audio]="%s precisa ser original, mp3, m4a, aac, opus, flac, wav, alac ou vorbis (recebi '%s', de: %s)."
     [cfg_criado]="(criado agora)"
     [cfg_inexistente]="(não existe e não pôde ser criado)"
     [cfg_linha]="grabit.config, linha %s: ignorada (chave desconhecida ou sem \"=\"):%s"
@@ -215,6 +218,10 @@ idioma_pt() {
     [kv_extras_resto]=", capa, capítulos, metadados"
     [kv_principal]=", só o vídeo principal de cada página"
     [kv_verificar]=", verificação completa"
+    [kv_modo]="Modo"
+    [kv_audio_original]="só áudio · a melhor faixa, no formato original (sem recomprimir)"
+    [kv_audio_conv]="só áudio · convertido para %s"
+    [kv_extras_audio]="capa, capítulos, metadados"
     [imp_indisp]="indisponível"
     [imp_retry]="nas novas tentativas"
     [imp_off]="desligado (TENTATIVAS=1)"
@@ -345,6 +352,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -p            só o vídeo, se o link tiver vídeo + playlist
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
+  -x            só o áudio (a melhor faixa, sem recomprimir)
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
@@ -407,6 +415,12 @@ EOF
 # Avisa quando a melhor versão que o site oferece fica abaixo desta resolução (0 = nunca)
 #RESOLUCAO_ALERTA=720
 
+# Só áudio (-x): a melhor faixa de som, no formato em que o site entrega (original, sem
+# recomprimir) ou convertida para mp3, m4a, aac, opus, flac, wav, alac ou vorbis.
+# Tem um histórico próprio, separado do dos vídeos.
+#SO_AUDIO=0
+#FORMATO_AUDIO=original
+
 # Quantos vídeos baixar ao mesmo tempo (-j) e conexões por vídeo (-c)
 #DOWNLOADS_SIMULTANEOS=2
 #CONEXOES_POR_VIDEO=4
@@ -457,6 +471,7 @@ idioma_en() {
     [val_numero]="%s must be a whole number greater than zero (got '%s', from: %s)."
     [val_01]="%s must be 0 or 1 (got '%s', from: %s)."
     [val_resolucao]="%s must be a height like 720, 1080 or 2160, or 0 for no limit (got '%s', from: %s)."
+    [val_audio]="%s must be original, mp3, m4a, aac, opus, flac, wav, alac or vorbis (got '%s', from: %s)."
     [cfg_criado]="(just created)"
     [cfg_inexistente]="(missing and could not be created)"
     [cfg_linha]="grabit.config, line %s: ignored (unknown key or no \"=\"):%s"
@@ -483,6 +498,10 @@ idioma_en() {
     [kv_extras_resto]=", cover, chapters, metadata"
     [kv_principal]=", only each page's main video"
     [kv_verificar]=", full check"
+    [kv_modo]="Mode"
+    [kv_audio_original]="audio only · the best track, in its original format (no re-encoding)"
+    [kv_audio_conv]="audio only · converted to %s"
+    [kv_extras_audio]="cover, chapters, metadata"
     [imp_indisp]="unavailable"
     [imp_retry]="on retries"
     [imp_off]="off (TENTATIVAS=1)"
@@ -613,6 +632,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -p            only the video, when the link is video + playlist
   -u            only the main video (the longest) of pages with several videos
+  -x            audio only (the best track, no re-encoding)
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
@@ -678,6 +698,12 @@ EOF
 
 # Warn when the best version a site offers is below this resolution (0 = never)
 #RESOLUCAO_ALERTA=720
+
+# Audio only (-x): the best sound track, in the format the site delivers (original, no
+# re-encoding) or converted to mp3, m4a, aac, opus, flac, wav, alac or vorbis.
+# It has its own history, separate from the videos'.
+#SO_AUDIO=0
+#FORMATO_AUDIO=original
 
 # How many videos to download at once (-j) and connections per video (-c)
 #DOWNLOADS_SIMULTANEOS=2
@@ -753,7 +779,7 @@ done
 set -- "${ARGS_CURTOS[@]}"
 
 OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0
-while getopts ":l:o:j:c:b:r:L:pausivFh" op; do
+while getopts ":l:o:j:c:b:r:L:pausivxFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -769,6 +795,7 @@ while getopts ":l:o:j:c:b:r:L:pausivFh" op; do
     s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
     i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
     v) VERIFICAR=1;                    ORIGEM[VERIFICAR]=opção ;;
+    x) SO_AUDIO=1;                     ORIGEM[SO_AUDIO]=opção ;;
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -777,7 +804,11 @@ while getopts ":l:o:j:c:b:r:L:pausivFh" op; do
 done
 shift $(( OPTIND - 1 ))
 ARGS_LINKS=("$@")
-[[ -z $ARQUIVO_HISTORICO ]] && ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico.txt"
+# Só áudio tem histórico próprio: ter baixado o vídeo não significa ter o áudio, e vice-versa
+if [[ -z $ARQUIVO_HISTORICO ]]; then
+  if (( SO_AUDIO )); then ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico-audio.txt"
+  else ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico.txt"; fi
+fi
 
 [[ $COMANDO == ajuda ]] && { uso; exit 0; }
 
@@ -789,12 +820,17 @@ for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
     exit 2
   fi
 done
-for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_HISTORICO; do
+for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_HISTORICO; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
     origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
   fi
 done
+case ${FORMATO_AUDIO,,} in
+  original|best|"") FORMATO_AUDIO=original ;;
+  mp3|m4a|aac|opus|flac|wav|alac|vorbis) FORMATO_AUDIO=${FORMATO_AUDIO,,} ;;
+  *) origem_txt FORMATO_AUDIO; t val_audio FORMATO_AUDIO "$FORMATO_AUDIO" "$FMT"; erro "$TXT"; exit 2 ;;
+esac
 # Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = desligado
 for nome in RESOLUCAO_MAXIMA RESOLUCAO_ALERTA; do
   case ${!nome,,} in
@@ -1934,7 +1970,7 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
 }
 
 monta_args_ytdlp() {
-  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd
+  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd qualidade=()
   FORMATO='bv*+ba/b'
   # Com limite, vale o lado menor da imagem: a altura em vídeos deitados e a largura nos
   # verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
@@ -1944,6 +1980,15 @@ monta_args_ytdlp() {
   fi
   # "all" incluiria o chat ao vivo: um JSON enorme que nem dá para embutir
   [[ ,$langs, == *,all,* && $langs != *live_chat* ]] && langs+=",-live_chat"
+  if (( SO_AUDIO )); then
+    # Só áudio: a melhor faixa, no formato em que veio (opus, m4a…), sem recomprimir;
+    # com FORMATO_AUDIO, converte (no mp3, na melhor qualidade VBR).
+    FORMATO='ba/b'
+    qualidade=(-f "$FORMATO" -x --audio-format "${FORMATO_AUDIO/#original/best}" --audio-quality 0)
+  else
+    # Qualidade máxima: melhor vídeo + melhor áudio, empacotados em MKV, com as legendas
+    qualidade=(-f "$FORMATO" --merge-output-format mkv --remux-video mkv --embed-subs --sub-langs "$langs")
+  fi
   YTDLP_ARGS=(
     --ignore-config --color never --newline --no-quiet --no-simulate --progress
     --progress-delta 0.5
@@ -1956,15 +2001,13 @@ monta_args_ytdlp() {
     # vai para a pasta
     -P "$PASTA_SAIDA" -P "temp:$TEMP_REL" -o "$TEMPLATE_SAIDA"
 
-    # Qualidade máxima: melhor vídeo + melhor áudio, empacotados em MKV
-    -f "$FORMATO" --merge-output-format mkv --remux-video mkv
+    "${qualidade[@]}"
 
     # Tudo o que o yt-dlp encontrar vai para dentro do arquivo
     --embed-metadata --embed-chapters --embed-info-json
     # Capa em JPG (a mais compatível), menos AVIF: para converter, o yt-dlp força o
     # leitor "image2" do ffmpeg, que não abre AVIF — ela é embutida como veio.
     --embed-thumbnail --convert-thumbnails 'webp>jpg/png>jpg/gif>jpg/bmp>jpg'
-    --embed-subs --sub-langs "$langs"
 
     # Velocidade e resiliência (com espera crescente entre as repetições)
     -N "$CONEXOES_POR_VIDEO"
@@ -1978,7 +2021,7 @@ monta_args_ytdlp() {
   )
   # Com --write-auto-subs o yt-dlp para de pedir as legendas manuais sozinho:
   # pede as duas (a manual tem prioridade) e apaga os .vtt depois de embutir.
-  (( LEGENDAS_AUTOMATICAS )) && YTDLP_ARGS+=(--write-subs --write-auto-subs --compat-options no-keep-subs)
+  (( LEGENDAS_AUTOMATICAS && ! SO_AUDIO )) && YTDLP_ARGS+=(--write-subs --write-auto-subs --compat-options no-keep-subs)
   (( SPONSORBLOCK ))         && YTDLP_ARGS+=(--sponsorblock-mark all)
   (( SEM_PLAYLIST ))         && YTDLP_ARGS+=(--no-playlist)
   if (( VERIFICAR )); then                    # o "%" do caminho viraria campo do modelo do yt-dlp
@@ -2026,9 +2069,13 @@ extras=""
 (( INVALIDAS  > 0 )) && { t links_sem_link "$INVALIDAS"; extras+="${extras:+,}$TXT"; }
 [[ -n $extras ]] && { t links_ignorados "$extras"; extras=$TXT; }
 (( N_NA_SECAO > 0 )) && { t links_na_secao "$N_NA_SECAO"; extras+=$TXT; }
-t kv_legendas "$IDIOMAS_LEGENDAS"; txt_extras=$TXT
-(( LEGENDAS_AUTOMATICAS )) && txt_extras+=${T[kv_automaticas]}
-txt_extras+=${T[kv_extras_resto]}
+if (( SO_AUDIO )); then
+  txt_extras=${T[kv_extras_audio]}
+else
+  t kv_legendas "$IDIOMAS_LEGENDAS"; txt_extras=$TXT
+  (( LEGENDAS_AUTOMATICAS )) && txt_extras+=${T[kv_automaticas]}
+  txt_extras+=${T[kv_extras_resto]}
+fi
 (( SO_PRINCIPAL )) && txt_extras+=${T[kv_principal]}
 (( VERIFICAR ))    && txt_extras+=${T[kv_verificar]}
 (( SPONSORBLOCK )) && txt_extras+=", SponsorBlock"
@@ -2038,7 +2085,10 @@ else txt_imp=${T[imp_off]}; fi
 
 kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 kv "${T[kv_destino]}" "$PASTA_SAIDA"
-if (( RESOLUCAO_MAXIMA > 0 )); then
+if (( SO_AUDIO )); then
+  if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
+  else t kv_audio_conv "$FORMATO_AUDIO"; kv "${T[kv_modo]}" "$TXT"; fi
+elif (( RESOLUCAO_MAXIMA > 0 )); then
   t kv_res_ate "$RESOLUCAO_MAXIMA"; txt_res=$TXT
   if [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} != opção ]]; then
     origem_txt RESOLUCAO_MAXIMA; t kv_res_origem "$FMT"; txt_res+=$TXT
