@@ -30,6 +30,34 @@ if [[ "$(locale charmap 2>/dev/null)" != "UTF-8" ]]; then
 fi
 export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
+# Modo auxiliar da verificação completa (-v): o yt-dlp chama o GrabIt assim depois de
+# cada vídeo (--exec). O ffmpeg decodifica o arquivo inteiro e qualquer erro reprova o
+# vídeo: ele é guardado com outro nome (para não contar como "já baixado") e, com o
+# código 86, o yt-dlp não o registra no histórico. O painel lê as linhas @@V@@.
+if [[ ${1:-} == --verificar-arquivo ]]; then
+  sufixo=$2 arq=$3 dur=${4%%.*}
+  [[ $dur =~ ^[1-9][0-9]*$ ]] || dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 -- "$arq" 2>/dev/null)
+  dur=${dur%%.*}; [[ $dur =~ ^[0-9]+$ ]] || dur=0
+  ruim="${arq%.*}${sufixo}.${arq##*.}"
+  erros=$(mktemp) || exit 1
+  # Ctrl+C chega a todos os processos: um ffmpeg interrompido (ou reclamando do cano
+  # fechado) não pode ser confundido com um arquivo com defeito.
+  trap 'rm -f -- "$erros"; exit 130' INT TERM HUP
+  ffmpeg -nostdin -hide_banner -v error -i "$arq" -map '0:v?' -map '0:a?' \
+         -f null -progress pipe:1 -nostats - 2>"$erros" |
+    while IFS='=' read -r k v; do
+      [[ $k == out_time_us && $v =~ ^[0-9]+$ ]] && printf '@@V@@%d\x1f%d\n' $(( v / 1000000 )) "$dur"
+    done
+  (( PIPESTATUS[0] == 255 )) && { rm -f -- "$erros"; exit 130; }   # o ffmpeg recebeu um sinal
+  if [[ -s $erros ]]; then
+    printf '@@V@@ERRO %s\n' "$(head -c 400 "$erros" | tr '\r\n' '  ' | sed -E 's/\[[^]]* @ 0x[0-9a-f]+\] //g')"
+    rm -f -- "$erros"; mv -f -- "$arq" "$ruim"
+    exit 86
+  fi
+  rm -f -- "$erros" "$ruim"                   # passou: some a cópia ruim de uma tentativa anterior
+  exit 0
+fi
+
 # ───────────────────────────── Configuração ───────────────────────────────────
 # Onde o GrabIt mora de verdade (seguindo links simbólicos, como ~/.local/bin/grabit):
 # é ali, ao lado do script, que fica o grabit.config.
@@ -50,7 +78,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
-  IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL COOKIES_NAVEGADOR
+  IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
@@ -68,6 +96,7 @@ LEGENDAS_AUTOMATICAS=0                        # 1 = inclui legendas automáticas
 SPONSORBLOCK=0                                # 1 = marca patrocínios/intros como capítulos
 SEM_PLAYLIST=0                                # 1 = link vídeo+playlist baixa só o vídeo
 SO_PRINCIPAL=0                                # 1 = página com vários vídeos baixa só o principal
+VERIFICAR=0                                   # 1 = decodifica cada vídeo inteiro para achar defeitos
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
@@ -185,6 +214,7 @@ idioma_pt() {
     [kv_automaticas]=" (+automáticas)"
     [kv_extras_resto]=", capa, capítulos, metadados"
     [kv_principal]=", só o vídeo principal de cada página"
+    [kv_verificar]=", verificação completa"
     [imp_indisp]="indisponível"
     [imp_retry]="nas novas tentativas"
     [imp_off]="desligado (TENTATIVAS=1)"
@@ -235,6 +265,7 @@ idioma_pt() {
     [et_existe]="arquivo já existe"
     [et_iniciando]="iniciando download"
     [et_principal]="procurando o vídeo principal da página"
+    [et_verificando]="verificando o arquivo"
     [et_processando]="processando"
     [et_item]="obtendo informações · item %s/%s"
     [et_info]="obtendo informações"
@@ -270,6 +301,8 @@ idioma_pt() {
     [d_resolucao_r]="nenhuma versão até %dp (-r)"
     [nota_n]="%d vídeos · %s e outros"
     [nota_n0]="%d vídeos"
+    [sufixo_ruim]=".com-erros"
+    [d_verificacao]="o arquivo tem defeitos (ficou com %s no nome)"
     [r_baixa]="resolução baixa:"
     [r_baixa_det]="%dp era a melhor versão disponível (com login, -b, às vezes há mais)"
     [s_baixa]="Baixa resolução"
@@ -315,6 +348,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
+  -v            verificação completa: decodifica cada vídeo inteiro atrás de defeitos
   -L pt|en      idioma das mensagens (Language)
   -h            mostra esta ajuda
 
@@ -393,6 +427,10 @@ EOF
 # Página com vários vídeos (prévias, relacionados…): baixar só o principal, o mais longo (-u)
 #SO_PRINCIPAL=0
 
+# Verificação completa: decodifica cada vídeo baixado do começo ao fim e, se achar um
+# defeito, baixa de novo do zero. Garante o arquivo perfeito, mas usa CPU e tempo (-v)
+#VERIFICAR=0
+
 # Usar os cookies (login) de um navegador: firefox, chrome, brave… (-b)
 #COOKIES_NAVEGADOR=
 
@@ -444,6 +482,7 @@ idioma_en() {
     [kv_automaticas]=" (+automatic)"
     [kv_extras_resto]=", cover, chapters, metadata"
     [kv_principal]=", only each page's main video"
+    [kv_verificar]=", full check"
     [imp_indisp]="unavailable"
     [imp_retry]="on retries"
     [imp_off]="off (TENTATIVAS=1)"
@@ -494,6 +533,7 @@ idioma_en() {
     [et_existe]="file already exists"
     [et_iniciando]="starting download"
     [et_principal]="looking for the page's main video"
+    [et_verificando]="checking the file"
     [et_processando]="processing"
     [et_item]="fetching info · item %s/%s"
     [et_info]="fetching info"
@@ -529,6 +569,8 @@ idioma_en() {
     [d_resolucao_r]="no version up to %dp (-r)"
     [nota_n]="%d videos · %s and others"
     [nota_n0]="%d videos"
+    [sufixo_ruim]=".with-errors"
+    [d_verificacao]="the file has defects (kept with %s in its name)"
     [r_baixa]="low resolution:"
     [r_baixa_det]="%dp was the best version available (logged in, -b, there may be more)"
     [s_baixa]="Low resolution"
@@ -574,6 +616,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
+  -v            full check: decode every video end to end looking for defects
   -L pt|en      language of the messages
   -h            show this help
 
@@ -656,6 +699,10 @@ EOF
 # Page with several videos (previews, related…): download only the main one, the longest (-u)
 #SO_PRINCIPAL=0
 
+# Full check: decode every downloaded video from start to end and, if a defect shows
+# up, download it again from scratch. Guarantees a flawless file, but costs CPU and time (-v)
+#VERIFICAR=0
+
 # Use a browser's cookies (login): firefox, chrome, brave… (-b)
 #COOKIES_NAVEGADOR=
 
@@ -706,7 +753,7 @@ done
 set -- "${ARGS_CURTOS[@]}"
 
 OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0
-while getopts ":l:o:j:c:b:r:L:pausiFh" op; do
+while getopts ":l:o:j:c:b:r:L:pausivFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -721,6 +768,7 @@ while getopts ":l:o:j:c:b:r:L:pausiFh" op; do
     a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
     s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
     i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
+    v) VERIFICAR=1;                    ORIGEM[VERIFICAR]=opção ;;
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -741,7 +789,7 @@ for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
     exit 2
   fi
 done
-for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL USAR_HISTORICO; do
+for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_HISTORICO; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
     origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
@@ -978,6 +1026,10 @@ analisa_log() {
     }' "$1" 2>/dev/null)
   N_FATAIS=${r[0]:-0}; N_COSMETICOS=${r[1]:-0}; MOTIVO=${r[2]:-}; AVISO_CTX=${r[3]:-}
   [[ -z $MOTIVO ]] && MOTIVO=$(grep -av -e '^@@' -e '^WARNING:' "$1" 2>/dev/null | tail -n 1)
+  if [[ $MOTIVO == *"error code 86" ]]; then  # reprovado na verificação (-v): mostra o que o ffmpeg achou
+    MOTIVO=$(grep -a '^@@V@@ERRO ' "$1" 2>/dev/null | tail -n 1)
+    MOTIVO="ERROR: [Verify] ${MOTIVO#@@V@@ERRO }"
+  fi
   MOTIVO=${MOTIVO//[[:cntrl:]]/ }
 }
 
@@ -986,6 +1038,7 @@ analisa_log() {
 classifica_erro() {
   DICA=""; REPETE=1; ARQUIVO_RUIM=0
   case ${1,,} in
+    *"[verify]"*)                                           t d_verificacao "${T[sufixo_ruim]}"; DICA=$TXT ;;
     *"private video"*)                                      DICA=${T[d_privado]}; REPETE=0 ;;
     *"confirm your age"*|*"age-restricted"*|*"inappropriate for some users"*)
                                                             DICA=${T[d_idade]}; REPETE=0 ;;
@@ -1022,6 +1075,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     *"aren't any"*|*"are no "*|*"Not remuxing"*|"Deleting original"*|WARNING:*) ;;   # "nada a fazer"
     @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
     "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
+    "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
     "[Merger]"*)                                                   ETAPA=${T[et_mesclando]} ;;
     "[VideoRemuxer]"*)                                             ETAPA=${T[et_mkv]} ;;
     "[Metadata]"*|"[EmbedInfoJson]"*)                              ETAPA=${T[et_metadados]} ;;
@@ -1117,6 +1171,24 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
     done
     barra $(( p10 * bw / 1000 )) "$bw"
     l2="     ${BARRA}  ${NEG}${pct}${R}${DIM}${detalhe}${R}"
+  elif [[ $linha == @@V@@*"$SEP"* ]]; then      # verificação completa (-v): quanto já foi decodificado
+    local pos dur bw p10 pct det
+    IFS=$SEP read -r pos dur <<<"${linha#@@V@@}"
+    num "$pos"; pos=$NUM; num "$dur"; dur=$NUM
+    corta "$titulo" $(( COLS - (2 + 1 + 1 + ${#idxs} + 2) - ${#pre_txt} - 2 ))
+    l1="  ${ACENTO}${spin}${R} ${DIM}${idxs}${R}  ${pre}${FMT}"
+    bw=$(( COLS - 76 )); (( bw > 30 )) && bw=30; (( bw < 10 )) && bw=10
+    if (( dur > 0 )); then
+      p10=$(( pos * 1000 / dur )); (( p10 > 1000 )) && p10=1000
+      printf -v pct '%3d.%d%%' $(( p10 / 10 )) $(( p10 % 10 ))
+    else
+      p10=0; pct="  ··· "
+    fi
+    fmt_dur "$pos"; det="  ${T[et_verificando]} · ${FMT}"
+    if (( dur > 0 )); then fmt_dur "$dur"; det+=" / ${FMT}"; fi
+    corta "$det" $(( COLS - 14 - bw )); det=$FMT
+    barra $(( p10 * bw / 1000 )) "$bw"
+    l2="     ${BARRA}  ${NEG}${pct}${R}${DIM}${det}${R}"
   else
     # Sem progresso agora: a linha informativa mais recente do log diz a etapa
     # (extraindo, baixando legendas, mesclando, embutindo…).
@@ -1226,9 +1298,10 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     /^@@D@@/ {
       d = substr($0, 6); n = split(d, f, S); p = f[n]; sub(/.*\//, "", p); novo = !(p in ja)
       if (!(p in st)) { ordem[++k] = p; st[p] = novo } else if (novo) st[p] = 1
-      dado[p] = d
+      dado[p] = d; ruim[p] = 0; ult = p
     }
-    END { for (i = 1; i <= k; i++) print (st[ordem[i]] ? "N" : "J") S dado[ordem[i]] }')
+    /^@@V@@ERRO/ { if (ult != "") { ruim[ult] = 1; delete ja[ult] } }   # reprovado na verificação (-v): o próximo é novo
+    END { for (i = 1; i <= k; i++) if (!ruim[ordem[i]]) print (st[ordem[i]] ? "N" : "J") S dado[ordem[i]] }')
   n_done=${#dones[@]}
 
   for d in "${dones[@]}"; do
@@ -1861,7 +1934,7 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
 }
 
 monta_args_ytdlp() {
-  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA
+  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd
   FORMATO='bv*+ba/b'
   # Com limite, vale o lado menor da imagem: a altura em vídeos deitados e a largura nos
   # verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
@@ -1908,6 +1981,10 @@ monta_args_ytdlp() {
   (( LEGENDAS_AUTOMATICAS )) && YTDLP_ARGS+=(--write-subs --write-auto-subs --compat-options no-keep-subs)
   (( SPONSORBLOCK ))         && YTDLP_ARGS+=(--sponsorblock-mark all)
   (( SEM_PLAYLIST ))         && YTDLP_ARGS+=(--no-playlist)
+  if (( VERIFICAR )); then                    # o "%" do caminho viraria campo do modelo do yt-dlp
+    printf -v cmd 'bash %q --verificar-arquivo %q' "${GRABIT_SCRIPT//%/%%}" "${T[sufixo_ruim]}"
+    YTDLP_ARGS+=(--exec "after_move:$cmd %(filepath)q %(duration|0)q")
+  fi
   # Histórico: o que já foi baixado é pulado antes de tudo (na maioria dos sites,
   # sem nem acessar a página). Sem ele, o yt-dlp reextrai o vídeo, baixa a capa de
   # novo e reescreve o arquivo inteiro só para dizer que ele já existe.
@@ -1953,6 +2030,7 @@ t kv_legendas "$IDIOMAS_LEGENDAS"; txt_extras=$TXT
 (( LEGENDAS_AUTOMATICAS )) && txt_extras+=${T[kv_automaticas]}
 txt_extras+=${T[kv_extras_resto]}
 (( SO_PRINCIPAL )) && txt_extras+=${T[kv_principal]}
+(( VERIFICAR ))    && txt_extras+=${T[kv_verificar]}
 (( SPONSORBLOCK )) && txt_extras+=", SponsorBlock"
 if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}${T[imp_indisp]}${R}"
 elif (( TENTATIVAS > 1 )); then txt_imp=${T[imp_retry]}

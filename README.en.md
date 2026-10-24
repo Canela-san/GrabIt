@@ -123,6 +123,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-a` | include automatic subtitles (manual ones still take priority) | — |
 | `-s` | mark sponsors and intros as chapters ([SponsorBlock](https://sponsor.ajay.app)) | — |
 | `-i` | ignore the download history and check file by file | — |
+| `-v` | full check: decode every video end to end looking for defects | — |
 | `-L pt\|en` | language of the messages: Portuguese or English | the system's |
 | `-h` | show the help (`grabit -L en -h` shows it in English) | — |
 
@@ -152,6 +153,7 @@ COOKIES_NAVEGADOR=firefox
 | `LEGENDAS_AUTOMATICAS` | `1` includes automatic subtitles | `0` |
 | `SPONSORBLOCK` | `1` marks sponsors and intros as chapters | `0` |
 | `SEM_PLAYLIST` | `1` downloads just the video when the link also has a playlist | `0` |
+| `VERIFICAR` | `1` runs the full check on every download (same as `-v`) | `0` |
 | `SO_PRINCIPAL` | `1` downloads only the main video of pages with several videos (same as `-u`) | `0` |
 | `COOKIES_NAVEGADOR` | browser whose login will be used | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
@@ -206,6 +208,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 - **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A download that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, network drop) **starts over from scratch** next time instead of resuming the pieces: resuming can leave holes in the video, and here quality comes before speed. The links that were still pending go to `links_falhos.txt`.
 - **Retries:** temporary errors (network, 403, 429) go back to the end of the queue, impersonating a browser when `curl-cffi` is installed. Permanent errors (private, removed video, 404) aren't retried.
 - **History:** every downloaded video is recorded in `Downloads/.grabit-historico.txt` (site + video ID). Next time it's skipped before anything else: on most sites GrabIt doesn't even need to open the page. Without the history, yt-dlp would open the page again, download the cover and rewrite the whole file just to conclude it already exists. Videos downloaded before the history existed go through that check only once and are added to it.
+- **Full check (`-v`):** after downloading, ffmpeg decodes the whole video, frame by frame, with the progress on the panel. Any defect fails the file: it doesn't go into the history, it's kept with `.with-errors` in its name and the video is downloaded again from scratch. If the defect comes from the site itself and happens again, the link goes to `links_falhos.txt`. It guarantees a flawless file, at the cost of CPU and time.
 - **Main video (`-u`):** when a page has several videos, GrabIt first checks each one's duration (from the site or, if it doesn't say, by reading just the video's header) and downloads only the longest — previews and related videos tend to be short. Links with a single video skip this step. Don't use it with playlists and channels: they'd also yield a single video.
 - **Logs:** yt-dlp's full output for every link with a problem is kept in `Downloads/logs/<date>/`.
 - **Terminal:** the panel adapts to the window width (even if you resize it midway), aligns titles with emoji and Asian characters and, if the output is redirected to a file, swaps the panel for plain lines without colors.

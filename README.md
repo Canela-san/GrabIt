@@ -121,6 +121,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
 | `-s` | marca patrocínios e intros como capítulos ([SponsorBlock](https://sponsor.ajay.app)) | — |
 | `-i` | ignora o histórico de baixados e confere arquivo por arquivo | — |
+| `-v` | verificação completa: decodifica cada vídeo inteiro atrás de defeitos | — |
 | `-L pt\|en` | idioma das mensagens: português ou inglês | o do sistema |
 | `-h` | mostra a ajuda (`grabit -L en -h` mostra em inglês) | — |
 
@@ -149,6 +150,7 @@ COOKIES_NAVEGADOR=firefox
 | `LEGENDAS_AUTOMATICAS` | `1` inclui legendas automáticas | `0` |
 | `SPONSORBLOCK` | `1` marca patrocínios e intros como capítulos | `0` |
 | `SEM_PLAYLIST` | `1` baixa só o vídeo quando o link também tem playlist | `0` |
+| `VERIFICAR` | `1` faz a verificação completa em todo download (o mesmo que `-v`) | `0` |
 | `SO_PRINCIPAL` | `1` baixa só o vídeo principal de páginas com vários vídeos (o mesmo que `-u`) | `0` |
 | `COOKIES_NAVEGADOR` | navegador cujo login será usado | — |
 | `USAR_HISTORICO` | `0` desliga o histórico de baixados | `1` |
@@ -201,6 +203,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um download que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de rede) **recomeça do zero** na próxima vez, em vez de retomar os pedaços: a retomada pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam vão para `links_falhos.txt`.
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
+- **Verificação completa (`-v`):** depois de baixar, o ffmpeg decodifica o vídeo inteiro, quadro a quadro, com o progresso no painel. Qualquer defeito reprova o arquivo: ele não entra no histórico, fica guardado com `.com-erros` no nome e o vídeo é baixado de novo do zero. Se o defeito vier do próprio site e se repetir, o link vai para `links_falhos.txt`. Garante o arquivo perfeito, ao custo de CPU e tempo.
 - **Vídeo principal (`-u`):** quando uma página tem vários vídeos, o GrabIt consulta antes a duração de cada um (pelo site ou, se ele não informar, lendo só o cabeçalho do vídeo) e baixa só o mais longo — prévias e relacionados costumam ser curtos. Links com um único vídeo não passam por essa etapa. Não use com playlists e canais: deles também sairia um vídeo só.
 - **Logs:** a saída completa do yt-dlp para cada link com problema fica em `Downloads/logs/<data>/`.
 - **Terminal:** o painel se adapta à largura da janela (inclusive se você redimensionar no meio), alinha títulos com emoji e caracteres asiáticos e, se a saída for redirecionada para um arquivo, troca o painel por linhas simples, sem cores.
