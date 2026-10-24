@@ -86,10 +86,13 @@ Os links baixados com sucesso **saem da lista e vão para a seção `BAIXADOS`**
 https://vimeo.com/XXXXXXXXX          # este falhou e continua aqui
 
 # ==================== BAIXADOS ====================
-# Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo.
+# Links já baixados com sucesso. O GrabIt ignora tudo até o fim desta seção.
 https://www.youtube.com/watch?v=XXXXXXXXXXX  # ✔ 2026-10-24 · Título do vídeo
 https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 vídeos · Aula 1 e outros
+# ================ FIM DOS BAIXADOS ================
 ```
+
+O que vier depois da linha `FIM DOS BAIXADOS` volta a contar como link a baixar, então acrescentar no fim do arquivo funciona (`echo LINK >> links.txt`); na próxima vez, o GrabIt sobe esses links para a lista de cima.
 
 > Em inglês, a seção se chama `DOWNLOADED`; o GrabIt reconhece os dois nomes, então trocar de idioma não bagunça a lista.
 >
@@ -130,6 +133,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
 | `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
 | `-d` | organiza em subpastas por site e canal: `Downloads/youtube.com/Canal/` | — |
+| `-f` | fila viva: depois da lista, continua aberto baixando o que você acrescentar ao arquivo de links | — |
 | `-m` | organiza para Jellyfin, Plex e Kodi: `Canal/Season 2026/`, com `.nfo` e capa ao lado | — |
 | `-u` | em páginas com vários vídeos (prévias, relacionados…), baixa só o principal: o mais longo | — |
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
@@ -236,6 +240,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um download que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de rede) **recomeça do zero** na próxima vez, em vez de retomar os pedaços: a retomada pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam vão para `links_falhos.txt`.
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
+- **Fila viva (`-f`):** depois de terminar a lista, o GrabIt continua aberto e confere o arquivo de links a cada 2 segundos: o que você acrescentar (em cima ou no fim do arquivo) entra na fila e começa a baixar. Quando a fila esvazia, os baixados vão para a seção `BAIXADOS` e, se o lote demorou, chega o aviso de término. Sai com <kbd>q</kbd> ou <kbd>Ctrl</kbd>+<kbd>C</kbd>. Só acontece com a opção: sem `-f`, o GrabIt sempre fecha ao terminar.
 - **Jellyfin, Plex e Kodi (`-m`):** cada canal vira uma série, com uma temporada por ano e episódios nomeados pela data (`Canal/Season 2026/Canal - 2026-10-24 - Título [id].mkv`), formato que os três reconhecem. Ao lado de cada vídeo ficam a capa e um `.nfo` com título, data e descrição, e na pasta do canal um `tvshow.nfo`. Aponte uma biblioteca do tipo *Séries* para a pasta de downloads. Só acontece com a opção, e ela tem prioridade sobre `-d`.
 - **Só áudio (`-x`):** baixa a melhor faixa de som e a guarda no formato em que o site entrega (opus, m4a…), sem recomprimir, com capa, capítulos e metadados. Com `FORMATO_AUDIO=mp3` (ou outro), converte na melhor qualidade. O histórico de áudio é separado (`.grabit-historico-audio.txt`): ter baixado o vídeo não impede de baixar o áudio, e vice-versa.
 - **Verificação completa (`-v`):** depois de baixar, o ffmpeg decodifica o vídeo inteiro, quadro a quadro, com o progresso no painel. Qualquer defeito reprova o arquivo: ele não entra no histórico, fica guardado com `.com-erros` no nome e o vídeo é baixado de novo do zero. Se o defeito vier do próprio site e se repetir, o link vai para `links_falhos.txt`. Garante o arquivo perfeito, ao custo de CPU e tempo.

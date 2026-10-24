@@ -305,6 +305,12 @@ idioma_pt() {
     [notif_sem_curl]="Para avisar no celular (NTFY_TOPICO) é preciso o curl."
     [notif_falhou]="Não consegui enviar o aviso para %s."
     [kv_ntfy]=", aviso no celular"
+    [fv_aguardando]="fila viva: acrescente links em %s · q sai"
+    [fv_novos]="%d link(s) novo(s) na fila"
+    [fv_titulo]="aguardando links"
+    [fv_sem_arquivo]="-f vigia arquivos de links, mas a lista veio do comando ou da entrada padrão: nada a vigiar."
+    [kv_fila_viva]="Fila viva"
+    [kv_fv]="ligada (-f): o GrabIt continua aberto esperando novos links · q sai"
     [dep_faltando]="Faltando: %s"
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
@@ -314,7 +320,8 @@ idioma_pt() {
     [sem_links]="Nenhum link válido (http/https) em: %s."
     [nada]="nada"
     [marca]="# ==================== BAIXADOS ===================="
-    [marca_desc]="# Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo."
+    [marca_desc]="# Links já baixados com sucesso. O GrabIt ignora tudo até o fim desta seção."
+    [marca_fim]="# ================ FIM DOS BAIXADOS ================"
     [tentativa_n]="%dª tentativa · "
     [ni_tentativa]="(%dª tentativa)"
     [log_tentativa]="# ── tentativa %d ──"
@@ -420,6 +427,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -x            só o áudio (a melhor faixa, sem recomprimir)
   -d            organiza em subpastas por site e canal: Downloads/site/canal/
   -m            para Jellyfin, Plex e Kodi: canal/Season ano/, com .nfo e capa
+  -f            fila viva: depois da lista, continua aberto baixando o que você
+                acrescentar no arquivo de links (q ou Ctrl+C para sair)
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
@@ -624,6 +633,12 @@ idioma_en() {
     [notif_sem_curl]="Phone notifications (NTFY_TOPICO) need curl."
     [notif_falhou]="Couldn't send the notification to %s."
     [kv_ntfy]=", phone notification"
+    [fv_aguardando]="live queue: add links to %s · q quits"
+    [fv_novos]="%d new link(s) in the queue"
+    [fv_titulo]="waiting for links"
+    [fv_sem_arquivo]="-f watches link files, but the list came from the command line or standard input: nothing to watch."
+    [kv_fila_viva]="Live queue"
+    [kv_fv]="on (-f): GrabIt stays open waiting for new links · q quits"
     [dep_faltando]="Missing: %s"
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
@@ -633,7 +648,8 @@ idioma_en() {
     [sem_links]="No valid (http/https) links in: %s."
     [nada]="nothing"
     [marca]="# ==================== DOWNLOADED ===================="
-    [marca_desc]="# Successfully downloaded links. GrabIt ignores everything below this line."
+    [marca_desc]="# Successfully downloaded links. GrabIt ignores everything until the end of this section."
+    [marca_fim]="# ================ END OF DOWNLOADED ================"
     [tentativa_n]="attempt %d · "
     [ni_tentativa]="(attempt %d)"
     [log_tentativa]="# ── attempt %d ──"
@@ -739,6 +755,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   -x            audio only (the best track, no re-encoding)
   -d            sort into subfolders by site and channel: Downloads/site/channel/
   -m            for Jellyfin, Plex and Kodi: channel/Season year/, with .nfo and cover
+  -f            live queue: after the list, stays open downloading whatever you add
+                to the link file (q or Ctrl+C to quit)
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
@@ -901,8 +919,8 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0
-while getopts ":l:o:j:c:b:r:L:pausivxdmFh" op; do
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0
+while getopts ":l:o:j:c:b:r:L:pausivxdmfFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -921,6 +939,7 @@ while getopts ":l:o:j:c:b:r:L:pausivxdmFh" op; do
     x) SO_AUDIO=1;                     ORIGEM[SO_AUDIO]=opção ;;
     d) SUBPASTAS=1 ;;                  # só pela opção, de propósito: nada de pastas sem pedir
     m) MIDIA=1 ;;                      # idem
+    f) FILA_VIVA=1 ;;                  # idem: o GrabIt só fica aberto esperando links se pedido
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -1041,9 +1060,11 @@ FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
-TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ESCOLHIDO=0;
-INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0;
-TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0; ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
+TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
+ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
+declare -A CONHECIDO=() MARCA_ARQ=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -1415,7 +1436,8 @@ monta_live() {
   local msg=""
   if (( PARANDO )); then msg=${T[k_parando]}
   elif (( PAUSADO )); then msg=${T[k_pausado]}
-  elif (( MSG_ATE >= SECONDS )); then msg=$MSG_PAINEL; fi
+  elif (( MSG_ATE >= SECONDS )); then msg=$MSG_PAINEL
+  elif (( FILA_VIVA && ATIVOS == 0 )); then t fv_aguardando "$FONTE_LINKS"; msg=$TXT; fi
   if [[ -n $msg ]]; then
     corta "$msg" $(( larg - 6 )); msg=$FMT
     printf -v reg '%*s' $(( larg - 4 - LARG )) ''
@@ -1429,7 +1451,7 @@ monta_live() {
   l="  ${NEG}${T[total]}${R} "; w=$(( 3 + ${#T[total]} ))
   bw=$(( COLS - 76 )); (( bw > 24 )) && bw=24
   if (( bw >= 6 )); then
-    barra $(( FINALIZADOS * bw / TOTAL )) "$bw"
+    if (( TOTAL > 0 )); then barra $(( FINALIZADOS * bw / TOTAL )) "$bw"; else barra 0 "$bw"; fi
     l+="${BARRA}  "; w=$(( w + bw + 2 ))
   fi
   plano="${FINALIZADOS}/${TOTAL}  ✔ ${N_OK}  ↷ ${N_JA}  ✖ ${N_ERRO}"
@@ -1489,6 +1511,7 @@ desenha() {
     for l in "${LIVE[@]}"; do out+="$l"$'\n'; done
     LIVE_H=${#LIVE[@]}
     j="${FINALIZADOS}/${TOTAL} · GrabIt"           # título da janela/aba do terminal
+    (( FILA_VIVA && ATIVOS == 0 )) && j="GrabIt · ${T[fv_titulo]}"
     if [[ $j != "$JANELA" ]]; then out+="${ESC}]0;${j}"$'\a'; JANELA=$j; fi
   fi
   [[ ${1:-} == final ]] && (( INTERATIVO )) && out+="${ESC}[?7h"   # religa a quebra de linha
@@ -1785,7 +1808,7 @@ muda_simultaneos() {                          # muda_simultaneos +1|-1
   local novo=$(( J_ALVO + $1 )) linhas max
   linhas=$(tput lines 2>/dev/null); [[ $linhas =~ ^[0-9]+$ ]] || linhas=24
   max=$(( (linhas - 3) / 2 )); (( max < 1 )) && max=1          # o painel precisa caber na tela
-  (( max > TOTAL )) && max=$TOTAL
+  (( ! FILA_VIVA && max > TOTAL )) && max=$TOTAL
   (( novo > max )) && novo=$max
   (( novo < 1 )) && novo=1
   J_ALVO=$novo
@@ -1803,6 +1826,35 @@ trata_tecla() {
     +|=) muda_simultaneos 1 ;;
     -|_) muda_simultaneos -1 ;;
   esac
+  return 0
+}
+
+# ───── Fila viva (-f): depois da lista, o GrabIt continua aberto vigiando os arquivos de
+# ───── links; o que for acrescentado entra no fim da fila.
+novos_links() {
+  local arq m linha palavra palavras=() bruto=() n=0 salva=$N_NA_SECAO
+  for arq in "${ARQUIVOS_ENTRADA[@]}"; do
+    [[ -f $arq && -r $arq ]] || continue
+    m=$(stat -c %Y:%s -- "$arq" 2>/dev/null || stat -f %m:%z -- "$arq" 2>/dev/null)
+    [[ $m == "${MARCA_ARQ[$arq]:-}" ]] && continue
+    MARCA_ARQ[$arq]=$m
+    bruto=()
+    le_lista "$arq"
+    for linha in "${bruto[@]}"; do
+      IFS=$' \t\r' read -ra palavras <<<"${linha#$'\xef\xbb\xbf'}"
+      (( ${#palavras[@]} )) || continue
+      [[ ${palavras[0]} == \#* ]] && continue
+      links_da_linha "$linha"
+      for palavra in "${PALAVRAS_LINK[@]}"; do
+        [[ -n ${CONHECIDO[$palavra]:-} ]] && continue
+        CONHECIDO[$palavra]=1; LINKS+=("$palavra"); TOTAL=$(( TOTAL + 1 ))
+        site_de "$palavra"; SITE[$TOTAL]=$FMT
+        n=$(( n + 1 ))
+      done
+    done
+  done
+  N_NA_SECAO=$salva
+  if (( n > 0 )); then t fv_novos "$n"; MSG_PAINEL=$TXT; MSG_ATE=$(( SECONDS + 4 )); fi
   return 0
 }
 
@@ -1903,7 +1955,7 @@ resumo() {
   if (( BYTES_NOVOS > 0 && SECONDS > 0 )); then
     fmt_bytes $(( BYTES_NOVOS / SECONDS )); t s_media "$FMT"; media="  ${DIM}${TXT}${R}"
   fi
-  (( CANCELADO || (PARANDO && FINALIZADOS < TOTAL) )) && titulo_r=${T[s_resumo_parcial]}
+  (( (CANCELADO || PARANDO) && FINALIZADOS < TOTAL )) && titulo_r=${T[s_resumo_parcial]}
   printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "$titulo_r" "$R"
   linha_resumo "✔" "$VERDE"    "${T[s_baixados]}" "${NEG}${N_OK}${R}"
   linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"       "${NEG}${N_JA}${R}"
@@ -1925,14 +1977,18 @@ resumo() {
 }
 
 limpa() {                                     # trap EXIT: sempre devolve o terminal limpo
-  local rc=$?
+  local rc=$? s rodando=0
   trap - EXIT INT TERM HUP WINCH
+  for (( s = 0; s < J; s++ )); do (( ${SLOT_IDX[$s]:-0} > 0 )) && rodando=1; done
   mata_jobs
   descarta_parciais
   if (( CANCELADO && COMECOU )); then
     move_baixados
     desenha final
-    printf '\n  %s⚠ %s%s%s\n' "$AMARELO" "${T[c_cancelado]}" "$R" "${T[c_descartado]}"
+    # na fila viva, Ctrl+C com nada baixando é só o jeito de sair
+    if (( rodando || ! FILA_VIVA )); then
+      printf '\n  %s⚠ %s%s%s\n' "$AMARELO" "${T[c_cancelado]}" "$R" "${T[c_descartado]}"
+    fi
     resumo
   elif (( CANCELADO )); then
     printf '\n  %s⚠ %s%s\n\n' "$AMARELO" "${T[c_cancelado]}" "$R"
@@ -2106,6 +2162,14 @@ eh_marca_baixados() {
   [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(baixados|downloaded)[[:space:]]*=+[[:space:]]*$ ]]
 }
 
+# A seção termina numa linha "# ===== FIM DOS BAIXADOS =====" (ou END OF DOWNLOADED);
+# o que vier depois dela volta a contar — assim "echo LINK >> links.txt" funciona mesmo
+# com a seção no fim do arquivo. Sem essa linha (arquivos antigos), a seção vai até o fim.
+eh_fim_baixados() {
+  local l=${1%$'\r'}
+  [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(fim[[:space:]]+dos[[:space:]]+baixados|end[[:space:]]+of[[:space:]]+downloaded)[[:space:]]*=+[[:space:]]*$ ]]
+}
+
 # links_da_linha LINHA → PALAVRAS_LINK: os links da linha, sem o comentário do fim
 # ("www." vira "https://www.")
 links_da_linha() {
@@ -2127,6 +2191,7 @@ le_lista() {
   mapfile -t conteudo < "$1"
   for linha in "${conteudo[@]}"; do
     if (( secao )); then
+      if eh_fim_baixados "$linha"; then secao=0; continue; fi
       links_da_linha "$linha"; N_NA_SECAO=$(( N_NA_SECAO + ${#PALAVRAS_LINK[@]} ))
     elif eh_marca_baixados "$linha"; then
       secao=1
@@ -2168,12 +2233,15 @@ ler_links() {
     if (( ${#PALAVRAS_LINK[@]} == 0 )); then INVALIDAS=$(( INVALIDAS + 1 )); continue; fi
     for palavra in "${PALAVRAS_LINK[@]}"; do
       if [[ -n ${visto[$palavra]:-} ]]; then DUPLICADOS=$(( DUPLICADOS + 1 ))
-      else visto[$palavra]=1; LINKS+=("$palavra"); fi
+      else visto[$palavra]=1; LINKS+=("$palavra"); CONHECIDO[$palavra]=1; fi
     done
   done
   TOTAL=${#LINKS[@]}
+  if (( FILA_VIVA && ${#ARQUIVOS_ENTRADA[@]} == 0 )); then   # sem arquivo, não há o que vigiar
+    aviso "${T[fv_sem_arquivo]}"; FILA_VIVA=0
+  fi
   FONTE_LINKS=$(IFS=,; printf '%s' "${fontes[*]}"); FONTE_LINKS=${FONTE_LINKS//,/, }
-  if (( TOTAL == 0 )); then
+  if (( TOTAL == 0 && ! FILA_VIVA )); then
     if (( N_NA_SECAO > 0 )); then
       if (( N_NA_SECAO == 1 )); then t nada_1 "$FONTE_LINKS"; else t nada_n "$N_NA_SECAO" "$FONTE_LINKS"; fi
       printf '  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
@@ -2220,15 +2288,18 @@ anota() {
 }
 
 move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" e "nota" de move_baixados)
-  local arq=$1 linha p todos secao=0 bom="" eol="" n
-  local conteudo=() ativa=() resto=() movidas=()
+  local arq=$1 linha p todos secao=0 tem_secao=0 depois=0 bom="" eol="" n
+  local conteudo=() ativa=() cauda=() resto=() movidas=()
   mapfile -t conteudo < "$arq" || return 0
   (( ${#conteudo[@]} )) || return 0
-  if [[ ${conteudo[0]} == $'﻿'* ]]; then bom=$'﻿'; conteudo[0]=${conteudo[0]#$'﻿'}; fi
+  if [[ ${conteudo[0]} == $'\xef\xbb\xbf'* ]]; then bom=$'\xef\xbb\xbf'; conteudo[0]=${conteudo[0]#$'\xef\xbb\xbf'}; fi
   [[ ${conteudo[0]} == *$'\r' ]] && eol=$'\r'          # mantém o fim de linha do Windows
   for linha in "${conteudo[@]}"; do
-    if (( secao )); then resto+=("$linha"); continue; fi
-    if eh_marca_baixados "$linha"; then secao=1; resto+=("$linha"); continue; fi
+    if (( secao )); then
+      if eh_fim_baixados "$linha"; then secao=0; depois=1; continue; fi   # ela é reescrita no fim
+      resto+=("$linha"); continue
+    fi
+    if eh_marca_baixados "$linha"; then secao=1; tem_secao=1; resto+=("$linha"); continue; fi
     links_da_linha "$linha"
     todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
     for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${ok[$p]:-} ]] || { todos=0; break; }; done
@@ -2236,16 +2307,20 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
       n=""
       for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${nota[$p]:-} ]] && n+="${n:+ | }${nota[$p]}"; done
       anota "$linha" "$n"; movidas+=("$FMT")
+    elif (( depois )); then
+      cauda+=("$linha")                         # acrescentado depois da seção: sobe para a lista
     else
       ativa+=("$linha")
     fi
   done
   (( ${#movidas[@]} )) || return 0
-  if (( ! secao )); then
-    (( ${#ativa[@]} )) && [[ -n ${ativa[-1]//[[:space:]]/} ]] && resto+=("$eol")
-    resto+=("${MARCA_BAIXADOS}${eol}" "${T[marca_desc]}${eol}")
-  fi
-  { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}"; } > "$arq.grabit-tmp" &&
+  # a lista de cima, depois o que estava abaixo da seção, uma linha em branco e a seção
+  while (( ${#ativa[@]} )) && [[ -z ${ativa[-1]//[[:space:]]/} ]]; do unset 'ativa[-1]'; done
+  while (( ${#cauda[@]} )) && [[ -z ${cauda[-1]//[[:space:]]/} ]]; do unset 'cauda[-1]'; done
+  ativa+=("${cauda[@]}")
+  (( ${#ativa[@]} )) && ativa+=("$eol")
+  (( tem_secao )) || resto=("${MARCA_BAIXADOS}${eol}" "${T[marca_desc]}${eol}")
+  { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}" "${T[marca_fim]}${eol}"; } > "$arq.grabit-tmp" &&
     cat "$arq.grabit-tmp" > "$arq"
   rm -f -- "$arq.grabit-tmp"
   N_MOVIDOS=$(( N_MOVIDOS + ${#movidas[@]} ))
@@ -2329,11 +2404,11 @@ monta_args_ytdlp() {
 
 # notifica: avisa que o lote acabou — sino e notificação na área de trabalho (se levou 1 min
 # ou mais: lote rápido você viu acabar) e, com NTFY_TOPICO, no celular. Só o resumo sai daqui.
-notifica() {
-  local msg tempo url etiqueta=white_check_mark
+notifica() {                                  # notifica [DURAÇÃO] (padrão: o tempo todo)
+  local msg tempo url etiqueta=white_check_mark dur=${1:-$SECONDS}
   fmt_tempo "$SECONDS"; tempo=$FMT
   t notif_msg "$N_OK" "$N_JA" "$N_ERRO" "$tempo"; msg=$TXT
-  if (( NOTIFICAR && SECONDS >= 60 )); then
+  if (( NOTIFICAR && dur >= 60 )); then
     (( INTERATIVO )) && printf '\a'
     if command -v notify-send >/dev/null 2>&1; then
       notify-send -a GrabIt -i folder-download "GrabIt" "$msg" 2>/dev/null
@@ -2379,7 +2454,7 @@ printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
 prepara_parciais
 
 J=$DOWNLOADS_SIMULTANEOS
-(( J > TOTAL )) && J=$TOTAL
+(( ! FILA_VIVA && J > TOTAL )) && J=$TOTAL
 LIMITE_J=0
 if (( INTERATIVO )); then                       # o painel (2 linhas por vídeo + 2) precisa caber na tela
   linhas=$(tput lines 2>/dev/null); [[ $linhas =~ ^[0-9]+$ ]] || linhas=24
@@ -2450,6 +2525,7 @@ fi
 t kv_paralelo_v "$J" "$CONEXOES_POR_VIDEO"; txt_paralelo=$TXT
 (( TENTATIVAS > 1 )) && { t kv_tentativas "$TENTATIVAS"; txt_paralelo+=$TXT; }
 kv "${T[kv_paralelo]}" "$txt_paralelo"
+(( FILA_VIVA )) && kv "${T[kv_fila_viva]}" "${T[kv_fv]}"
 kv "${T[kv_extras]}"   "$txt_extras"
 FFMPEG_VER=${FFMPEG_VER:-?}
 kv "${T[kv_ferramentas]}" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
@@ -2493,8 +2569,9 @@ if (( INTERATIVO )); then
   TITULO_EMPILHADO=1
 fi
 
-while (( FINALIZADOS < TOTAL )); do
+while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   atualiza_largura
+  if (( FILA_VIVA && SECONDS >= PROX_VIGIA )); then novos_links; PROX_VIGIA=$(( SECONDS + 2 )); fi
 
   # 1) recolhe quem terminou (e devolve à fila quem merece outra tentativa)
   for (( s = 0; s < J; s++ )); do
@@ -2507,6 +2584,7 @@ while (( FINALIZADOS < TOTAL )); do
     (( ${TENTATIVA[$idx]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
     BAIXOU=0
     processa_resultado "$idx" "$rc"
+    [[ -n ${SUCESSO[$idx]:-} ]] && MOVER=1
     # para estimar o tempo restante, só contam os links que baixaram algo de fato
     (( BAIXOU )) && { T_SOMA=$(( T_SOMA + SECONDS - ${INICIO_JOB[$idx]:-$SECONDS} )); T_N=$(( T_N + 1 )); }
   done
@@ -2524,7 +2602,16 @@ while (( FINALIZADOS < TOTAL )); do
     SLOT_PID[$s]=$ULTIMO_PID
     ativos=$(( ativos + 1 ))
   done
+  ATIVOS=$ativos
   (( PARANDO && ativos == 0 )) && break         # q: os que estavam rodando terminaram
+  if (( FILA_VIVA )); then
+    if (( ativos > 0 && OCUPADO_DESDE < 0 )); then OCUPADO_DESDE=$SECONDS
+    elif (( ativos == 0 && OCUPADO_DESDE >= 0 )); then
+      # a fila esvaziou: os baixados vão para a seção BAIXADOS e, se demorou, avisa
+      (( MOVER )) && { move_baixados; MOVER=0; }
+      notifica $(( SECONDS - OCUPADO_DESDE )); OCUPADO_DESDE=-1
+    fi
+  fi
 
   desenha
   # Tecla apertada? "read -t 0" só confere, sem esperar. (Esperar no próprio read, com
@@ -2541,6 +2628,6 @@ desenha final
 descarta_parciais
 move_baixados
 resumo
-notifica
+(( FILA_VIVA )) || notifica
 (( N_ERRO > 0 || FINALIZADOS < TOTAL )) && exit 1
 exit 0
