@@ -114,19 +114,43 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-i` | ignora o histórico de baixados e confere arquivo por arquivo | — |
 | `-h` | mostra a ajuda | — |
 
-Algumas configurações também podem vir de variáveis de ambiente:
+## Configuração
 
-| Variável | O que faz | Padrão |
+Os padrões ficam no **`grabit.config`**, ao lado do `grabit.sh`. Ele é criado na primeira execução com todas as opções comentadas: para mudar uma, tire o `#` do começo da linha e edite o valor.
+
+```ini
+# grabit.config
+PASTA_SAIDA=~/Vídeos/GrabIt
+DOWNLOADS_SIMULTANEOS=3
+COOKIES_NAVEGADOR=firefox
+```
+
+| Chave | O que faz | Padrão |
 |---|---|---|
-| `IDIOMAS_LEGENDAS` | idiomas das legendas (`all` = todas) | `pt.*,en.*` |
+| `ARQUIVO_LINKS` | lista lida quando você roda só `grabit` | `links.txt` |
+| `PASTA_SAIDA` | onde os vídeos são salvos | `./Downloads` |
+| `DOWNLOADS_SIMULTANEOS` | vídeos ao mesmo tempo | `2` |
+| `CONEXOES_POR_VIDEO` | conexões por vídeo | `4` |
 | `TENTATIVAS` | tentativas por link (`1` = sem repetir) | `2` |
+| `IDIOMAS_LEGENDAS` | idiomas das legendas (`all` = todas) | `pt.*,en.*` |
+| `LEGENDAS_AUTOMATICAS` | `1` inclui legendas automáticas | `0` |
+| `SPONSORBLOCK` | `1` marca patrocínios e intros como capítulos | `0` |
+| `SEM_PLAYLIST` | `1` baixa só o vídeo quando o link também tem playlist | `0` |
+| `COOKIES_NAVEGADOR` | navegador cujo login será usado | — |
+| `USAR_HISTORICO` | `0` desliga o histórico de baixados | `1` |
 | `ARQUIVO_FALHAS` | onde salvar os links que falharam | `links_falhos.txt` |
-| `ARQUIVO_HISTORICO` | onde fica o histórico de baixados | `<pasta>/.grabit-historico.txt` |
-| `NO_COLOR` | desliga as cores | — |
+
+A prioridade é: **`grabit.config` < variável de ambiente < opção do comando**. Assim dá para mudar algo só uma vez sem editar o arquivo:
 
 ```bash
-IDIOMAS_LEGENDAS=all TENTATIVAS=3 grabit
+DOWNLOADS_SIMULTANEOS=4 grabit    # vale só nesta execução
+grabit -j 4                       # idem, pela opção
+grabit --config                   # mostra os valores em uso e de onde veio cada um
 ```
+
+O arquivo fica fora do Git (`.gitignore`), então atualizar o GrabIt nunca mexe nas suas configurações. Para voltar aos padrões, basta apagá-lo: ele é recriado.
+
+Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_COLOR` (desliga as cores), só como variáveis de ambiente.
 
 ## No fim, um resumo
 

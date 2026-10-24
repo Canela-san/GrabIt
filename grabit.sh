@@ -38,8 +38,10 @@
 #    retomar pedaços não garante a qualidade. A pasta Downloads/.parciais só existe
 #    enquanto o GrabIt roda. Os links que faltavam vão para links_falhos.txt.
 #
-#  Variáveis de ambiente também funcionam, ex.: DOWNLOADS_SIMULTANEOS=3 grabit
-#  Só por variável: IDIOMAS_LEGENDAS="pt.*,en.*" ("all" = todas) · TENTATIVAS=2 · NO_COLOR=1
+#  Configurações permanentes ficam no grabit.config, ao lado do grabit.sh (criado na
+#  primeira execução, com todos os padrões comentados). Veja-as com: grabit --config
+#  Prioridade: grabit.config < variável de ambiente < opção do comando, ex.:
+#      DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
 # ==============================================================================
 
 if [ -z "${BASH_VERSION:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ] ||
@@ -61,20 +63,123 @@ fi
 export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
 # ───────────────────────────── Configuração ───────────────────────────────────
-ARQUIVO_LINKS="${ARQUIVO_LINKS:-links.txt}"
-PASTA_SAIDA="${PASTA_SAIDA:-./Downloads}"
-DOWNLOADS_SIMULTANEOS="${DOWNLOADS_SIMULTANEOS:-2}"   # vídeos ao mesmo tempo
-CONEXOES_POR_VIDEO="${CONEXOES_POR_VIDEO:-4}"         # fragmentos por vídeo
-TENTATIVAS="${TENTATIVAS:-2}"                         # tentativas por link (1 = sem repetir)
-IDIOMAS_LEGENDAS="${IDIOMAS_LEGENDAS:-pt.*,en.*}"     # "all" para todas
-LEGENDAS_AUTOMATICAS="${LEGENDAS_AUTOMATICAS:-0}"     # 1 = inclui legendas automáticas
-SPONSORBLOCK="${SPONSORBLOCK:-0}"                     # 1 = marca patrocínios/intros como capítulos
-SEM_PLAYLIST="${SEM_PLAYLIST:-0}"                     # 1 = link vídeo+playlist baixa só o vídeo
-COOKIES_NAVEGADOR="${COOKIES_NAVEGADOR:-}"            # ex.: firefox, chrome, brave
-ARQUIVO_FALHAS="${ARQUIVO_FALHAS:-links_falhos.txt}"
-USAR_HISTORICO="${USAR_HISTORICO:-1}"                 # 0 = não pula o que já foi baixado antes
-ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"            # padrão: <pasta de saída>/.grabit-historico.txt
+# Onde o GrabIt mora de verdade (seguindo links simbólicos, como ~/.local/bin/grabit):
+# é ali, ao lado do script, que fica o grabit.config.
+resolve_caminho() {                           # resolve_caminho ARQUIVO → CAMINHO_REAL
+  local f=$1 alvo dir
+  while [[ -L $f ]]; do
+    alvo=$(readlink -- "$f"); dir=$(cd -P -- "$(dirname -- "$f")" && pwd)
+    if [[ $alvo == /* ]]; then f=$alvo; else f="$dir/$alvo"; fi
+  done
+  dir=$(cd -P -- "$(dirname -- "$f")" && pwd)
+  CAMINHO_REAL="$dir/${f##*/}"
+}
+resolve_caminho "$0"
+GRABIT_SCRIPT=$CAMINHO_REAL
+GRABIT_DIR=${GRABIT_SCRIPT%/*}
+CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
+
+# Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
+# para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
+CHAVES_CONFIG=(ARQUIVO_LINKS PASTA_SAIDA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
+  IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST COOKIES_NAVEGADOR
+  USAR_HISTORICO ARQUIVO_FALHAS)
+declare -A DO_AMBIENTE=() ORIGEM=()
+for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
+
+ARQUIVO_LINKS=links.txt
+PASTA_SAIDA=./Downloads
+DOWNLOADS_SIMULTANEOS=2                       # vídeos ao mesmo tempo
+CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
+TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
+IDIOMAS_LEGENDAS='pt.*,en.*'                  # "all" para todas
+LEGENDAS_AUTOMATICAS=0                        # 1 = inclui legendas automáticas
+SPONSORBLOCK=0                                # 1 = marca patrocínios/intros como capítulos
+SEM_PLAYLIST=0                                # 1 = link vídeo+playlist baixa só o vídeo
+COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
+USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
+ARQUIVO_FALHAS=links_falhos.txt
+ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
+CONFIG_CRIADO=0; AVISOS_CONFIG=()
+
+modelo_config() {                             # o grabit.config criado na primeira execução
+  cat <<'EOF'
+# ==============================================================================
+#  grabit.config — configurações do GrabIt
+#
+#  Criado automaticamente na primeira execução, com todos os padrões comentados.
+#  Para mudar um valor, tire o "#" do começo da linha e edite. Para voltar ao
+#  padrão, comente a linha de novo (ou apague este arquivo: ele é recriado).
+#
+#  Prioridade: este arquivo < variáveis de ambiente < opções do comando.
+#  Veja os valores em uso com: grabit --config
+# ==============================================================================
+
+# Lista de links lida quando você roda só "grabit"
+#ARQUIVO_LINKS=links.txt
+
+# Pasta onde os vídeos são salvos
+#PASTA_SAIDA=./Downloads
+
+# Quantos vídeos baixar ao mesmo tempo (-j) e conexões por vídeo (-c)
+#DOWNLOADS_SIMULTANEOS=2
+#CONEXOES_POR_VIDEO=4
+
+# Tentativas por link quando a falha é passageira (1 = não tentar de novo)
+#TENTATIVAS=2
+
+# Idiomas das legendas ("all" = todas) e se inclui as automáticas (-a)
+#IDIOMAS_LEGENDAS=pt.*,en.*
+#LEGENDAS_AUTOMATICAS=0
+
+# Marca patrocínios/intros como capítulos com o SponsorBlock (-s)
+#SPONSORBLOCK=0
+
+# Link de vídeo dentro de playlist: baixar só o vídeo (-p)
+#SEM_PLAYLIST=0
+
+# Usar os cookies (login) de um navegador: firefox, chrome, brave… (-b)
+#COOKIES_NAVEGADOR=
+
+# Pular na hora os vídeos já baixados antes (0 = conferir sempre; o mesmo que -i)
+#USAR_HISTORICO=1
+
+# Onde salvar os links que falharam
+#ARQUIVO_FALHAS=links_falhos.txt
+EOF
+}
+
+# carrega_config: lê CHAVE=valor do grabit.config (sem executar nada do arquivo). Valores
+# podem vir entre aspas; "# comentário" no fim da linha é ignorado.
+carrega_config() {
+  local linha chave valor n=0
+  if [[ ! -e $CONFIG_ARQ ]]; then
+    if [[ -w ${CONFIG_ARQ%/*} ]] && modelo_config > "$CONFIG_ARQ" 2>/dev/null; then CONFIG_CRIADO=1; fi
+    return 0
+  fi
+  [[ -r $CONFIG_ARQ ]] || return 0
+  while IFS= read -r linha || [[ -n $linha ]]; do
+    n=$(( n + 1 ))
+    linha=${linha%$'\r'}
+    [[ $linha =~ ^[[:space:]]*(#|$) ]] && continue
+    if [[ $linha =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      chave=${BASH_REMATCH[1]}; valor=${BASH_REMATCH[2]}
+      valor=${valor%%[[:space:]]#*}
+      valor=${valor%"${valor##*[![:space:]]}"}
+      if [[ $valor == \"*\" || $valor == \'*\' ]] && (( ${#valor} >= 2 )); then valor=${valor:1:-1}; fi
+      if [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
+        printf -v "$chave" '%s' "$valor"; ORIGEM[$chave]=config
+      else
+        AVISOS_CONFIG+=("$n: $chave")
+      fi
+    else
+      AVISOS_CONFIG+=("$n: $linha")
+    fi
+  done < "$CONFIG_ARQ"
+}
+carrega_config
+for k in "${!DO_AMBIENTE[@]}"; do printf -v "$k" '%s' "${DO_AMBIENTE[$k]}"; ORIGEM[$k]=ambiente; done
 
 # ───────────────────────────── Cores e terminal ───────────────────────────────
 ESC=$'\033'
@@ -98,19 +203,32 @@ uso() {                                       # a ajuda é o próprio cabeçalho
     printf 'Uso: %s [opções] [LINK ou ARQUIVO ...]\n' "$(basename "$0")"
 }
 
+# Comandos longos (--config, --help) saem da lista antes do getopts
+COMANDO=""; ARGS_CURTOS=()
+for a in "$@"; do
+  case $a in
+    --config)       COMANDO=config ;;
+    --help|--ajuda) COMANDO=ajuda ;;
+    --)             ARGS_CURTOS+=("$a") ;;
+    --*)            erro "Opção inválida: $a"; uso; exit 2 ;;
+    *)              ARGS_CURTOS+=("$a") ;;
+  esac
+done
+set -- "${ARGS_CURTOS[@]}"
+
 OPCOES=(); LISTA_EXPLICITA=0
 while getopts ":l:o:j:c:b:pasih" op; do
   case $op in
-    l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; continue ;;
-    o) PASTA_SAIDA=$OPTARG ;;
-    j) DOWNLOADS_SIMULTANEOS=$OPTARG ;;
-    c) CONEXOES_POR_VIDEO=$OPTARG ;;
-    b) COOKIES_NAVEGADOR=$OPTARG ;;
-    p) SEM_PLAYLIST=1 ;;
-    a) LEGENDAS_AUTOMATICAS=1 ;;
-    s) SPONSORBLOCK=1 ;;
-    i) USAR_HISTORICO=0 ;;
-    h) uso; exit 0 ;;
+    l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
+    o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
+    j) DOWNLOADS_SIMULTANEOS=$OPTARG;  ORIGEM[DOWNLOADS_SIMULTANEOS]=opção ;;
+    c) CONEXOES_POR_VIDEO=$OPTARG;     ORIGEM[CONEXOES_POR_VIDEO]=opção ;;
+    b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
+    p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
+    a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
+    s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
+    i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
+    h) COMANDO=ajuda ;;
     :) erro "A opção -$OPTARG precisa de um valor."; exit 2 ;;
     *) erro "Opção inválida: -$OPTARG"; uso; exit 2 ;;
   esac
@@ -120,13 +238,46 @@ shift $(( OPTIND - 1 ))
 ARGS_LINKS=("$@")
 [[ -z $ARQUIVO_HISTORICO ]] && ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico.txt"
 
-for par in DOWNLOADS_SIMULTANEOS:-j CONEXOES_POR_VIDEO:-c TENTATIVAS:; do
-  nome=${par%%:*}; flag=${par#*:}; valor=${!nome}
-  if ! [[ $valor =~ ^[1-9][0-9]*$ ]]; then
-    erro "${flag:+A opção $flag }($nome) precisa ser um número inteiro maior que zero (recebi: '$valor')."
+[[ $COMANDO == ajuda ]] && { uso; exit 0; }
+
+origem_txt() {                                # origem_txt CHAVE → FMT: de onde veio o valor
+  case ${ORIGEM[$1]:-padrão} in
+    opção)    FMT="opção do comando" ;;
+    config)   FMT="grabit.config" ;;
+    ambiente) FMT="variável de ambiente" ;;
+    *)        FMT="padrão" ;;
+  esac
+}
+for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
+  if ! [[ ${!nome} =~ ^[1-9][0-9]*$ ]]; then
+    origem_txt "$nome"
+    erro "$nome precisa ser um número inteiro maior que zero (recebi '${!nome}', de: $FMT)."
     exit 2
   fi
 done
+for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST USAR_HISTORICO; do
+  if ! [[ ${!nome} =~ ^[01]$ ]]; then
+    origem_txt "$nome"
+    erro "$nome precisa ser 0 ou 1 (recebi '${!nome}', de: $FMT)."
+    exit 2
+  fi
+done
+
+# --config: onde está o arquivo e os valores em uso, com a origem de cada um
+mostra_config() {
+  local k v
+  printf '\n  %sgrabit.config%s  %s' "$NEG" "$R" "$CONFIG_ARQ"
+  if (( CONFIG_CRIADO )); then printf '  %s(criado agora)%s\n\n' "$VERDE" "$R"
+  elif [[ -f $CONFIG_ARQ ]]; then printf '\n\n'
+  else printf '  %s(não existe e não pôde ser criado)%s\n\n' "$AMARELO" "$R"; fi
+  for k in "${CHAVES_CONFIG[@]}"; do
+    v=${!k}; origem_txt "$k"
+    printf '  %-22s %s%-22s%s %s%s%s\n' "$k" "$NEG" "${v:-—}" "$R" "$DIM" "$FMT" "$R"
+  done
+  for v in "${AVISOS_CONFIG[@]}"; do aviso "linha ${v%%:*} do grabit.config ignorada (chave desconhecida ou sem \"=\"):${v#*:}"; done
+  printf '\n'
+}
+[[ $COMANDO == config ]] && { mostra_config; exit 0; }
 
 # ───────────────────────────── Estado global ──────────────────────────────────
 J=0; TOTAL=0; COLS=100; TICK=0; LIVE_H=0; CANCELADO=0; SINAL=""; STTY_SAVE=""; TMP=""
@@ -1191,6 +1342,13 @@ else txt_imp="desligado (TENTATIVAS=1)"; fi
 (( N_NA_SECAO > 0 )) && extras+=" · ${N_NA_SECAO} já na seção BAIXADOS"
 kv "Links"    "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 kv "Destino"  "$PASTA_SAIDA"
+n_ajustes=0
+for k in "${CHAVES_CONFIG[@]}"; do [[ ${ORIGEM[$k]:-} == config ]] && n_ajustes=$(( n_ajustes + 1 )); done
+if (( CONFIG_CRIADO )); then
+  kv "Config" "${VERDE}criado agora${R} em ${CONFIG_ARQ/#$HOME/\~} — edite para mudar os padrões"
+elif [[ -f $CONFIG_ARQ ]]; then
+  kv "Config" "grabit.config · ${n_ajustes} ajuste(s) · grabit --config mostra tudo"
+fi
 if (( USAR_HISTORICO )); then
   n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0
   kv "Histórico" "${n_registrados} vídeo(s) registrados · os já baixados são pulados"
@@ -1205,6 +1363,9 @@ FFMPEG_VER=${FFMPEG_VER:-?}
 kv "Ferramentas" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
 kv "Recursos"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}nenhum${R}}"
 printf '\n'
+for a in "${AVISOS_CONFIG[@]}"; do
+  aviso "grabit.config, linha ${a%%:*}: ignorada (chave desconhecida ou sem \"=\"):${a#*:}"
+done
 if (( LIMITE_J > 0 )); then
   aviso "Terminal com só ${linhas} linhas: limitei a ${J} download(s) simultâneo(s)."
   printf '     (pedido: %d — aumente a janela para ver todos no painel)\n' "$LIMITE_J"
