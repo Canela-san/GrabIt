@@ -312,6 +312,7 @@ idioma_pt() {
     [tipo_audio]="áudio"
     [tipo_video]="vídeo"
     [total]="Total"
+    [restam]="faltam ≈%s"
     [et_finalizando]="finalizando"
     [et_mesclando]="mesclando vídeo e áudio"
     [et_mkv]="convertendo para MKV"
@@ -613,6 +614,7 @@ idioma_en() {
     [tipo_audio]="audio"
     [tipo_video]="video"
     [total]="Total"
+    [restam]="≈%s left"
     [et_finalizando]="finishing"
     [et_mesclando]="merging video and audio"
     [et_mkv]="converting to MKV"
@@ -1003,7 +1005,8 @@ FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
-TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ESCOLHIDO=0; ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ESCOLHIDO=0;
+INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0; ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -1286,6 +1289,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
     num "$total";   total=$NUM
     num "$vel";     vel=$NUM
     num "$eta";     eta=$NUM
+    ETA_JOB[$idx]=$eta
     VEL_TOTAL=$(( VEL_TOTAL + vel ))
     if [[ $pidx =~ ^[0-9]+$ ]]; then pre_txt+="item ${pidx}${pn:+/$pn} · "; pre+="${DIM}item ${pidx}${pn:+/$pn} · ${R}"; fi
     case $ext in
@@ -1348,6 +1352,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
   else
     # Sem progresso agora: a linha informativa mais recente do log diz a etapa
     # (extraindo, baixando legendas, mesclando, embutindo…).
+    ETA_JOB[$idx]=0
     ETAPA=""
     for (( k = ${#ult[@]} - 1; k >= 0; k-- )); do
       etapa_da_linha "${ult[$k]}"
@@ -1383,6 +1388,8 @@ monta_live() {
   # o resto entra enquanto couber, do mais para o menos importante
   if (( EM_REPETICAO > 0 )); then partes+=("↻ ${EM_REPETICAO}"); cores+=("$AMARELO"); fi
   fmt_tempo "$SECONDS";     partes+=("◷ ${FMT}"); cores+=("$DIM")
+  eta_lote
+  if (( NUM > 0 )); then fmt_tempo "$NUM"; t restam "$FMT"; partes+=("$TXT"); cores+=("$DIM"); fi
   fmt_bytes "$BYTES_NOVOS"; partes+=("▣ ${FMT}"); cores+=("$DIM")
   if (( VEL_TOTAL > 0 )); then fmt_bytes "$VEL_TOTAL"; partes+=("⇣ ${FMT}/s"); cores+=("$CIANO"); fi
   for i in "${!partes[@]}"; do
@@ -1390,6 +1397,28 @@ monta_live() {
     l+="  ${cores[$i]}${partes[$i]}${R}"; w=$(( w + 2 + ${#partes[$i]} ))
   done
   LIVE+=("$l")
+}
+
+# eta_lote → NUM: segundos estimados até o fim do lote (0 = ainda não dá para estimar).
+# A média de tempo por link (dos que baixaram algo) vale para os que faltam; os que estão
+# rodando usam a previsão do próprio yt-dlp quando há. Com J ao mesmo tempo, o trabalho
+# se divide por J, mas nunca termina antes do mais demorado dos que estão rodando.
+eta_lote() {
+  local s idx media pend e soma=0 maior=0
+  NUM=0
+  (( T_N > 0 && FINALIZADOS < TOTAL )) || return 0
+  media=$(( T_SOMA / T_N )); (( media < 1 )) && media=1
+  pend=$(( TOTAL - N_INICIADOS + ${#REPETIR[@]} ))
+  for (( s = 0; s < J; s++ )); do
+    idx=${SLOT_IDX[$s]}
+    (( idx > 0 )) || continue
+    e=${ETA_JOB[$idx]:-0}
+    if (( e <= 0 )); then e=$(( media - (SECONDS - ${INICIO_JOB[$idx]:-$SECONDS}) )); (( e < 1 )) && e=1; fi
+    soma=$(( soma + e )); (( e > maior )) && maior=$e
+  done
+  NUM=$(( (soma + pend * media + J - 1) / J ))
+  (( NUM < maior )) && NUM=$maior
+  return 0
 }
 
 # desenha [final] — imprime as linhas permanentes pendentes e redesenha o painel
@@ -1477,7 +1506,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       glifo="↷"; cor=$AMARELO; N_JA=$(( N_JA + 1 ))
       META="${T[r_ja_existia]}${META:+ · $META}"
     else
-      glifo="✔"; cor=$VERDE; N_OK=$(( N_OK + 1 )); BYTES_NOVOS=$(( BYTES_NOVOS + tam ))
+      glifo="✔"; cor=$VERDE; N_OK=$(( N_OK + 1 )); BYTES_NOVOS=$(( BYTES_NOVOS + tam )); BAIXOU=1
     fi
     linha_resultado "$glifo" "$cor" "$idxs" "$titulo" "$META"
     PERM+=("$LINHA")
@@ -1595,6 +1624,7 @@ lanca_job() {                                 # lanca_job IDX
   (( ${REBAIXAR[$i]:-0} )) && extra+=(--force-overwrites)
   baixa_link "$url" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
   ULTIMO_PID=$!
+  INICIO_JOB[$i]=$SECONDS; ETA_JOB[$i]=0
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
     if (( tent > 1 )); then t ni_tentativa "$tent"; PERM+=("  ↻ ${idxs}  ${url}  $TXT"); else PERM+=("  ▶ ${idxs}  ${url}"); fi
@@ -1654,7 +1684,7 @@ escolhe_proximo() {
   for (( i = PROXIMO; i <= TOTAL; i++ )); do
     [[ -n ${INICIADO[$i]:-} ]] && continue
     site_livre "$i" || continue
-    ESCOLHIDO=$i; INICIADO[$i]=1
+    ESCOLHIDO=$i; INICIADO[$i]=1; N_INICIADOS=$(( N_INICIADOS + 1 ))
     return 0
   done
   for k in "${!REPETIR[@]}"; do
@@ -2354,7 +2384,10 @@ while (( FINALIZADOS < TOTAL )); do
     SLOT_IDX[$s]=0
     if (( rc != 0 )) && vale_repetir "$idx"; then continue; fi
     (( ${TENTATIVA[$idx]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
+    BAIXOU=0
     processa_resultado "$idx" "$rc"
+    # para estimar o tempo restante, só contam os links que baixaram algo de fato
+    (( BAIXOU )) && { T_SOMA=$(( T_SOMA + SECONDS - ${INICIO_JOB[$idx]:-$SECONDS} )); T_N=$(( T_N + 1 )); }
   done
 
   # 2) ocupa os slots livres: primeiro os links novos, depois as novas tentativas

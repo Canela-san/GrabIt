@@ -29,7 +29,7 @@
 - **Maximum quality, always.** It grabs the best video and the best audio available (4K, 60 fps, HDR, 5.1 sound — whatever exists) and puts them together in an MKV, without re-encoding anything. And it never hands you an incomplete video: if a piece is missing, the download fails and starts over from scratch.
 - **Any site.** Works with everything yt-dlp supports: thousands of sites, playlists, channels and pages with embedded video.
 - **Batch and parallel.** You hand it a list of links; it downloads several videos at once, each with several connections.
-- **Live panel.** Progress, speed, time left and the quality of each download, without yt-dlp's flood of text. At the end, each video shows what was *actually* saved (read from the file with `ffprobe`).
+- **Live panel.** Progress, speed, time left and the quality of each download, an estimate of how long the whole batch still needs, without yt-dlp's flood of text. At the end, each video shows what was *actually* saved (read from the file with `ffprobe`).
 - **Everything inside the file.** Subtitles, cover, chapters and metadata are embedded in the MKV.
 - **Resilient.** Temporary failures get an automatic retry, and errors come explained in plain English (or Portuguese).
 - **Never downloads twice.** Every downloaded video goes into a history; next time it's skipped right away, without touching the site or the file — even if you've already moved it to another folder.

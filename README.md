@@ -29,7 +29,7 @@
 - **Qualidade máxima, sempre.** Pega o melhor vídeo e o melhor áudio disponíveis (4K, 60 fps, HDR, som 5.1 — o que existir) e junta tudo num MKV, sem recomprimir nada. E nunca entrega um vídeo incompleto: se faltar um pedaço, o download falha e recomeça do zero.
 - **Qualquer site.** Funciona com tudo o que o yt-dlp suporta: milhares de sites, playlists, canais e páginas com vídeo embutido.
 - **Em lote e em paralelo.** Você entrega uma lista de links; ele baixa vários vídeos ao mesmo tempo, cada um com várias conexões.
-- **Painel ao vivo.** Progresso, velocidade, tempo restante e a qualidade de cada download, sem a enxurrada de texto do yt-dlp. No fim, cada vídeo mostra o que *realmente* foi gravado (lido do arquivo com `ffprobe`).
+- **Painel ao vivo.** Progresso, velocidade, tempo restante e a qualidade de cada download, uma estimativa de quanto falta para o lote inteiro, sem a enxurrada de texto do yt-dlp. No fim, cada vídeo mostra o que *realmente* foi gravado (lido do arquivo com `ffprobe`).
 - **Tudo dentro do arquivo.** Legendas, capa, capítulos e metadados vão embutidos no MKV.
 - **Resiliente.** Falhas passageiras ganham nova tentativa automática e os erros vêm explicados em português (ou em inglês, se preferir).
 - **Não baixa duas vezes.** Cada vídeo baixado entra num histórico; na próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo — mesmo que você já o tenha movido para outra pasta.
