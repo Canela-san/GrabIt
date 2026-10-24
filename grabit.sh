@@ -4,55 +4,23 @@
 #  https://github.com/Canela-san/GrabIt
 #  Copyright (c) 2026 Gabriel Canela (Canela-san) · Licença MIT (veja LICENSE)
 #  SPDX-License-Identifier: MIT
-# ==============================================================================
-#  Uso:  grabit [opções] [LINK ou ARQUIVO ...]
 #
-#    -l ARQUIVO    arquivo com os links ("-" = entrada padrão)  (padrão: links.txt)
-#    -o PASTA      pasta onde os vídeos serão salvos            (padrão: ./Downloads)
-#    -j N          downloads simultâneos                        (padrão: 2)
-#    -c N          conexões (fragmentos) por vídeo              (padrão: 4)
-#    -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
-#    -p            só o vídeo, se o link tiver vídeo + playlist
-#    -a            inclui legendas automáticas (a manual continua tendo prioridade)
-#    -s            marca patrocínios/intros como capítulos (SponsorBlock)
-#    -i            ignora o histórico de baixados (confere arquivo por arquivo)
-#    -h            mostra esta ajuda
-#
-#  • Links e arquivos de links também podem vir direto no comando (aí o
-#    links.txt só é lido se você passar -l):
-#        grabit https://youtu.be/xxxx outra_lista.txt
-#  • Nos arquivos: linhas vazias e comentários (# …, inclusive no fim da linha)
-#    são ignorados, assim como texto em volta do link; repetidos são descartados.
-#  • Links baixados com sucesso vão para a seção "# ===== BAIXADOS =====" no fim
-#    do próprio arquivo. Tudo nessa seção é ignorado: vira o seu histórico de links.
-#  • Cada download roda com a saída do yt-dlp isolada em um log. O terminal
-#    mostra só um painel ao vivo + uma linha por vídeo concluído.
-#  • Cada vídeo baixado entra no histórico (Downloads/.grabit-historico.txt): da
-#    próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo.
-#    Apagou um vídeo e quer baixá-lo de novo? Use -i ou apague a linha dele lá.
-#  • Link que falha por motivo passageiro (rede, 403…) ganha nova tentativa no
-#    fim da fila, imitando um navegador (--impersonate) se houver curl_cffi.
-#  • Links que falharem vão para links_falhos.txt, prontos para reexecutar:
-#        grabit -l links_falhos.txt
-#  • Download que não terminou (Ctrl+C, erro) recomeça do zero na próxima vez:
-#    retomar pedaços não garante a qualidade. A pasta Downloads/.parciais só existe
-#    enquanto o GrabIt roda. Os links que faltavam vão para links_falhos.txt.
-#
-#  Configurações permanentes ficam no grabit.config, ao lado do grabit.sh (criado na
-#  primeira execução, com todos os padrões comentados). Veja-as com: grabit --config
-#  Prioridade: grabit.config < variável de ambiente < opção do comando, ex.:
-#      DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
+#  Ajuda: grabit -h  ·  Help in English: grabit -L en -h
 # ==============================================================================
 
 if [ -z "${BASH_VERSION:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ] ||
    { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then
-  echo "Este script precisa do Bash 4.4 ou superior (execute com: bash grabit.sh)." >&2
-  echo "No macOS, instale um Bash novo com: brew install bash" >&2
+  echo "O GrabIt precisa do Bash 4.4 ou superior (execute com: bash grabit.sh)." >&2
+  echo "GrabIt needs Bash 4.4 or newer (run it with: bash grabit.sh)." >&2
+  echo "macOS: brew install bash" >&2
   exit 1
 fi
 
 set -uo pipefail
 shopt -s extglob
+
+# O idioma do sistema é lido antes de forçar o UTF-8 logo abaixo
+LOCALE_ORIGINAL=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
 
 # Garante UTF-8 (necessário para os símbolos e para medir a largura do texto)
 if [[ "$(locale charmap 2>/dev/null)" != "UTF-8" ]]; then
@@ -81,12 +49,13 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
-CHAVES_CONFIG=(ARQUIVO_LINKS PASTA_SAIDA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
+CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
+IDIOMA=auto                                   # pt, en ou auto (pelo idioma do sistema)
 ARQUIVO_LINKS=links.txt
 PASTA_SAIDA=./Downloads
 DOWNLOADS_SIMULTANEOS=2                       # vídeos ao mesmo tempo
@@ -103,8 +72,257 @@ ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grab
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
 CONFIG_CRIADO=0; AVISOS_CONFIG=()
 
-modelo_config() {                             # o grabit.config criado na primeira execução
-  cat <<'EOF'
+# carrega_config: lê CHAVE=valor do grabit.config (sem executar nada do arquivo). Valores
+# podem vir entre aspas; "# comentário" no fim da linha é ignorado.
+carrega_config() {
+  local linha chave valor n=0
+  [[ -f $CONFIG_ARQ && -r $CONFIG_ARQ ]] || return 0
+  while IFS= read -r linha || [[ -n $linha ]]; do
+    n=$(( n + 1 ))
+    linha=${linha%$'\r'}
+    [[ $linha =~ ^[[:space:]]*(#|$) ]] && continue
+    if [[ $linha =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      chave=${BASH_REMATCH[1]}; valor=${BASH_REMATCH[2]}
+      valor=${valor%%[[:space:]]#*}
+      valor=${valor%"${valor##*[![:space:]]}"}
+      if [[ $valor == \"*\" || $valor == \'*\' ]] && (( ${#valor} >= 2 )); then valor=${valor:1:-1}; fi
+      if [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
+        printf -v "$chave" '%s' "$valor"; ORIGEM[$chave]=config
+      else
+        AVISOS_CONFIG+=("$n: $chave")
+      fi
+    else
+      AVISOS_CONFIG+=("$n: $linha")
+    fi
+  done < "$CONFIG_ARQ"
+}
+carrega_config
+for k in "${!DO_AMBIENTE[@]}"; do printf -v "$k" '%s' "${DO_AMBIENTE[$k]}"; ORIGEM[$k]=ambiente; done
+
+# ───────────────────────────── Idioma ─────────────────────────────────────────
+# -L é lido antes do getopts, para que até os erros nas opções saiam no idioma certo.
+# Percorre as opções como o getopts faria (aceita -L en, -Len e -sL en).
+for (( i = 1; i <= $#; i++ )); do
+  a=${!i}
+  [[ $a == -- ]] && break
+  [[ $a == --* ]] && continue                   # --config, --help…
+  [[ $a == -?* ]] || break                      # primeiro link/arquivo: fim das opções
+  for (( c = 1; c < ${#a}; c++ )); do
+    case ${a:c:1} in
+      L)         j=$(( i + 1 )); IDIOMA=${a:c+1}; [[ -z $IDIOMA ]] && { IDIOMA=${!j:-}; i=$j; }
+                 ORIGEM[IDIOMA]=opção; break ;;
+      [lojcb])   [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
+    esac
+  done
+done
+unset a c i j
+
+# resolve_idioma VALOR → LINGUA (pt|en); "auto" segue o sistema (sem idioma definido: pt)
+IDIOMA_INVALIDO=""
+resolve_idioma() {
+  case ${1,,} in
+    pt|pt-br|pt_br|portugues|português) LINGUA=pt ;;
+    en|en-us|en_us|english|ingles|inglês) LINGUA=en ;;
+    auto|"")
+      case ${LOCALE_ORIGINAL,,} in
+        pt*|""|c|c.*|posix) LINGUA=pt ;;
+        *)                  LINGUA=en ;;
+      esac ;;
+    *) IDIOMA_INVALIDO=$1; resolve_idioma auto ;;
+  esac
+}
+resolve_idioma "$IDIOMA"
+
+declare -A T=()
+# t CHAVE [ARGS...] → TXT: o texto no idioma atual (com ARGS, a frase é um formato do printf)
+t() {
+  local f=${T[$1]-$1}
+  shift
+  # shellcheck disable=SC2059
+  if (( $# )); then printf -v TXT "$f" "$@"; else TXT=$f; fi
+}
+
+idioma_pt() {
+  T=(
+    [titulo]="GrabIt  ·  Downloader em lote  ·  Máxima qualidade (MKV)"
+    [titulo_curto]="GrabIt · Downloader em lote"
+    [opcao_invalida]="Opção inválida: %s"
+    [opcao_valor]="A opção -%s precisa de um valor."
+    [idioma_invalido]="Idioma desconhecido: '%s' (use pt ou en). Usando: %s."
+    [origem_opção]="opção do comando"
+    [origem_config]="grabit.config"
+    [origem_ambiente]="variável de ambiente"
+    [origem_padrão]="padrão"
+    [val_numero]="%s precisa ser um número inteiro maior que zero (recebi '%s', de: %s)."
+    [val_01]="%s precisa ser 0 ou 1 (recebi '%s', de: %s)."
+    [cfg_criado]="(criado agora)"
+    [cfg_inexistente]="(não existe e não pôde ser criado)"
+    [cfg_linha]="grabit.config, linha %s: ignorada (chave desconhecida ou sem \"=\"):%s"
+    [kv_links]="Links"
+    [kv_destino]="Destino"
+    [kv_config]="Config"
+    [kv_historico]="Histórico"
+    [kv_paralelo]="Paralelo"
+    [kv_extras]="Extras"
+    [kv_ferramentas]="Ferramentas"
+    [kv_recursos]="Recursos"
+    [kv_config_criado]="%scriado agora%s em %s — edite para mudar os padrões"
+    [kv_config_ajustes]="grabit.config · %d ajuste(s) · grabit --config mostra tudo"
+    [kv_hist_on]="%s vídeo(s) registrados · os já baixados são pulados"
+    [kv_hist_off]="%signorado (-i)%s: confere arquivo por arquivo"
+    [kv_paralelo_v]="%d vídeo(s) × %d conexões"
+    [kv_tentativas]=" · até %d tentativas"
+    [kv_legendas]="legendas %s"
+    [kv_automaticas]=" (+automáticas)"
+    [kv_extras_resto]=", capa, capítulos, metadados"
+    [imp_indisp]="indisponível"
+    [imp_retry]="nas novas tentativas"
+    [imp_off]="desligado (TENTATIVAS=1)"
+    [js_nenhum]="nenhum"
+    [links_ignorados]=" · ignorados:%s"
+    [links_repetidos]=" %d repetido(s)"
+    [links_sem_link]=" %d linha(s) sem link"
+    [links_na_secao]=" · %d já na seção BAIXADOS"
+    [fonte_stdin]="entrada padrão"
+    [fonte_cli]="linha de comando"
+    [av_linhas]="Terminal com só %s linhas: limitei a %d download(s) simultâneo(s)."
+    [av_linhas2]="     (pedido: %d — aumente a janela para ver todos no painel)"
+    [av_ytdlp]="Seu yt-dlp (%s) está desatualizado: os sites mudam o tempo todo."
+    [av_ytdlp2]="     Atualize:  %s   (ou:  %s)"
+    [av_curl]="curl_cffi ausente: sites com proteção anti-robô podem falhar."
+    [av_curl2]="     Instale com:  %s"
+    [av_js]="Sem runtime JavaScript: o YouTube pode falhar ou vir em qualidade menor."
+    [av_js2]="     Instale o Deno (https://deno.com) e mantenha o yt-dlp atualizado."
+    [dica_ctrlc]="Ctrl+C cancela · o que estiver pela metade recomeça do zero"
+    [dep_faltando]="Faltando: %s"
+    [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
+    [sem_arquivo]="O arquivo '%s' não foi encontrado."
+    [sem_arquivo2]="     Crie-o com um link por linha, use  -l CAMINHO  ou passe os links no próprio comando."
+    [nada_1]="Nada para baixar: o único link de %s já está na seção BAIXADOS."
+    [nada_n]="Nada para baixar: os %d links de %s já estão na seção BAIXADOS."
+    [sem_links]="Nenhum link válido (http/https) em: %s."
+    [nada]="nada"
+    [marca]="# ==================== BAIXADOS ===================="
+    [marca_desc]="# Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo."
+    [tentativa_n]="%dª tentativa · "
+    [ni_tentativa]="(%dª tentativa)"
+    [log_tentativa]="# ── tentativa %d ──"
+    [tipo_legendas]="legendas"
+    [tipo_audio]="áudio"
+    [tipo_video]="vídeo"
+    [total]="Total"
+    [et_finalizando]="finalizando"
+    [et_mesclando]="mesclando vídeo e áudio"
+    [et_mkv]="convertendo para MKV"
+    [et_metadados]="gravando metadados"
+    [et_legendas_emb]="embutindo legendas"
+    [et_capa_emb]="embutindo a capa"
+    [et_capitulos]="processando capítulos"
+    [et_fixup]="corrigindo o arquivo"
+    [et_legendas]="baixando legendas"
+    [et_capa]="baixando a capa"
+    [et_hist]="já baixado antes (histórico)"
+    [et_existe]="arquivo já existe"
+    [et_iniciando]="iniciando download"
+    [et_processando]="processando"
+    [et_item]="obtendo informações · item %s/%s"
+    [et_info]="obtendo informações"
+    [r_ja_existia]="já existia"
+    [r_ja_baixado]="já baixado antes"
+    [r_n_ja_baixados]="%d já baixados antes"
+    [r_concluido]="concluído"
+    [r_aviso]="aviso:"
+    [r_av_capa]="a capa não converteu para JPG e foi embutida no formato original"
+    [r_av_sponsor]="não deu para consultar o SponsorBlock"
+    [r_av_outro]="uma etapa de acabamento falhou (detalhes no log)"
+    [r_av_completo]="%s — o vídeo está completo"
+    [r_parcial]="parcial"
+    [r_falhou]="falhou"
+    [r_falhou_n]="falhou %d×"
+    [r_codigo]="yt-dlp terminou com código %d"
+    [d_privado]="vídeo privado"
+    [d_idade]="restrito por idade — use -b NAVEGADOR"
+    [d_bot]="o YouTube pediu login — use -b NAVEGADOR"
+    [d_membros]="exclusivo para membros"
+    [d_regiao]="bloqueado na sua região"
+    [d_removido]="vídeo indisponível ou removido"
+    [d_url]="link não suportado"
+    [d_live]="a live/estreia ainda não começou"
+    [d_404]="não encontrado (404)"
+    [d_disco]="disco cheio"
+    [d_invalido]="o arquivo baixado não é um vídeo válido"
+    [d_fragmento]="um pedaço do vídeo não baixou"
+    [d_403]="acesso negado (403)"
+    [d_429]="muitas requisições (429)"
+    [d_rede]="falha de rede"
+    [s_resumo]="Resumo"
+    [s_resumo_parcial]="Resumo parcial"
+    [s_baixados]="Baixados"
+    [s_ja]="Já existiam"
+    [s_erro]="Links com erro"
+    [s_aviso]="Com aviso"
+    [s_aviso_det]="(arquivos completos · logs em %s/)"
+    [s_tempo]="Tempo"
+    [s_baixado_agora]="Baixado agora"
+    [s_media]="(média de %s/s)"
+    [s_pasta]="Pasta"
+    [s_lista]="Lista"
+    [s_movidos]="%d link(s) movidos para a seção BAIXADOS"
+    [f_todos_ok]="Todos os links de %s deram certo — arquivo removido."
+    [f_nao_gravou]="Não consegui gravar '%s'."
+    [f_com_erro]="com erro"
+    [f_erro_pend]="com erro ou pendentes"
+    [f_pend]="pendentes"
+    [f_salvos]="%d link(s) %s salvos em %s"
+    [f_logs]=" — logs em %s/"
+    [f_continuar]="     Para continuar:  %s"
+    [c_cancelado]="Cancelado."
+    [c_descartado]=" O que estava pela metade foi descartado e recomeça do zero na próxima vez."
+    [tmp_falhou]="Não consegui criar a pasta temporária."
+    [pasta_falhou]="Não consegui criar a pasta '%s'."
+  )
+  T[ajuda]=$(cat <<'EOF'
+Uso:  grabit [opções] [LINK ou ARQUIVO ...]
+
+  -l ARQUIVO    arquivo com os links ("-" = entrada padrão)  (padrão: links.txt)
+  -o PASTA      pasta onde os vídeos serão salvos            (padrão: ./Downloads)
+  -j N          downloads simultâneos                        (padrão: 2)
+  -c N          conexões (fragmentos) por vídeo              (padrão: 4)
+  -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
+  -p            só o vídeo, se o link tiver vídeo + playlist
+  -a            inclui legendas automáticas (a manual continua tendo prioridade)
+  -s            marca patrocínios/intros como capítulos (SponsorBlock)
+  -i            ignora o histórico de baixados (confere arquivo por arquivo)
+  -L pt|en      idioma das mensagens (Language)
+  -h            mostra esta ajuda
+
+  --config      mostra o grabit.config e os valores em uso
+
+• Links e arquivos de links também podem vir direto no comando (aí o
+  links.txt só é lido se você passar -l):
+      grabit https://youtu.be/xxxx outra_lista.txt
+• Nos arquivos: linhas vazias e comentários (# …, inclusive no fim da linha)
+  são ignorados, assim como texto em volta do link; repetidos são descartados.
+• Links baixados com sucesso vão para a seção "# ===== BAIXADOS =====" no fim
+  do próprio arquivo. Tudo nessa seção é ignorado: vira o seu histórico de links.
+• Cada vídeo baixado entra no histórico (Downloads/.grabit-historico.txt): da
+  próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo.
+  Apagou um vídeo e quer baixá-lo de novo? Use -i ou apague a linha dele lá.
+• Link que falha por motivo passageiro (rede, 403…) ganha nova tentativa no
+  fim da fila, imitando um navegador (--impersonate) se houver curl_cffi.
+• Links que falharem vão para links_falhos.txt, prontos para reexecutar:
+      grabit -l links_falhos.txt
+• Download que não terminou (Ctrl+C, erro) recomeça do zero na próxima vez:
+  retomar pedaços não garante a qualidade. A pasta Downloads/.parciais só existe
+  enquanto o GrabIt roda.
+
+Configurações permanentes ficam no grabit.config, ao lado do grabit.sh (criado
+na primeira execução, com todos os padrões comentados): grabit --config
+Prioridade: grabit.config < variável de ambiente < opção do comando, ex.:
+    DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
+EOF
+)
+  T[modelo_config]=$(cat <<'EOF'
 # ==============================================================================
 #  grabit.config — configurações do GrabIt
 #
@@ -115,6 +333,9 @@ modelo_config() {                             # o grabit.config criado na primei
 #  Prioridade: este arquivo < variáveis de ambiente < opções do comando.
 #  Veja os valores em uso com: grabit --config
 # ==============================================================================
+
+# Idioma das mensagens: pt, en ou auto (pelo idioma do sistema) (-L)
+#IDIOMA=auto
 
 # Lista de links lida quando você roda só "grabit"
 #ARQUIVO_LINKS=links.txt
@@ -148,38 +369,243 @@ modelo_config() {                             # o grabit.config criado na primei
 # Onde salvar os links que falharam
 #ARQUIVO_FALHAS=links_falhos.txt
 EOF
+)
 }
 
-# carrega_config: lê CHAVE=valor do grabit.config (sem executar nada do arquivo). Valores
-# podem vir entre aspas; "# comentário" no fim da linha é ignorado.
-carrega_config() {
-  local linha chave valor n=0
-  if [[ ! -e $CONFIG_ARQ ]]; then
-    if [[ -w ${CONFIG_ARQ%/*} ]] && modelo_config > "$CONFIG_ARQ" 2>/dev/null; then CONFIG_CRIADO=1; fi
-    return 0
-  fi
-  [[ -r $CONFIG_ARQ ]] || return 0
-  while IFS= read -r linha || [[ -n $linha ]]; do
-    n=$(( n + 1 ))
-    linha=${linha%$'\r'}
-    [[ $linha =~ ^[[:space:]]*(#|$) ]] && continue
-    if [[ $linha =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      chave=${BASH_REMATCH[1]}; valor=${BASH_REMATCH[2]}
-      valor=${valor%%[[:space:]]#*}
-      valor=${valor%"${valor##*[![:space:]]}"}
-      if [[ $valor == \"*\" || $valor == \'*\' ]] && (( ${#valor} >= 2 )); then valor=${valor:1:-1}; fi
-      if [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
-        printf -v "$chave" '%s' "$valor"; ORIGEM[$chave]=config
-      else
-        AVISOS_CONFIG+=("$n: $chave")
-      fi
-    else
-      AVISOS_CONFIG+=("$n: $linha")
-    fi
-  done < "$CONFIG_ARQ"
+idioma_en() {
+  T=(
+    [titulo]="GrabIt  ·  Batch downloader  ·  Maximum quality (MKV)"
+    [titulo_curto]="GrabIt · Batch downloader"
+    [opcao_invalida]="Invalid option: %s"
+    [opcao_valor]="Option -%s needs a value."
+    [idioma_invalido]="Unknown language: '%s' (use pt or en). Using: %s."
+    [origem_opção]="command-line option"
+    [origem_config]="grabit.config"
+    [origem_ambiente]="environment variable"
+    [origem_padrão]="default"
+    [val_numero]="%s must be a whole number greater than zero (got '%s', from: %s)."
+    [val_01]="%s must be 0 or 1 (got '%s', from: %s)."
+    [cfg_criado]="(just created)"
+    [cfg_inexistente]="(missing and could not be created)"
+    [cfg_linha]="grabit.config, line %s: ignored (unknown key or no \"=\"):%s"
+    [kv_links]="Links"
+    [kv_destino]="Destination"
+    [kv_config]="Config"
+    [kv_historico]="History"
+    [kv_paralelo]="Parallel"
+    [kv_extras]="Extras"
+    [kv_ferramentas]="Tools"
+    [kv_recursos]="Features"
+    [kv_config_criado]="%sjust created%s at %s — edit it to change the defaults"
+    [kv_config_ajustes]="grabit.config · %d setting(s) · grabit --config shows all"
+    [kv_hist_on]="%s video(s) recorded · already downloaded ones are skipped"
+    [kv_hist_off]="%signored (-i)%s: checks file by file"
+    [kv_paralelo_v]="%d video(s) × %d connections"
+    [kv_tentativas]=" · up to %d attempts"
+    [kv_legendas]="subtitles %s"
+    [kv_automaticas]=" (+automatic)"
+    [kv_extras_resto]=", cover, chapters, metadata"
+    [imp_indisp]="unavailable"
+    [imp_retry]="on retries"
+    [imp_off]="off (TENTATIVAS=1)"
+    [js_nenhum]="none"
+    [links_ignorados]=" · ignored:%s"
+    [links_repetidos]=" %d duplicate(s)"
+    [links_sem_link]=" %d line(s) without a link"
+    [links_na_secao]=" · %d already in the DOWNLOADED section"
+    [fonte_stdin]="standard input"
+    [fonte_cli]="command line"
+    [av_linhas]="The terminal has only %s rows: limited to %d simultaneous download(s)."
+    [av_linhas2]="     (requested: %d — enlarge the window to see them all)"
+    [av_ytdlp]="Your yt-dlp (%s) is outdated: websites change all the time."
+    [av_ytdlp2]="     Update:  %s   (or:  %s)"
+    [av_curl]="curl_cffi is missing: sites with anti-bot protection may fail."
+    [av_curl2]="     Install it with:  %s"
+    [av_js]="No JavaScript runtime: YouTube may fail or come in lower quality."
+    [av_js2]="     Install Deno (https://deno.com) and keep yt-dlp up to date."
+    [dica_ctrlc]="Ctrl+C cancels · anything half-done starts over from scratch"
+    [dep_faltando]="Missing: %s"
+    [dep_instale]="install '%s' with your system's package manager"
+    [sem_arquivo]="File '%s' not found."
+    [sem_arquivo2]="     Create it with one link per line, use  -l PATH  or pass the links on the command line."
+    [nada_1]="Nothing to download: the only link in %s is already in the DOWNLOADED section."
+    [nada_n]="Nothing to download: all %d links in %s are already in the DOWNLOADED section."
+    [sem_links]="No valid (http/https) links in: %s."
+    [nada]="nothing"
+    [marca]="# ==================== DOWNLOADED ===================="
+    [marca_desc]="# Successfully downloaded links. GrabIt ignores everything below this line."
+    [tentativa_n]="attempt %d · "
+    [ni_tentativa]="(attempt %d)"
+    [log_tentativa]="# ── attempt %d ──"
+    [tipo_legendas]="subtitles"
+    [tipo_audio]="audio"
+    [tipo_video]="video"
+    [total]="Total"
+    [et_finalizando]="finishing"
+    [et_mesclando]="merging video and audio"
+    [et_mkv]="converting to MKV"
+    [et_metadados]="writing metadata"
+    [et_legendas_emb]="embedding subtitles"
+    [et_capa_emb]="embedding the cover"
+    [et_capitulos]="processing chapters"
+    [et_fixup]="fixing the file"
+    [et_legendas]="downloading subtitles"
+    [et_capa]="downloading the cover"
+    [et_hist]="already downloaded (history)"
+    [et_existe]="file already exists"
+    [et_iniciando]="starting download"
+    [et_processando]="processing"
+    [et_item]="fetching info · item %s/%s"
+    [et_info]="fetching info"
+    [r_ja_existia]="already existed"
+    [r_ja_baixado]="already downloaded"
+    [r_n_ja_baixados]="%d already downloaded"
+    [r_concluido]="done"
+    [r_aviso]="warning:"
+    [r_av_capa]="the cover couldn't be converted to JPG and was embedded as is"
+    [r_av_sponsor]="couldn't reach SponsorBlock"
+    [r_av_outro]="a finishing step failed (see the log)"
+    [r_av_completo]="%s — the video is complete"
+    [r_parcial]="partial"
+    [r_falhou]="failed"
+    [r_falhou_n]="failed %d×"
+    [r_codigo]="yt-dlp exited with code %d"
+    [d_privado]="private video"
+    [d_idade]="age-restricted — use -b BROWSER"
+    [d_bot]="YouTube asked you to sign in — use -b BROWSER"
+    [d_membros]="members only"
+    [d_regiao]="blocked in your region"
+    [d_removido]="video unavailable or removed"
+    [d_url]="unsupported link"
+    [d_live]="the live stream/premiere hasn't started yet"
+    [d_404]="not found (404)"
+    [d_disco]="disk full"
+    [d_invalido]="the downloaded file isn't a valid video"
+    [d_fragmento]="a piece of the video failed to download"
+    [d_403]="access denied (403)"
+    [d_429]="too many requests (429)"
+    [d_rede]="network failure"
+    [s_resumo]="Summary"
+    [s_resumo_parcial]="Partial summary"
+    [s_baixados]="Downloaded"
+    [s_ja]="Already had"
+    [s_erro]="Failed links"
+    [s_aviso]="With warnings"
+    [s_aviso_det]="(files complete · logs in %s/)"
+    [s_tempo]="Time"
+    [s_baixado_agora]="Downloaded now"
+    [s_media]="(average %s/s)"
+    [s_pasta]="Folder"
+    [s_lista]="List"
+    [s_movidos]="%d link(s) moved to the DOWNLOADED section"
+    [f_todos_ok]="Every link in %s succeeded — file removed."
+    [f_nao_gravou]="Couldn't write '%s'."
+    [f_com_erro]="failed"
+    [f_erro_pend]="failed or pending"
+    [f_pend]="pending"
+    [f_salvos]="%d %s link(s) saved to %s"
+    [f_logs]=" — logs in %s/"
+    [f_continuar]="     To continue:  %s"
+    [c_cancelado]="Canceled."
+    [c_descartado]=" Anything half-done was discarded and will start over next time."
+    [tmp_falhou]="Couldn't create the temporary folder."
+    [pasta_falhou]="Couldn't create folder '%s'."
+  )
+  T[ajuda]=$(cat <<'EOF'
+Usage:  grabit [options] [LINK or FILE ...]
+
+  -l FILE       file with the links ("-" = stdin)    (default: links.txt)
+  -o FOLDER     where videos are saved               (default: ./Downloads)
+  -j N          simultaneous downloads               (default: 2)
+  -c N          connections (fragments) per video    (default: 4)
+  -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
+  -p            only the video, when the link is video + playlist
+  -a            include automatic subtitles (manual ones still win)
+  -s            mark sponsors/intros as chapters (SponsorBlock)
+  -i            ignore the download history (check file by file)
+  -L pt|en      language of the messages
+  -h            show this help
+
+  --config      show grabit.config and the values in use
+
+• Links and link files can also go straight on the command line (then
+  links.txt is only read if you pass -l):
+      grabit https://youtu.be/xxxx another_list.txt
+• In the files: empty lines and comments (# …, also at the end of a line)
+  are ignored, as is any text around the link; duplicates are dropped.
+• Successfully downloaded links move to the "# ===== DOWNLOADED =====" section
+  at the end of the same file. Everything there is ignored: it becomes your
+  link history.
+• Every downloaded video goes into the history
+  (Downloads/.grabit-historico.txt): next time it is skipped right away,
+  without touching the site or the file.
+  Deleted a video and want it again? Use -i or delete its line there.
+• A link that fails for a temporary reason (network, 403…) gets another try at
+  the end of the queue, impersonating a browser (--impersonate) if curl_cffi
+  is installed.
+• Failed links go to links_falhos.txt, ready to run again:
+      grabit -l links_falhos.txt
+• A download that didn't finish (Ctrl+C, error) starts over from scratch next
+  time: resuming pieces doesn't guarantee quality. The Downloads/.parciais
+  folder only exists while GrabIt runs.
+
+Permanent settings live in grabit.config, next to grabit.sh (created on the
+first run, with every default commented out): grabit --config
+Priority: grabit.config < environment variable < command-line option, e.g.:
+    DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
+EOF
+)
+  T[modelo_config]=$(cat <<'EOF'
+# ==============================================================================
+#  grabit.config — GrabIt settings
+#
+#  Created automatically on the first run, with every default commented out.
+#  To change a value, remove the "#" at the start of the line and edit it. To go
+#  back to the default, comment the line again (or delete this file: it is
+#  recreated).
+#
+#  Priority: this file < environment variables < command-line options.
+#  See the values in use with: grabit --config
+# ==============================================================================
+
+# Language of the messages: pt, en or auto (follows the system) (-L)
+#IDIOMA=auto
+
+# Link list read when you run just "grabit"
+#ARQUIVO_LINKS=links.txt
+
+# Folder where videos are saved
+#PASTA_SAIDA=./Downloads
+
+# How many videos to download at once (-j) and connections per video (-c)
+#DOWNLOADS_SIMULTANEOS=2
+#CONEXOES_POR_VIDEO=4
+
+# Attempts per link when the failure is temporary (1 = don't retry)
+#TENTATIVAS=2
+
+# Subtitle languages ("all" = every one) and whether to include automatic ones (-a)
+#IDIOMAS_LEGENDAS=pt.*,en.*
+#LEGENDAS_AUTOMATICAS=0
+
+# Mark sponsors/intros as chapters with SponsorBlock (-s)
+#SPONSORBLOCK=0
+
+# Video link inside a playlist: download only the video (-p)
+#SEM_PLAYLIST=0
+
+# Use a browser's cookies (login): firefox, chrome, brave… (-b)
+#COOKIES_NAVEGADOR=
+
+# Skip videos already downloaded before (0 = always check; same as -i)
+#USAR_HISTORICO=1
+
+# Where to save the links that failed
+#ARQUIVO_FALHAS=links_falhos.txt
+EOF
+)
 }
-carrega_config
-for k in "${!DO_AMBIENTE[@]}"; do printf -v "$k" '%s' "${DO_AMBIENTE[$k]}"; ORIGEM[$k]=ambiente; done
+"idioma_$LINGUA"
 
 # ───────────────────────────── Cores e terminal ───────────────────────────────
 ESC=$'\033'
@@ -197,11 +623,12 @@ fi
 
 erro()  { printf '  %s✖%s %s\n' "$VERMELHO" "$R" "$*" >&2; }
 aviso() { printf '  %s⚠%s %s\n' "$AMARELO" "$R" "$*"; }
+uso()   { printf '%s\n' "${T[ajuda]}"; }
 
-uso() {                                       # a ajuda é o próprio cabeçalho deste arquivo
-  awk '/^# =+$/ { n++; next } n == 2 { sub(/^#/, ""); sub(/^  ?/, ""); print }' "$0" 2>/dev/null ||
-    printf 'Uso: %s [opções] [LINK ou ARQUIVO ...]\n' "$(basename "$0")"
-}
+# Primeira execução: cria o grabit.config, com os padrões comentados, no idioma atual
+if [[ ! -e $CONFIG_ARQ && -w ${CONFIG_ARQ%/*} ]]; then
+  printf '%s\n' "${T[modelo_config]}" > "$CONFIG_ARQ" 2>/dev/null && CONFIG_CRIADO=1
+fi
 
 # Comandos longos (--config, --help) saem da lista antes do getopts
 COMANDO=""; ARGS_CURTOS=()
@@ -210,27 +637,28 @@ for a in "$@"; do
     --config)       COMANDO=config ;;
     --help|--ajuda) COMANDO=ajuda ;;
     --)             ARGS_CURTOS+=("$a") ;;
-    --*)            erro "Opção inválida: $a"; uso; exit 2 ;;
+    --*)            t opcao_invalida "$a"; erro "$TXT"; uso; exit 2 ;;
     *)              ARGS_CURTOS+=("$a") ;;
   esac
 done
 set -- "${ARGS_CURTOS[@]}"
 
 OPCOES=(); LISTA_EXPLICITA=0
-while getopts ":l:o:j:c:b:pasih" op; do
+while getopts ":l:o:j:c:b:L:pasih" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
     j) DOWNLOADS_SIMULTANEOS=$OPTARG;  ORIGEM[DOWNLOADS_SIMULTANEOS]=opção ;;
     c) CONEXOES_POR_VIDEO=$OPTARG;     ORIGEM[CONEXOES_POR_VIDEO]=opção ;;
     b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
+    L) ;;                              # já tratado acima, antes de carregar os textos
     p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
     a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
     s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
     i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
     h) COMANDO=ajuda ;;
-    :) erro "A opção -$OPTARG precisa de um valor."; exit 2 ;;
-    *) erro "Opção inválida: -$OPTARG"; uso; exit 2 ;;
+    :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
+    *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
   esac
   OPCOES+=("-$op" ${OPTARG+"$OPTARG"})        # guardadas para sugerir o comando de nova tentativa
 done
@@ -240,41 +668,34 @@ ARGS_LINKS=("$@")
 
 [[ $COMANDO == ajuda ]] && { uso; exit 0; }
 
-origem_txt() {                                # origem_txt CHAVE → FMT: de onde veio o valor
-  case ${ORIGEM[$1]:-padrão} in
-    opção)    FMT="opção do comando" ;;
-    config)   FMT="grabit.config" ;;
-    ambiente) FMT="variável de ambiente" ;;
-    *)        FMT="padrão" ;;
-  esac
-}
+if [[ -n $IDIOMA_INVALIDO ]]; then t idioma_invalido "$IDIOMA_INVALIDO" "$LINGUA"; aviso "$TXT"; fi
+origem_txt() { FMT=${T[origem_${ORIGEM[$1]:-padrão}]}; }  # origem_txt CHAVE → FMT: de onde veio o valor
 for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
   if ! [[ ${!nome} =~ ^[1-9][0-9]*$ ]]; then
-    origem_txt "$nome"
-    erro "$nome precisa ser um número inteiro maior que zero (recebi '${!nome}', de: $FMT)."
+    origem_txt "$nome"; t val_numero "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
   fi
 done
 for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST USAR_HISTORICO; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
-    origem_txt "$nome"
-    erro "$nome precisa ser 0 ou 1 (recebi '${!nome}', de: $FMT)."
+    origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
   fi
 done
 
 # --config: onde está o arquivo e os valores em uso, com a origem de cada um
 mostra_config() {
-  local k v
+  local k v pad
   printf '\n  %sgrabit.config%s  %s' "$NEG" "$R" "$CONFIG_ARQ"
-  if (( CONFIG_CRIADO )); then printf '  %s(criado agora)%s\n\n' "$VERDE" "$R"
+  if (( CONFIG_CRIADO )); then printf '  %s%s%s\n\n' "$VERDE" "${T[cfg_criado]}" "$R"
   elif [[ -f $CONFIG_ARQ ]]; then printf '\n\n'
-  else printf '  %s(não existe e não pôde ser criado)%s\n\n' "$AMARELO" "$R"; fi
+  else printf '  %s%s%s\n\n' "$AMARELO" "${T[cfg_inexistente]}" "$R"; fi
   for k in "${CHAVES_CONFIG[@]}"; do
-    v=${!k}; origem_txt "$k"
-    printf '  %-22s %s%-22s%s %s%s%s\n' "$k" "$NEG" "${v:-—}" "$R" "$DIM" "$FMT" "$R"
+    v=${!k:-—}; origem_txt "$k"
+    pad=""; (( ${#v} < 22 )) && printf -v pad '%*s' $(( 22 - ${#v} )) ''   # por caracteres: "—" ocupa 3 bytes
+    printf '  %-22s %s%s%s%s %s%s%s\n' "$k" "$NEG" "$v" "$R" "$pad" "$DIM" "$FMT" "$R"
   done
-  for v in "${AVISOS_CONFIG[@]}"; do aviso "linha ${v%%:*} do grabit.config ignorada (chave desconhecida ou sem \"=\"):${v#*:}"; done
+  for v in "${AVISOS_CONFIG[@]}"; do t cfg_linha "${v%%:*}" "${v#*:}"; aviso "$TXT"; done
   printf '\n'
 }
 [[ $COMANDO == config ]] && { mostra_config; exit 0; }
@@ -287,7 +708,7 @@ ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VE
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0
-MARCA_BAIXADOS="# ==================== BAIXADOS ===================="
+MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
@@ -473,26 +894,26 @@ analisa_log() {
 classifica_erro() {
   DICA=""; REPETE=1; ARQUIVO_RUIM=0
   case ${1,,} in
-    *"private video"*)                                      DICA="vídeo privado"; REPETE=0 ;;
+    *"private video"*)                                      DICA=${T[d_privado]}; REPETE=0 ;;
     *"confirm your age"*|*"age-restricted"*|*"inappropriate for some users"*)
-                                                            DICA="restrito por idade — use -b NAVEGADOR"; REPETE=0 ;;
-    *"not a bot"*)                                          DICA="o YouTube pediu login — use -b NAVEGADOR"; REPETE=0 ;;
-    *"members-only"*|*"join this channel"*)                 DICA="exclusivo para membros"; REPETE=0 ;;
+                                                            DICA=${T[d_idade]}; REPETE=0 ;;
+    *"not a bot"*)                                          DICA=${T[d_bot]}; REPETE=0 ;;
+    *"members-only"*|*"join this channel"*)                 DICA=${T[d_membros]}; REPETE=0 ;;
     *"not available in your country"*|*"geo restrict"*|*"geo-restrict"*)
-                                                            DICA="bloqueado na sua região"; REPETE=0 ;;
+                                                            DICA=${T[d_regiao]}; REPETE=0 ;;
     *"video unavailable"*|*"has been removed"*|*"no longer available"*)
-                                                            DICA="vídeo indisponível ou removido"; REPETE=0 ;;
-    *"unsupported url"*|*"is not a valid url"*)             DICA="link não suportado"; REPETE=0 ;;
-    *"live event will begin"*|*"premieres in"*)             DICA="a live/estreia ainda não começou"; REPETE=0 ;;
-    *"http error 404"*|*"http error 410"*)                  DICA="não encontrado (404)"; REPETE=0 ;;
-    *"no space left"*)                                      DICA="disco cheio"; REPETE=0 ;;
+                                                            DICA=${T[d_removido]}; REPETE=0 ;;
+    *"unsupported url"*|*"is not a valid url"*)             DICA=${T[d_url]}; REPETE=0 ;;
+    *"live event will begin"*|*"premieres in"*)             DICA=${T[d_live]}; REPETE=0 ;;
+    *"http error 404"*|*"http error 410"*)                  DICA=${T[d_404]}; REPETE=0 ;;
+    *"no space left"*)                                      DICA=${T[d_disco]}; REPETE=0 ;;
     *"invalid data found when processing input"*|*"moov atom not found"*|*"ebml header parsing failed"*)
-                                                            DICA="o arquivo baixado não é um vídeo válido"; ARQUIVO_RUIM=1 ;;
-    *"fragment"*"not found"*|*"unable to download fragment"*) DICA="um pedaço do vídeo não baixou" ;;
-    *"http error 403"*)                                     DICA="acesso negado (403)" ;;
-    *"http error 429"*|*"too many requests"*)               DICA="muitas requisições (429)" ;;
+                                                            DICA=${T[d_invalido]}; ARQUIVO_RUIM=1 ;;
+    *"fragment"*"not found"*|*"unable to download fragment"*) DICA=${T[d_fragmento]} ;;
+    *"http error 403"*)                                     DICA=${T[d_403]} ;;
+    *"http error 429"*|*"too many requests"*)               DICA=${T[d_429]} ;;
     *"timed out"*|*"connection reset"*|*"name resolution"*|*"name or service not known"*|*"network is unreachable"*)
-                                                            DICA="falha de rede" ;;
+                                                            DICA=${T[d_rede]} ;;
   esac
 }
 
@@ -501,24 +922,25 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
   ETAPA=""
   case $1 in
     *"aren't any"*|*"are no "*|*"Not remuxing"*|"Deleting original"*|WARNING:*) ;;   # "nada a fazer"
-    @@D@@*|"[MoveFiles]"*)                                         ETAPA="finalizando" ;;
-    "[Merger]"*)                                                   ETAPA="mesclando vídeo e áudio" ;;
-    "[VideoRemuxer]"*)                                             ETAPA="convertendo para MKV" ;;
-    "[Metadata]"*|"[EmbedInfoJson]"*)                              ETAPA="gravando metadados" ;;
-    "[EmbedSubtitle]"*|"[SubtitlesConvertor]"*)                    ETAPA="embutindo legendas" ;;
-    "[EmbedThumbnail]"*|"[ThumbnailsConvertor]"*)                  ETAPA="embutindo a capa" ;;
-    "[SponsorBlock]"*|"[ModifyChapters]"*)                         ETAPA="processando capítulos" ;;
-    "[Fixup"*)                                                     ETAPA="corrigindo o arquivo" ;;
-    *"Downloading subtitles"*|*"Writing video subtitles"*)         ETAPA="baixando legendas" ;;
-    *"Downloading video thumbnail"*|*"Writing video thumbnail"*)   ETAPA="baixando a capa" ;;
-    *" has already been recorded in the archive")                  ETAPA="já baixado antes (histórico)" ;;
-    *" has already been downloaded")                               ETAPA="arquivo já existe" ;;
+    @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
+    "[Merger]"*)                                                   ETAPA=${T[et_mesclando]} ;;
+    "[VideoRemuxer]"*)                                             ETAPA=${T[et_mkv]} ;;
+    "[Metadata]"*|"[EmbedInfoJson]"*)                              ETAPA=${T[et_metadados]} ;;
+    "[EmbedSubtitle]"*|"[SubtitlesConvertor]"*)                    ETAPA=${T[et_legendas_emb]} ;;
+    "[EmbedThumbnail]"*|"[ThumbnailsConvertor]"*)                  ETAPA=${T[et_capa_emb]} ;;
+    "[SponsorBlock]"*|"[ModifyChapters]"*)                         ETAPA=${T[et_capitulos]} ;;
+    "[Fixup"*)                                                     ETAPA=${T[et_fixup]} ;;
+    *"Downloading subtitles"*|*"Writing video subtitles"*)         ETAPA=${T[et_legendas]} ;;
+    *"Downloading video thumbnail"*|*"Writing video thumbnail"*)   ETAPA=${T[et_capa]} ;;
+    *" has already been recorded in the archive")                  ETAPA=${T[et_hist]} ;;
+    *" has already been downloaded")                               ETAPA=${T[et_existe]} ;;
     "[download] Destination"*|"[info] "*" format(s): "*|"[hlsnative]"*|"[dashsegments]"*)
-                                                                   ETAPA="iniciando download" ;;
-    @@P@@*)                                                        ETAPA="processando" ;;
+                                                                   ETAPA=${T[et_iniciando]} ;;
+    @@P@@*)                                                        ETAPA=${T[et_processando]} ;;
     "[download] Downloading item "*)
-      [[ $1 =~ item\ ([0-9]+)\ of\ ([0-9]+) ]] &&
-        ETAPA="obtendo informações · item ${BASH_REMATCH[1]}/${BASH_REMATCH[2]}" ;;
+      if [[ $1 =~ item\ ([0-9]+)\ of\ ([0-9]+) ]]; then
+        t et_item "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"; ETAPA=$TXT
+      fi ;;
   esac
 }
 
@@ -544,7 +966,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
   spin=${SPIN[$(( TICK % ${#SPIN[@]} ))]}
   titulo=${TITULO[$idx]:-${LINKS[$(( idx - 1 ))]}}
   tent=${TENTATIVA[$idx]:-1}
-  if (( tent > 1 )); then pre_txt="${tent}ª tentativa · "; pre="${AMARELO}${pre_txt}${R}"; fi
+  if (( tent > 1 )); then t tentativa_n "$tent"; pre_txt=$TXT; pre="${AMARELO}${pre_txt}${R}"; fi
 
   if [[ $linha == @@P@@* ]]; then
     local baixado total vel eta pidx pn vcod alt fps ext ttl tipo bw p10 pct detalhe fb ft resto parte vs="" es=""
@@ -558,12 +980,12 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
     VEL_TOTAL=$(( VEL_TOTAL + vel ))
     if [[ $pidx =~ ^[0-9]+$ ]]; then pre_txt+="item ${pidx}${pn:+/$pn} · "; pre+="${DIM}item ${pidx}${pn:+/$pn} · ${R}"; fi
     case $ext in
-      vtt|srt|ass|ssa|ttml|dfxp|srv[123]|json3|lrc) tipo="legendas" ;;
+      vtt|srt|ass|ssa|ttml|dfxp|srv[123]|json3|lrc) tipo=${T[tipo_legendas]} ;;
       *)
         if [[ $vcod == none ]]; then
-          tipo="áudio"
+          tipo=${T[tipo_audio]}
         else                                  # ex.: "vídeo 2160p60" — dá para ver a qualidade chegando
-          tipo="vídeo"; num "$alt"
+          tipo=${T[tipo_video]}; num "$alt"
           if (( NUM > 0 )); then tipo+=" ${NUM}p"; num "$fps"; (( NUM > 30 )) && tipo+="$NUM"; fi
         fi ;;
     esac
@@ -604,7 +1026,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
       etapa_da_linha "${ult[$k]}"
       [[ -n $ETAPA ]] && break
     done
-    [[ -z $ETAPA ]] && ETAPA="obtendo informações"
+    [[ -z $ETAPA ]] && ETAPA=${T[et_info]}
     corta "$titulo" $(( COLS - (2 + 1 + 1 + ${#idxs} + 2) - ${#pre_txt} - 2 ))
     l1="  ${ACENTO}${spin}${R} ${DIM}${idxs}${R}  ${pre}${FMT}"
     l2="     ${DIM}↳ ${ETAPA}…${R}"
@@ -622,7 +1044,7 @@ monta_live() {
   LIVE+=("  ${CINZA}${reg// /─}${R}")
 
   # barra total com largura fixa por terminal; some em terminal estreito
-  l="  ${NEG}Total${R} "; w=8
+  l="  ${NEG}${T[total]}${R} "; w=$(( 3 + ${#T[total]} ))
   bw=$(( COLS - 76 )); (( bw > 24 )) && bw=24
   if (( bw >= 6 )); then
     barra $(( FINALIZADOS * bw / TOTAL )) "$bw"
@@ -676,7 +1098,7 @@ salva_log() {                                 # guarda o log de todas as tentati
   {
     printf '# %s\n' "${LINKS[$(( idx - 1 ))]}"
     for (( t = 1; t <= tent; t++ )); do
-      (( tent > 1 )) && printf '\n# ── tentativa %d ──\n' "$t"
+      if (( tent > 1 )); then t log_tentativa "$t"; printf '\n%s\n' "$TXT"; fi
       if (( t < tent )); then grep -av '^@@P@@' "$TMP/$idx.t$t.log"; else grep -av '^@@P@@' "$TMP/$idx.log"; fi
     done
   } > "$nome" 2>/dev/null
@@ -723,7 +1145,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     montar_meta "$h" "$fps" "$hdr" "$vc" "$ac" "$canais" "$dur" "$tam"
     if [[ $tipo == J ]]; then
       glifo="↷"; cor=$AMARELO; N_JA=$(( N_JA + 1 ))
-      META="já existia${META:+ · $META}"
+      META="${T[r_ja_existia]}${META:+ · $META}"
     else
       glifo="✔"; cor=$VERDE; N_OK=$(( N_OK + 1 )); BYTES_NOVOS=$(( BYTES_NOVOS + tam ))
     fi
@@ -749,9 +1171,9 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       titulo=${titulo% has already been recorded in the archive}
       if [[ $titulo == *": "* ]]; then titulo=${titulo#*: }; else titulo=""; fi
       titulo=${titulo//[[:cntrl:]]/ }
-      linha_resultado "↷" "$AMARELO" "$idxs" "${titulo:-${TITULO[$idx]:-$url}}" "já baixado antes"
+      linha_resultado "↷" "$AMARELO" "$idxs" "${titulo:-${TITULO[$idx]:-$url}}" "${T[r_ja_baixado]}"
     else
-      linha_resultado "↷" "$AMARELO" "$idxs" "$url" "${n_hist} já baixados antes"
+      t r_n_ja_baixados "$n_hist"; linha_resultado "↷" "$AMARELO" "$idxs" "$url" "$TXT"
     fi
     PERM+=("$LINHA")
   fi
@@ -761,10 +1183,10 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     n_ja=$(cat "${logs[@]}" 2>/dev/null | grep -ac 'has already been downloaded')
     if (( n_ja > 0 )); then
       N_JA=$(( N_JA + 1 ))
-      linha_resultado "↷" "$AMARELO" "$idxs" "$titulo" "já existia"
+      linha_resultado "↷" "$AMARELO" "$idxs" "$titulo" "${T[r_ja_existia]}"
     else
       N_OK=$(( N_OK + 1 ))
-      linha_resultado "✔" "$VERDE" "$idxs" "$titulo" "concluído"
+      linha_resultado "✔" "$VERDE" "$idxs" "$titulo" "${T[r_concluido]}"
     fi
     PERM+=("$LINHA")
   fi
@@ -774,12 +1196,12 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     if (( N_FATAIS == 0 && N_COSMETICOS > 0 && n_done > 0 )); then
       # Tudo foi entregue; só um acabamento falhou. Aviso, não falha.
       case $AVISO_CTX in
-        "[ThumbnailsConvertor]"*) det="a capa não converteu para JPG e foi embutida no formato original" ;;
-        "[SponsorBlock]"*)        det="não deu para consultar o SponsorBlock" ;;
-        *)                        det="uma etapa de acabamento falhou (detalhes no log)" ;;
+        "[ThumbnailsConvertor]"*) det=${T[r_av_capa]} ;;
+        "[SponsorBlock]"*)        det=${T[r_av_sponsor]} ;;
+        *)                        det=${T[r_av_outro]} ;;
       esac
-      corta "$det — o vídeo está completo" $(( COLS - 20 ))
-      PERM+=("         ${AMARELO}↳ aviso:${R}${DIM} ${FMT}${R}")
+      t r_av_completo "$det"; corta "$TXT" $(( COLS - 13 - ${#T[r_aviso]} ))
+      PERM+=("         ${AMARELO}↳ ${T[r_aviso]}${R}${DIM} ${FMT}${R}")
       N_AVISOS=$(( N_AVISOS + 1 ))
       salva_log "$idx"
       rc=0
@@ -790,18 +1212,18 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     classifica_erro "$MOTIVO"
     MOTIVO=$(sed -E 's/^ERROR: //; s/^\[[^]]+\] //; s/^[^ :]+: //; s/ \(caused by .*$//; s/; please report this issue.*$//' <<<"$MOTIVO")
     if (( n_done > 0 || n_hist > 0 )); then
-      linha_resultado "⚠" "$AMARELO" "$idxs" "${TITULO[$idx]:-$url}" "parcial"
+      linha_resultado "⚠" "$AMARELO" "$idxs" "${TITULO[$idx]:-$url}" "${T[r_parcial]}"
     elif (( tent > 1 )); then
-      linha_resultado "✖" "$VERMELHO" "$idxs" "${TITULO[$idx]:-$url}" "falhou ${tent}×"
+      t r_falhou_n "$tent"; linha_resultado "✖" "$VERMELHO" "$idxs" "${TITULO[$idx]:-$url}" "$TXT"
     else
-      linha_resultado "✖" "$VERMELHO" "$idxs" "${TITULO[$idx]:-$url}" "falhou"
+      linha_resultado "✖" "$VERMELHO" "$idxs" "${TITULO[$idx]:-$url}" "${T[r_falhou]}"
     fi
-    if [[ -n $DICA ]]; then                     # "↳ dica em português · mensagem original"
+    if [[ -n $DICA ]]; then                     # "↳ dica no idioma do usuário · mensagem original"
       corta "$MOTIVO" $(( COLS - 15 - ${#DICA} ))
       det="${VERMELHO}↳ ${DICA}${R}"
       (( LARG >= 10 )) && det+="${DIM} · ${FMT}${R}"
     else
-      corta "${MOTIVO:-yt-dlp terminou com código $rc}" $(( COLS - 12 ))
+      t r_codigo "$rc"; corta "${MOTIVO:-$TXT}" $(( COLS - 12 ))
       det="${VERMELHO}↳ ${FMT}${R}"
     fi
     PERM+=("$LINHA" "         $det")
@@ -829,7 +1251,7 @@ lanca_job() {                                 # lanca_job IDX
   ULTIMO_PID=$!
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
-    if (( tent > 1 )); then PERM+=("  ↻ ${idxs}  ${url}  (${tent}ª tentativa)"); else PERM+=("  ▶ ${idxs}  ${url}"); fi
+    if (( tent > 1 )); then t ni_tentativa "$tent"; PERM+=("  ↻ ${idxs}  ${url}  $TXT"); else PERM+=("  ▶ ${idxs}  ${url}"); fi
   fi
 }
 
@@ -886,7 +1308,7 @@ comando_repetir() {                           # → FMT: o mesmo comando, só co
 }
 
 salva_falhas() {                              # grava links_falhos.txt (+ o que faltava, se cancelado)
-  local lista=("${FALHAS[@]}") i n_pend=0 f era_falhas=0 o_que="com erro"
+  local lista=("${FALHAS[@]}") i n_pend=0 f era_falhas=0 o_que=${T[f_com_erro]}
   if (( CANCELADO )); then
     for (( i = 1; i <= TOTAL; i++ )); do
       [[ -n ${FEITO[$i]:-} ]] && continue
@@ -898,44 +1320,50 @@ salva_falhas() {                              # grava links_falhos.txt (+ o que 
   if (( ${#lista[@]} == 0 )); then
     # tudo certo: se a lista de entrada era o próprio arquivo de falhas, ele cumpriu o papel
     if (( era_falhas )) && rm -f -- "$ARQUIVO_FALHAS"; then
-      printf '\n  %s✔%s  Todos os links de %s deram certo — arquivo removido.\n' "$VERDE" "$R" "$ARQUIVO_FALHAS"
+      t f_todos_ok "$ARQUIVO_FALHAS"; printf '\n  %s✔%s  %s\n' "$VERDE" "$R" "$TXT"
     fi
     return 0
   fi
   if ! printf '%s\n' "${lista[@]}" > "$ARQUIVO_FALHAS"; then
-    erro "Não consegui gravar '$ARQUIVO_FALHAS'."
+    t f_nao_gravou "$ARQUIVO_FALHAS"; erro "$TXT"
     return 0
   fi
-  (( n_pend > 0 && N_ERRO > 0 )) && o_que="com erro ou pendentes"
-  (( n_pend > 0 && N_ERRO == 0 )) && o_que="pendentes"
-  printf '\n  %s⚠%s  %d link(s) %s salvos em %s%s%s' "$AMARELO" "$R" "${#lista[@]}" "$o_que" "$NEG" "$ARQUIVO_FALHAS" "$R"
-  if (( N_ERRO > 0 )); then printf ' — logs em %s/\n' "$LOG_DIR"; else printf '\n'; fi
+  (( n_pend > 0 && N_ERRO > 0 )) && o_que=${T[f_erro_pend]}
+  (( n_pend > 0 && N_ERRO == 0 )) && o_que=${T[f_pend]}
+  t f_salvos "${#lista[@]}" "$o_que" "${NEG}${ARQUIVO_FALHAS}${R}"
+  printf '\n  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
+  if (( N_ERRO > 0 )); then t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"; else printf '\n'; fi
   comando_repetir
-  printf '     Para continuar:  %s%s%s\n' "$CIANO" "$FMT" "$R"
+  t f_continuar "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
+}
+
+linha_resumo() {                              # linha_resumo GLIFO COR RÓTULO VALOR (alinha por caracteres)
+  local pad
+  printf -v pad '%*s' $(( 18 - ${#3} )) ''
+  printf '  %s%s%s  %s%s%s\n' "$2" "$1" "$R" "$3" "$pad" "$4"
 }
 
 resumo() {
   (( INTERATIVO )) && printf '%s' "${ESC}[?7h"     # religa a quebra de linha para o texto final
-  local t b media="" titulo_r="Resumo"
+  local t b media="" titulo_r=${T[s_resumo]}
   fmt_tempo "$SECONDS"; t=$FMT
   fmt_bytes "$BYTES_NOVOS"; b=$FMT
   if (( BYTES_NOVOS > 0 && SECONDS > 0 )); then
-    fmt_bytes $(( BYTES_NOVOS / SECONDS )); media="  ${DIM}(média de ${FMT}/s)${R}"
+    fmt_bytes $(( BYTES_NOVOS / SECONDS )); t s_media "$FMT"; media="  ${DIM}${TXT}${R}"
   fi
-  (( CANCELADO )) && titulo_r="Resumo parcial"
+  (( CANCELADO )) && titulo_r=${T[s_resumo_parcial]}
   printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "$titulo_r" "$R"
-  printf '  %s✔%s  Baixados          %s%s%s\n'  "$VERDE"    "$R" "$NEG" "$N_OK"  "$R"
-  printf '  %s↷%s  Já existiam       %s%s%s\n'   "$AMARELO"  "$R" "$NEG" "$N_JA"  "$R"
-  printf '  %s✖%s  Links com erro    %s%s%s\n'   "$VERMELHO" "$R" "$NEG" "$N_ERRO" "$R"
+  linha_resumo "✔" "$VERDE"    "${T[s_baixados]}" "${NEG}${N_OK}${R}"
+  linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"       "${NEG}${N_JA}${R}"
+  linha_resumo "✖" "$VERMELHO" "${T[s_erro]}"     "${NEG}${N_ERRO}${R}"
   if (( N_AVISOS > 0 )); then
-    printf '  %s⚠%s  Com aviso         %s%s%s  %s(arquivos completos · logs em %s/)%s\n' \
-      "$AMARELO" "$R" "$NEG" "$N_AVISOS" "$R" "$DIM" "$LOG_DIR" "$R"
+    t s_aviso_det "$LOG_DIR"; linha_resumo "⚠" "$AMARELO" "${T[s_aviso]}" "${NEG}${N_AVISOS}${R}  ${DIM}${TXT}${R}"
   fi
-  printf '  %s◷%s  Tempo             %s\n'       "$DIM" "$R" "$t"
-  printf '  %s▣%s  Baixado agora     %s%s\n'     "$DIM" "$R" "$b" "$media"
-  printf '  %s▸%s  Pasta             %s\n'       "$DIM" "$R" "$PASTA_SAIDA"
+  linha_resumo "◷" "$DIM" "${T[s_tempo]}"         "$t"
+  linha_resumo "▣" "$DIM" "${T[s_baixado_agora]}" "${b}${media}"
+  linha_resumo "▸" "$DIM" "${T[s_pasta]}"         "$PASTA_SAIDA"
   if (( N_MOVIDOS > 0 )); then
-    printf '  %s✎%s  Lista             %s link(s) movidos para a seção BAIXADOS\n' "$DIM" "$R" "$N_MOVIDOS"
+    t s_movidos "$N_MOVIDOS"; linha_resumo "✎" "$DIM" "${T[s_lista]}" "$TXT"
   fi
   salva_falhas
   printf '\n'
@@ -949,11 +1377,10 @@ limpa() {                                     # trap EXIT: sempre devolve o term
   if (( CANCELADO && COMECOU )); then
     move_baixados
     desenha final
-    printf '\n  %s⚠ Cancelado.%s O que estava pela metade foi descartado e recomeça do zero na próxima vez.\n' \
-      "$AMARELO" "$R"
+    printf '\n  %s⚠ %s%s%s\n' "$AMARELO" "${T[c_cancelado]}" "$R" "${T[c_descartado]}"
     resumo
   elif (( CANCELADO )); then
-    printf '\n  %s⚠ Cancelado.%s\n\n' "$AMARELO" "$R"
+    printf '\n  %s⚠ %s%s\n\n' "$AMARELO" "${T[c_cancelado]}" "$R"
   fi
   if (( INTERATIVO )); then
     printf '%s' "${ESC}[?7h${ESC}[?25h"
@@ -993,10 +1420,10 @@ descarta_parciais() {                         # apaga a pasta temporária desta 
 
 # ───────────────────────────── Verificações iniciais ──────────────────────────
 cabecalho() {
-  local t="GrabIt  ·  Downloader em lote  ·  Máxima qualidade (MKV)" w h
+  local t=${T[titulo]} w h
   w=$(( ${#t} + 4 ))
   if (( COLS < w + 4 )); then                   # terminal estreito: título simples, sem moldura
-    printf '\n  %sGrabIt · Downloader em lote%s\n\n' "$NEG" "$R"
+    printf '\n  %s%s%s\n\n' "$NEG" "${T[titulo_curto]}" "$R"
     return
   fi
   printf -v h '%*s' "$w" ''
@@ -1023,7 +1450,7 @@ comando_instalar() {                          # comando_instalar PACOTE → FMT 
     pacman) FMT="sudo pacman -S $1" ;;
     zypper) FMT="sudo zypper install $1" ;;
     apk)    FMT="sudo apk add $1" ;;
-    *)      FMT="instale '$1' pelo gerenciador de pacotes do sistema" ;;
+    *)      t dep_instale "$1"; FMT=$TXT ;;
   esac
 }
 
@@ -1032,7 +1459,7 @@ verifica_dependencias() {
   command -v yt-dlp >/dev/null 2>&1 || faltando+=("yt-dlp")
   command -v ffmpeg >/dev/null 2>&1 || faltando+=("ffmpeg")
   if (( ${#faltando[@]} )); then
-    erro "Faltando: ${faltando[*]}"
+    t dep_faltando "${faltando[*]}"; erro "$TXT"
     comando_instalar ffmpeg
     printf '\n     %syt-dlp%s  →  pipx install "yt-dlp[default,curl-cffi]"\n' "$CIANO" "$R"
     printf '     %sffmpeg%s  →  %s\n\n' "$CIANO" "$R" "$FMT"
@@ -1117,11 +1544,11 @@ sonda() {
 }
 
 # A seção BAIXADOS de um arquivo de links começa numa linha como
-#   # ==================== BAIXADOS ====================
+#   # ==================== BAIXADOS ====================   (ou DOWNLOADED, em inglês)
 # e vai até o fim do arquivo: o GrabIt ignora tudo o que estiver nela.
 eh_marca_baixados() {
   local l=${1%$'\r'}
-  [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*baixados[[:space:]]*=+[[:space:]]*$ ]]
+  [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(baixados|downloaded)[[:space:]]*=+[[:space:]]*$ ]]
 }
 
 # links_da_linha LINHA → PALAVRAS_LINK: os links da linha, sem o comentário do fim
@@ -1160,12 +1587,12 @@ ler_links() {
   local -A visto=()
   if (( ${#ARGS_LINKS[@]} == 0 || LISTA_EXPLICITA )); then
     if [[ $ARQUIVO_LINKS == - ]]; then
-      le_lista /dev/stdin; fontes+=("entrada padrão")
+      le_lista /dev/stdin; fontes+=("${T[fonte_stdin]}")
     elif [[ -f $ARQUIVO_LINKS && -r $ARQUIVO_LINKS ]]; then
       le_lista "$ARQUIVO_LINKS"; fontes+=("$ARQUIVO_LINKS"); ARQUIVOS_ENTRADA+=("$ARQUIVO_LINKS")
     else
-      erro "O arquivo '$ARQUIVO_LINKS' não foi encontrado."
-      printf '     Crie-o com um link por linha, use  -l CAMINHO  ou passe os links no próprio comando.\n\n'
+      t sem_arquivo "$ARQUIVO_LINKS"; erro "$TXT"
+      printf '%s\n\n' "${T[sem_arquivo2]}"
       exit 1
     fi
   fi
@@ -1176,7 +1603,7 @@ ler_links() {
       bruto+=("$a"); soltos=1
     fi
   done
-  (( soltos )) && fontes+=("linha de comando")
+  (( soltos )) && fontes+=("${T[fonte_cli]}")
 
   for linha in "${bruto[@]}"; do
     IFS=$' \t\r' read -ra palavras <<<"${linha#$'﻿'}"   # ﻿ do Bloco de Notas do Windows
@@ -1193,15 +1620,11 @@ ler_links() {
   FONTE_LINKS=$(IFS=,; printf '%s' "${fontes[*]}"); FONTE_LINKS=${FONTE_LINKS//,/, }
   if (( TOTAL == 0 )); then
     if (( N_NA_SECAO > 0 )); then
-      if (( N_NA_SECAO == 1 )); then
-        printf '  %s✔%s Nada para baixar: o único link de %s já está na seção BAIXADOS.\n\n' "$VERDE" "$R" "$FONTE_LINKS"
-      else
-        printf '  %s✔%s Nada para baixar: os %d links de %s já estão na seção BAIXADOS.\n\n' \
-          "$VERDE" "$R" "$N_NA_SECAO" "$FONTE_LINKS"
-      fi
+      if (( N_NA_SECAO == 1 )); then t nada_1 "$FONTE_LINKS"; else t nada_n "$N_NA_SECAO" "$FONTE_LINKS"; fi
+      printf '  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
       exit 0
     fi
-    erro "Nenhum link válido (http/https) em: ${FONTE_LINKS:-nada}."
+    t sem_links "${FONTE_LINKS:-${T[nada]}}"; erro "$TXT"
     exit 1
   fi
 }
@@ -1242,7 +1665,7 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
   (( ${#movidas[@]} )) || return 0
   if (( ! secao )); then
     (( ${#ativa[@]} )) && [[ -n ${ativa[-1]//[[:space:]]/} ]] && resto+=("$eol")
-    resto+=("${MARCA_BAIXADOS}${eol}" "# Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo.${eol}")
+    resto+=("${MARCA_BAIXADOS}${eol}" "${T[marca_desc]}${eol}")
   fi
   { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}"; } > "$arq.grabit-tmp" &&
     cat "$arq.grabit-tmp" > "$arq"
@@ -1308,11 +1731,11 @@ trap limpa EXIT
 
 atualiza_largura
 cabecalho
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || { erro "Não consegui criar a pasta temporária."; exit 1; }
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || { erro "${T[tmp_falhou]}"; exit 1; }
 verifica_dependencias
 ler_links
 
-mkdir -p "$PASTA_SAIDA" || { erro "Não consegui criar a pasta '$PASTA_SAIDA'."; exit 1; }
+mkdir -p "$PASTA_SAIDA" || { t pasta_falhou "$PASTA_SAIDA"; erro "$TXT"; exit 1; }
 printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
 prepara_parciais
 
@@ -1328,62 +1751,60 @@ for (( s = 0; s < J; s++ )); do SLOT_IDX[$s]=0; SLOT_PID[$s]=0; done
 monta_args_ytdlp
 
 extras=""
-(( DUPLICADOS > 0 )) && extras+=" ${DUPLICADOS} repetido(s)"
-(( INVALIDAS  > 0 )) && extras+="${extras:+,} ${INVALIDAS} linha(s) sem link"
-[[ -n $extras ]] && extras=" · ignorados:${extras}"
-txt_extras="legendas ${IDIOMAS_LEGENDAS}"
-(( LEGENDAS_AUTOMATICAS )) && txt_extras+=" (+automáticas)"
-txt_extras+=", capa, capítulos, metadados"
+(( DUPLICADOS > 0 )) && { t links_repetidos "$DUPLICADOS"; extras+=$TXT; }
+(( INVALIDAS  > 0 )) && { t links_sem_link "$INVALIDAS"; extras+="${extras:+,}$TXT"; }
+[[ -n $extras ]] && { t links_ignorados "$extras"; extras=$TXT; }
+(( N_NA_SECAO > 0 )) && { t links_na_secao "$N_NA_SECAO"; extras+=$TXT; }
+t kv_legendas "$IDIOMAS_LEGENDAS"; txt_extras=$TXT
+(( LEGENDAS_AUTOMATICAS )) && txt_extras+=${T[kv_automaticas]}
+txt_extras+=${T[kv_extras_resto]}
 (( SPONSORBLOCK )) && txt_extras+=", SponsorBlock"
-if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}indisponível${R}"
-elif (( TENTATIVAS > 1 )); then txt_imp="nas novas tentativas"
-else txt_imp="desligado (TENTATIVAS=1)"; fi
+if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}${T[imp_indisp]}${R}"
+elif (( TENTATIVAS > 1 )); then txt_imp=${T[imp_retry]}
+else txt_imp=${T[imp_off]}; fi
 
-(( N_NA_SECAO > 0 )) && extras+=" · ${N_NA_SECAO} já na seção BAIXADOS"
-kv "Links"    "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
-kv "Destino"  "$PASTA_SAIDA"
+kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
+kv "${T[kv_destino]}" "$PASTA_SAIDA"
 n_ajustes=0
 for k in "${CHAVES_CONFIG[@]}"; do [[ ${ORIGEM[$k]:-} == config ]] && n_ajustes=$(( n_ajustes + 1 )); done
 if (( CONFIG_CRIADO )); then
-  kv "Config" "${VERDE}criado agora${R} em ${CONFIG_ARQ/#$HOME/\~} — edite para mudar os padrões"
+  t kv_config_criado "$VERDE" "$R" "${CONFIG_ARQ/#$HOME/\~}"; kv "${T[kv_config]}" "$TXT"
 elif [[ -f $CONFIG_ARQ ]]; then
-  kv "Config" "grabit.config · ${n_ajustes} ajuste(s) · grabit --config mostra tudo"
+  t kv_config_ajustes "$n_ajustes"; kv "${T[kv_config]}" "$TXT"
 fi
 if (( USAR_HISTORICO )); then
   n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0
-  kv "Histórico" "${n_registrados} vídeo(s) registrados · os já baixados são pulados"
+  t kv_hist_on "$n_registrados"; kv "${T[kv_historico]}" "$TXT"
 else
-  kv "Histórico" "${AMARELO}ignorado (-i)${R}: confere arquivo por arquivo"
+  t kv_hist_off "$AMARELO" "$R"; kv "${T[kv_historico]}" "$TXT"
 fi
-txt_paralelo="${J} vídeo(s) × ${CONEXOES_POR_VIDEO} conexões"
-(( TENTATIVAS > 1 )) && txt_paralelo+=" · até ${TENTATIVAS} tentativas"
-kv "Paralelo" "$txt_paralelo"
-kv "Extras"   "$txt_extras"
+t kv_paralelo_v "$J" "$CONEXOES_POR_VIDEO"; txt_paralelo=$TXT
+(( TENTATIVAS > 1 )) && { t kv_tentativas "$TENTATIVAS"; txt_paralelo+=$TXT; }
+kv "${T[kv_paralelo]}" "$txt_paralelo"
+kv "${T[kv_extras]}"   "$txt_extras"
 FFMPEG_VER=${FFMPEG_VER:-?}
-kv "Ferramentas" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
-kv "Recursos"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}nenhum${R}}"
+kv "${T[kv_ferramentas]}" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
+kv "${T[kv_recursos]}"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}${T[js_nenhum]}${R}}"
 printf '\n'
-for a in "${AVISOS_CONFIG[@]}"; do
-  aviso "grabit.config, linha ${a%%:*}: ignorada (chave desconhecida ou sem \"=\"):${a#*:}"
-done
+for a in "${AVISOS_CONFIG[@]}"; do t cfg_linha "${a%%:*}" "${a#*:}"; aviso "$TXT"; done
 if (( LIMITE_J > 0 )); then
-  aviso "Terminal com só ${linhas} linhas: limitei a ${J} download(s) simultâneo(s)."
-  printf '     (pedido: %d — aumente a janela para ver todos no painel)\n' "$LIMITE_J"
+  t av_linhas "$linhas" "$J"; aviso "$TXT"
+  t av_linhas2 "$LIMITE_J"; printf '%s\n' "$TXT"
 fi
 idade_ytdlp
 if (( NUM >= 3 )) || (( ! TEM_JS_RUNTIMES )); then
-  aviso "Seu yt-dlp (${YTDLP_VER:-?}) está desatualizado: os sites mudam o tempo todo."
-  printf '     Atualize:  %syt-dlp -U%s   (ou:  %spipx upgrade yt-dlp%s)\n' "$CIANO" "$R" "$CIANO" "$R"
+  t av_ytdlp "${YTDLP_VER:-?}"; aviso "$TXT"
+  t av_ytdlp2 "${CIANO}yt-dlp -U${R}" "${CIANO}pipx upgrade yt-dlp${R}"; printf '%s\n' "$TXT"
 fi
 if [[ -z $IMPERSONATE ]]; then
-  aviso "curl_cffi ausente: sites com proteção anti-robô podem falhar."
-  printf '     Instale com:  %spipx inject yt-dlp curl-cffi%s\n' "$CIANO" "$R"
+  aviso "${T[av_curl]}"
+  t av_curl2 "${CIANO}pipx inject yt-dlp curl-cffi${R}"; printf '%s\n' "$TXT"
 fi
 if [[ -z $JS_RUNTIME ]]; then
-  aviso "Sem runtime JavaScript: o YouTube pode falhar ou vir em qualidade menor."
-  printf '     Instale o Deno (https://deno.com) e mantenha o yt-dlp atualizado.\n'
+  aviso "${T[av_js]}"
+  printf '%s\n' "${T[av_js2]}"
 fi
-printf '  %sCtrl+C cancela · o que estiver pela metade recomeça do zero%s\n\n' "$DIM" "$R"
+printf '  %s%s%s\n\n' "$DIM" "${T[dica_ctrlc]}" "$R"
 
 # Redimensionou a janela? O painel se ajusta no próximo quadro. (O trap só entra
 # agora: antes ele interromperia o "wait" das consultas ao yt-dlp.)

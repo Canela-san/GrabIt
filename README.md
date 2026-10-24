@@ -17,6 +17,10 @@
 </p>
 
 <p align="center">
+  <strong>Português</strong> · <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <img src="assets/demo.png" alt="Painel do GrabIt baixando vários vídeos ao mesmo tempo" width="860">
 </p>
 
@@ -27,7 +31,7 @@
 - **Em lote e em paralelo.** Você entrega uma lista de links; ele baixa vários vídeos ao mesmo tempo, cada um com várias conexões.
 - **Painel ao vivo.** Progresso, velocidade, tempo restante e a qualidade de cada download, sem a enxurrada de texto do yt-dlp. No fim, cada vídeo mostra o que *realmente* foi gravado (lido do arquivo com `ffprobe`).
 - **Tudo dentro do arquivo.** Legendas, capa, capítulos e metadados vão embutidos no MKV.
-- **Resiliente.** Falhas passageiras ganham nova tentativa automática e os erros vêm explicados em português.
+- **Resiliente.** Falhas passageiras ganham nova tentativa automática e os erros vêm explicados em português (ou em inglês, se preferir).
 - **Não baixa duas vezes.** Cada vídeo baixado entra num histórico; na próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo — mesmo que você já o tenha movido para outra pasta.
 
 ## Instalação
@@ -87,6 +91,8 @@ https://www.youtube.com/watch?v=XXXXXXXXXXX
 https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
 ```
 
+> Em inglês, a seção se chama `DOWNLOADED`; o GrabIt reconhece os dois nomes, então trocar de idioma não bagunça a lista.
+>
 > Pode editar o arquivo enquanto o GrabIt roda: ele é relido no fim, e o que você acrescentou não se perde. Quer baixar de novo algo da seção? Mova a linha para cima e rode com `-i` (veja o histórico em [Como funciona](#como-funciona)).
 
 Mais exemplos:
@@ -112,7 +118,8 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
 | `-s` | marca patrocínios e intros como capítulos ([SponsorBlock](https://sponsor.ajay.app)) | — |
 | `-i` | ignora o histórico de baixados e confere arquivo por arquivo | — |
-| `-h` | mostra a ajuda | — |
+| `-L pt\|en` | idioma das mensagens: português ou inglês | o do sistema |
+| `-h` | mostra a ajuda (`grabit -L en -h` mostra em inglês) | — |
 
 ## Configuração
 
@@ -127,6 +134,7 @@ COOKIES_NAVEGADOR=firefox
 
 | Chave | O que faz | Padrão |
 |---|---|---|
+| `IDIOMA` | idioma das mensagens: `pt`, `en` ou `auto` (segue o sistema) | `auto` |
 | `ARQUIVO_LINKS` | lista lida quando você roda só `grabit` | `links.txt` |
 | `PASTA_SAIDA` | onde os vídeos são salvos | `./Downloads` |
 | `DOWNLOADS_SIMULTANEOS` | vídeos ao mesmo tempo | `2` |
