@@ -103,6 +103,7 @@ grabit -l cursos.txt -o ~/Vídeos/Cursos      # outra lista, outra pasta
 grabit -j 4 -c 8                             # 4 vídeos por vez, 8 conexões cada
 grabit -b firefox                            # usa o login do navegador (vídeos restritos)
 grabit -x -l musicas.txt -o ~/Música         # só o áudio, na melhor qualidade
+grabit -d                                    # separa em pastas: Downloads/site/canal/
 cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 ```
 
@@ -119,6 +120,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
 | `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
+| `-d` | organiza em subpastas por site e canal: `Downloads/youtube.com/Canal/` | — |
 | `-u` | em páginas com vários vídeos (prévias, relacionados…), baixa só o principal: o mais longo | — |
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
 | `-s` | marca patrocínios e intros como capítulos ([SponsorBlock](https://sponsor.ajay.app)) | — |

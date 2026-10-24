@@ -105,6 +105,7 @@ grabit -l courses.txt -o ~/Videos/Courses    # another list, another folder
 grabit -j 4 -c 8                             # 4 videos at a time, 8 connections each
 grabit -b firefox                            # use the browser's login (restricted videos)
 grabit -x -l songs.txt -o ~/Music            # audio only, at the best quality
+grabit -d                                    # sort into folders: Downloads/site/channel/
 cat list.txt | grabit -l -                   # read links from standard input
 ```
 
@@ -121,6 +122,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
 | `-p` | if the link is a video inside a playlist, download just the video | — |
 | `-x` | audio only: the best track, in its original format, no re-encoding | — |
+| `-d` | sort into subfolders by site and channel: `Downloads/youtube.com/Channel/` | — |
 | `-u` | on pages with several videos (previews, related…), download only the main one: the longest | — |
 | `-a` | include automatic subtitles (manual ones still take priority) | — |
 | `-s` | mark sponsors and intros as chapters ([SponsorBlock](https://sponsor.ajay.app)) | — |

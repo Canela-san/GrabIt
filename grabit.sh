@@ -219,6 +219,7 @@ idioma_pt() {
     [kv_principal]=", só o vídeo principal de cada página"
     [kv_verificar]=", verificação completa"
     [kv_modo]="Modo"
+    [kv_subpastas]="<site>/<canal>/"
     [kv_audio_original]="só áudio · a melhor faixa, no formato original (sem recomprimir)"
     [kv_audio_conv]="só áudio · convertido para %s"
     [kv_extras_audio]="capa, capítulos, metadados"
@@ -353,6 +354,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -p            só o vídeo, se o link tiver vídeo + playlist
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
   -x            só o áudio (a melhor faixa, sem recomprimir)
+  -d            organiza em subpastas por site e canal: Downloads/site/canal/
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
@@ -499,6 +501,7 @@ idioma_en() {
     [kv_principal]=", only each page's main video"
     [kv_verificar]=", full check"
     [kv_modo]="Mode"
+    [kv_subpastas]="<site>/<channel>/"
     [kv_audio_original]="audio only · the best track, in its original format (no re-encoding)"
     [kv_audio_conv]="audio only · converted to %s"
     [kv_extras_audio]="cover, chapters, metadata"
@@ -633,6 +636,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -p            only the video, when the link is video + playlist
   -u            only the main video (the longest) of pages with several videos
   -x            audio only (the best track, no re-encoding)
+  -d            sort into subfolders by site and channel: Downloads/site/channel/
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
@@ -778,8 +782,8 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0
-while getopts ":l:o:j:c:b:r:L:pausivxFh" op; do
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0
+while getopts ":l:o:j:c:b:r:L:pausivxdFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -796,6 +800,7 @@ while getopts ":l:o:j:c:b:r:L:pausivxFh" op; do
     i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
     v) VERIFICAR=1;                    ORIGEM[VERIFICAR]=opção ;;
     x) SO_AUDIO=1;                     ORIGEM[SO_AUDIO]=opção ;;
+    d) SUBPASTAS=1 ;;                  # só pela opção, de propósito: nada de pastas sem pedir
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -811,6 +816,10 @@ if [[ -z $ARQUIVO_HISTORICO ]]; then
 fi
 
 [[ $COMANDO == ajuda ]] && { uso; exit 0; }
+
+# -d: uma pasta por site e, dentro dela, uma por canal (quando o site informa o canal;
+# sem ele, o vídeo fica direto na pasta do site)
+(( SUBPASTAS )) && TEMPLATE_SAIDA="%(webpage_url_domain,extractor_key|site)s/%(channel,uploader|).80B/$TEMPLATE_SAIDA"
 
 if [[ -n $IDIOMA_INVALIDO ]]; then t idioma_invalido "$IDIOMA_INVALIDO" "$LINGUA"; aviso "$TXT"; fi
 origem_txt() { FMT=${T[origem_${ORIGEM[$1]:-padrão}]}; }  # origem_txt CHAVE → FMT: de onde veio o valor
@@ -2084,7 +2093,8 @@ elif (( TENTATIVAS > 1 )); then txt_imp=${T[imp_retry]}
 else txt_imp=${T[imp_off]}; fi
 
 kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
-kv "${T[kv_destino]}" "$PASTA_SAIDA"
+if (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
+else kv "${T[kv_destino]}" "$PASTA_SAIDA"; fi
 if (( SO_AUDIO )); then
   if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
   else t kv_audio_conv "$FORMATO_AUDIO"; kv "${T[kv_modo]}" "$TXT"; fi
