@@ -49,7 +49,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
-CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
+CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
@@ -58,6 +58,7 @@ for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 IDIOMA=auto                                   # pt, en ou auto (pelo idioma do sistema)
 ARQUIVO_LINKS=links.txt
 PASTA_SAIDA=./Downloads
+RESOLUCAO_MAXIMA=0                            # altura máxima (1080, 2160…); 0 = sem limite
 DOWNLOADS_SIMULTANEOS=2                       # vídeos ao mesmo tempo
 CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
 TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
@@ -70,7 +71,7 @@ USAR_HISTORICO=1                              # 0 = não pula o que já foi baix
 ARQUIVO_FALHAS=links_falhos.txt
 ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
-CONFIG_CRIADO=0; AVISOS_CONFIG=()
+CONFIG_CRIADO=0; AVISOS_CONFIG=(); N_AJUSTES_CONFIG=0
 
 # carrega_config: lê CHAVE=valor do grabit.config (sem executar nada do arquivo). Valores
 # podem vir entre aspas; "# comentário" no fim da linha é ignorado.
@@ -88,6 +89,7 @@ carrega_config() {
       if [[ $valor == \"*\" || $valor == \'*\' ]] && (( ${#valor} >= 2 )); then valor=${valor:1:-1}; fi
       if [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
         printf -v "$chave" '%s' "$valor"; ORIGEM[$chave]=config
+        N_AJUSTES_CONFIG=$(( N_AJUSTES_CONFIG + 1 ))
       else
         AVISOS_CONFIG+=("$n: $chave")
       fi
@@ -111,7 +113,7 @@ for (( i = 1; i <= $#; i++ )); do
     case ${a:c:1} in
       L)         j=$(( i + 1 )); IDIOMA=${a:c+1}; [[ -z $IDIOMA ]] && { IDIOMA=${!j:-}; i=$j; }
                  ORIGEM[IDIOMA]=opção; break ;;
-      [lojcb])   [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
+      [lojcbr])  [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
     esac
   done
 done
@@ -155,6 +157,7 @@ idioma_pt() {
     [origem_padrão]="padrão"
     [val_numero]="%s precisa ser um número inteiro maior que zero (recebi '%s', de: %s)."
     [val_01]="%s precisa ser 0 ou 1 (recebi '%s', de: %s)."
+    [val_resolucao]="%s precisa ser uma altura como 720, 1080 ou 2160, ou 0 para não limitar (recebi '%s', de: %s)."
     [cfg_criado]="(criado agora)"
     [cfg_inexistente]="(não existe e não pôde ser criado)"
     [cfg_linha]="grabit.config, linha %s: ignorada (chave desconhecida ou sem \"=\"):%s"
@@ -166,6 +169,10 @@ idioma_pt() {
     [kv_extras]="Extras"
     [kv_ferramentas]="Ferramentas"
     [kv_recursos]="Recursos"
+    [kv_resolucao]="Resolução"
+    [kv_res_ate]="até %dp"
+    [kv_res_origem]=" (%s) · -F ignora o limite"
+    [kv_res_forcado]="%ssem limite (-F)%s · ignorando o limite de %dp (%s)"
     [kv_config_criado]="%scriado agora%s em %s — edite para mudar os padrões"
     [kv_config_ajustes]="grabit.config · %d ajuste(s) · grabit --config mostra tudo"
     [kv_hist_on]="%s vídeo(s) registrados · os já baixados são pulados"
@@ -255,6 +262,8 @@ idioma_pt() {
     [d_403]="acesso negado (403)"
     [d_429]="muitas requisições (429)"
     [d_rede]="falha de rede"
+    [d_resolucao]="nenhuma versão até %dp — use -F para baixar mesmo assim"
+    [d_resolucao_r]="nenhuma versão até %dp (-r)"
     [s_resumo]="Resumo"
     [s_resumo_parcial]="Resumo parcial"
     [s_baixados]="Baixados"
@@ -288,6 +297,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -o PASTA      pasta onde os vídeos serão salvos            (padrão: ./Downloads)
   -j N          downloads simultâneos                        (padrão: 2)
   -c N          conexões (fragmentos) por vídeo              (padrão: 4)
+  -r ALTURA     resolução máxima: 720, 1080, 2160, 4k…       (padrão: sem limite)
+  -F            força: ignora os limites do grabit.config (resolução máxima…)
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -p            só o vídeo, se o link tiver vídeo + playlist
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
@@ -343,6 +354,11 @@ EOF
 # Pasta onde os vídeos são salvos
 #PASTA_SAIDA=./Downloads
 
+# Resolução máxima: 720, 1080, 1440, 2160 (ou 4k)…; 0 = sem limite (-r). Vale para o
+# lado menor da imagem: um vídeo vertical de 1080×1920 conta como 1080p. Vídeo sem
+# nenhuma versão dentro do limite falha com um aviso; -F ignora o limite numa execução.
+#RESOLUCAO_MAXIMA=0
+
 # Quantos vídeos baixar ao mesmo tempo (-j) e conexões por vídeo (-c)
 #DOWNLOADS_SIMULTANEOS=2
 #CONEXOES_POR_VIDEO=4
@@ -385,6 +401,7 @@ idioma_en() {
     [origem_padrão]="default"
     [val_numero]="%s must be a whole number greater than zero (got '%s', from: %s)."
     [val_01]="%s must be 0 or 1 (got '%s', from: %s)."
+    [val_resolucao]="%s must be a height like 720, 1080 or 2160, or 0 for no limit (got '%s', from: %s)."
     [cfg_criado]="(just created)"
     [cfg_inexistente]="(missing and could not be created)"
     [cfg_linha]="grabit.config, line %s: ignored (unknown key or no \"=\"):%s"
@@ -396,6 +413,10 @@ idioma_en() {
     [kv_extras]="Extras"
     [kv_ferramentas]="Tools"
     [kv_recursos]="Features"
+    [kv_resolucao]="Resolution"
+    [kv_res_ate]="up to %dp"
+    [kv_res_origem]=" (%s) · -F ignores the limit"
+    [kv_res_forcado]="%sno limit (-F)%s · ignoring the %dp limit (%s)"
     [kv_config_criado]="%sjust created%s at %s — edit it to change the defaults"
     [kv_config_ajustes]="grabit.config · %d setting(s) · grabit --config shows all"
     [kv_hist_on]="%s video(s) recorded · already downloaded ones are skipped"
@@ -485,6 +506,8 @@ idioma_en() {
     [d_403]="access denied (403)"
     [d_429]="too many requests (429)"
     [d_rede]="network failure"
+    [d_resolucao]="no version up to %dp — use -F to download it anyway"
+    [d_resolucao_r]="no version up to %dp (-r)"
     [s_resumo]="Summary"
     [s_resumo_parcial]="Partial summary"
     [s_baixados]="Downloaded"
@@ -518,6 +541,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   -o FOLDER     where videos are saved               (default: ./Downloads)
   -j N          simultaneous downloads               (default: 2)
   -c N          connections (fragments) per video    (default: 4)
+  -r HEIGHT     maximum resolution: 720, 1080, 4k…   (default: no limit)
+  -F            force: ignore the grabit.config limits (maximum resolution…)
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -p            only the video, when the link is video + playlist
   -a            include automatic subtitles (manual ones still win)
@@ -576,6 +601,11 @@ EOF
 
 # Folder where videos are saved
 #PASTA_SAIDA=./Downloads
+
+# Maximum resolution: 720, 1080, 1440, 2160 (or 4k)…; 0 = no limit (-r). It applies to
+# the shorter side of the picture: a 1080×1920 vertical video counts as 1080p. A video
+# with no version within the limit fails with a notice; -F ignores the limit for a run.
+#RESOLUCAO_MAXIMA=0
 
 # How many videos to download at once (-j) and connections per video (-c)
 #DOWNLOADS_SIMULTANEOS=2
@@ -643,14 +673,16 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0
-while getopts ":l:o:j:c:b:L:pasih" op; do
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0
+while getopts ":l:o:j:c:b:r:L:pasiFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
     j) DOWNLOADS_SIMULTANEOS=$OPTARG;  ORIGEM[DOWNLOADS_SIMULTANEOS]=opção ;;
     c) CONEXOES_POR_VIDEO=$OPTARG;     ORIGEM[CONEXOES_POR_VIDEO]=opção ;;
     b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
+    r) RESOLUCAO_MAXIMA=$OPTARG;       ORIGEM[RESOLUCAO_MAXIMA]=opção ;;
+    F) FORCAR=1 ;;
     L) ;;                              # já tratado acima, antes de carregar os textos
     p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
     a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
@@ -682,6 +714,19 @@ for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST USAR_HISTORICO; do
     exit 2
   fi
 done
+# Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = sem limite
+case ${RESOLUCAO_MAXIMA,,} in
+  "") RESOLUCAO_MAXIMA=0 ;;
+  4k) RESOLUCAO_MAXIMA=2160 ;;
+  8k) RESOLUCAO_MAXIMA=4320 ;;
+  *)
+    if [[ ${RESOLUCAO_MAXIMA,,} =~ ^([0-9]{1,5})p?$ ]]; then
+      RESOLUCAO_MAXIMA=$(( 10#${BASH_REMATCH[1]} ))
+    else
+      origem_txt RESOLUCAO_MAXIMA; t val_resolucao RESOLUCAO_MAXIMA "$RESOLUCAO_MAXIMA" "$FMT"; erro "$TXT"
+      exit 2
+    fi ;;
+esac
 
 # --config: onde está o arquivo e os valores em uso, com a origem de cada um
 mostra_config() {
@@ -700,6 +745,13 @@ mostra_config() {
 }
 [[ $COMANDO == config ]] && { mostra_config; exit 0; }
 
+# -F: os limites que vieram do grabit.config (ou do ambiente) não valem nesta execução;
+# os passados no próprio comando continuam valendo.
+LIMITE_IGNORADO=0
+if (( FORCAR && RESOLUCAO_MAXIMA > 0 )) && [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} != opção ]]; then
+  LIMITE_IGNORADO=$RESOLUCAO_MAXIMA; RESOLUCAO_MAXIMA=0
+fi
+
 # ───────────────────────────── Estado global ──────────────────────────────────
 J=0; TOTAL=0; COLS=100; TICK=0; LIVE_H=0; CANCELADO=0; SINAL=""; STTY_SAVE=""; TMP=""
 N_OK=0; N_JA=0; N_ERRO=0; N_AVISOS=0; N_FATAIS=0; N_COSMETICOS=0; AVISO_CTX=""; BYTES_NOVOS=0; FINALIZADOS=0; DUPLICADOS=0; INVALIDAS=0
@@ -707,6 +759,7 @@ VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; 
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
+FORMATO='bv*+ba/b'
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
@@ -907,6 +960,12 @@ classifica_erro() {
     *"live event will begin"*|*"premieres in"*)             DICA=${T[d_live]}; REPETE=0 ;;
     *"http error 404"*|*"http error 410"*)                  DICA=${T[d_404]}; REPETE=0 ;;
     *"no space left"*)                                      DICA=${T[d_disco]}; REPETE=0 ;;
+    *"requested format is not available"*)                  REPETE=0
+      if (( RESOLUCAO_MAXIMA > 0 )); then
+        if [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} == opção ]]; then t d_resolucao_r "$RESOLUCAO_MAXIMA"
+        else t d_resolucao "$RESOLUCAO_MAXIMA"; fi
+        DICA=$TXT
+      fi ;;
     *"invalid data found when processing input"*|*"moov atom not found"*|*"ebml header parsing failed"*)
                                                             DICA=${T[d_invalido]}; ARQUIVO_RUIM=1 ;;
     *"fragment"*"not found"*|*"unable to download fragment"*) DICA=${T[d_fragmento]} ;;
@@ -1674,7 +1733,14 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
 }
 
 monta_args_ytdlp() {
-  local langs=$IDIOMAS_LEGENDAS
+  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA
+  FORMATO='bv*+ba/b'
+  # Com limite, vale o lado menor da imagem: a altura em vídeos deitados e a largura nos
+  # verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
+  if (( n > 0 )); then
+    FORMATO="(bv*[height<=?$n][aspect_ratio>=?1]/bv*[width<=?$n][aspect_ratio<1])+ba"
+    FORMATO+="/b[height<=?$n][aspect_ratio>=?1]/b[width<=?$n][aspect_ratio<1]"
+  fi
   # "all" incluiria o chat ao vivo: um JSON enorme que nem dá para embutir
   [[ ,$langs, == *,all,* && $langs != *live_chat* ]] && langs+=",-live_chat"
   YTDLP_ARGS=(
@@ -1690,7 +1756,7 @@ monta_args_ytdlp() {
     -P "$PASTA_SAIDA" -P "temp:$TEMP_REL" -o "$TEMPLATE_SAIDA"
 
     # Qualidade máxima: melhor vídeo + melhor áudio, empacotados em MKV
-    -f 'bv*+ba/b' --merge-output-format mkv --remux-video mkv
+    -f "$FORMATO" --merge-output-format mkv --remux-video mkv
 
     # Tudo o que o yt-dlp encontrar vai para dentro do arquivo
     --embed-metadata --embed-chapters --embed-info-json
@@ -1765,12 +1831,19 @@ else txt_imp=${T[imp_off]}; fi
 
 kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 kv "${T[kv_destino]}" "$PASTA_SAIDA"
-n_ajustes=0
-for k in "${CHAVES_CONFIG[@]}"; do [[ ${ORIGEM[$k]:-} == config ]] && n_ajustes=$(( n_ajustes + 1 )); done
+if (( RESOLUCAO_MAXIMA > 0 )); then
+  t kv_res_ate "$RESOLUCAO_MAXIMA"; txt_res=$TXT
+  if [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} != opção ]]; then
+    origem_txt RESOLUCAO_MAXIMA; t kv_res_origem "$FMT"; txt_res+=$TXT
+  fi
+  kv "${T[kv_resolucao]}" "$txt_res"
+elif (( LIMITE_IGNORADO > 0 )); then
+  origem_txt RESOLUCAO_MAXIMA; t kv_res_forcado "$AMARELO" "$R" "$LIMITE_IGNORADO" "$FMT"; kv "${T[kv_resolucao]}" "$TXT"
+fi
 if (( CONFIG_CRIADO )); then
   t kv_config_criado "$VERDE" "$R" "${CONFIG_ARQ/#$HOME/\~}"; kv "${T[kv_config]}" "$TXT"
 elif [[ -f $CONFIG_ARQ ]]; then
-  t kv_config_ajustes "$n_ajustes"; kv "${T[kv_config]}" "$TXT"
+  t kv_config_ajustes "$N_AJUSTES_CONFIG"; kv "${T[kv_config]}" "$TXT"
 fi
 if (( USAR_HISTORICO )); then
   n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0

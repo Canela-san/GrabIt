@@ -115,6 +115,8 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-o FOLDER` | folder where videos are saved | `./Downloads` |
 | `-j N` | simultaneous downloads | `2` |
 | `-c N` | connections (fragments) per video | `4` |
+| `-r HEIGHT` | maximum resolution (`720`, `1080`, `2160` or `4k`…) | no limit |
+| `-F` | force: ignore the `grabit.config` limits for this run | — |
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
 | `-p` | if the link is a video inside a playlist, download just the video | — |
 | `-a` | include automatic subtitles (manual ones still take priority) | — |
@@ -140,6 +142,7 @@ COOKIES_NAVEGADOR=firefox
 | `IDIOMA` | language of the messages: `pt`, `en` or `auto` (follows the system) | `auto` |
 | `ARQUIVO_LINKS` | list read when you run just `grabit` | `links.txt` |
 | `PASTA_SAIDA` | where videos are saved | `./Downloads` |
+| `RESOLUCAO_MAXIMA` | maximum resolution (`1080`, `2160`, `4k`…); `0` = no limit | `0` |
 | `DOWNLOADS_SIMULTANEOS` | videos at the same time | `2` |
 | `CONEXOES_POR_VIDEO` | connections per video | `4` |
 | `TENTATIVAS` | attempts per link (`1` = don't retry) | `2` |
@@ -162,6 +165,19 @@ grabit --config                   # show the values in use and where each one ca
 ```
 
 The file stays out of Git (`.gitignore`), so updating GrabIt never touches your settings. To go back to the defaults, just delete it: it's recreated.
+
+### Maximum resolution
+
+Want to save space? With `RESOLUCAO_MAXIMA=1080` GrabIt downloads the **best version up to 1080p** of each video — still picking the best codec, frame rate and audio within the limit. The limit applies to the shorter side of the picture, so a 1080×1920 vertical video counts as 1080p. If a video has no version within the limit, it isn't downloaded: it shows up as a failure, with a notice, and goes to `links_falhos.txt`.
+
+For an exception, use `-F` (force): it ignores the `grabit.config` limits for that run only. And `-r` sets a limit for a single run, without touching the file.
+
+```bash
+grabit -r 720                       # just this time, up to 720p
+grabit -F -l links_falhos.txt       # download the ones left out, at maximum quality
+```
+
+> Videos downloaded with a limit go into the history as usual. To replace one with a bigger version later, delete the file and run with `-F -i`.
 
 There are also `ARQUIVO_HISTORICO` (where the download history lives) and `NO_COLOR` (turns colors off), as environment variables only.
 

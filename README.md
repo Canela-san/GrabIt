@@ -113,6 +113,8 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-o PASTA` | pasta onde os vídeos são salvos | `./Downloads` |
 | `-j N` | downloads simultâneos | `2` |
 | `-c N` | conexões (fragmentos) por vídeo | `4` |
+| `-r ALTURA` | resolução máxima (`720`, `1080`, `2160` ou `4k`…) | sem limite |
+| `-F` | força: ignora os limites do `grabit.config` nesta execução | — |
 | `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
@@ -137,6 +139,7 @@ COOKIES_NAVEGADOR=firefox
 | `IDIOMA` | idioma das mensagens: `pt`, `en` ou `auto` (segue o sistema) | `auto` |
 | `ARQUIVO_LINKS` | lista lida quando você roda só `grabit` | `links.txt` |
 | `PASTA_SAIDA` | onde os vídeos são salvos | `./Downloads` |
+| `RESOLUCAO_MAXIMA` | resolução máxima (`1080`, `2160`, `4k`…); `0` = sem limite | `0` |
 | `DOWNLOADS_SIMULTANEOS` | vídeos ao mesmo tempo | `2` |
 | `CONEXOES_POR_VIDEO` | conexões por vídeo | `4` |
 | `TENTATIVAS` | tentativas por link (`1` = sem repetir) | `2` |
@@ -157,6 +160,19 @@ grabit --config                   # mostra os valores em uso e de onde veio cada
 ```
 
 O arquivo fica fora do Git (`.gitignore`), então atualizar o GrabIt nunca mexe nas suas configurações. Para voltar aos padrões, basta apagá-lo: ele é recriado.
+
+### Resolução máxima
+
+Quer economizar espaço? Com `RESOLUCAO_MAXIMA=1080` o GrabIt baixa a **melhor versão até 1080p** de cada vídeo — continua escolhendo o melhor codec, fps e áudio dentro do limite. O limite vale para o lado menor da imagem, então um vídeo vertical de 1080×1920 conta como 1080p. Se um vídeo não tiver nenhuma versão dentro do limite, ele não é baixado: aparece como falha, com o aviso, e vai para o `links_falhos.txt`.
+
+Para uma exceção, use `-F` (forçar): ele ignora os limites do `grabit.config` só naquela execução. Já o `-r` define um limite só para a execução, sem mexer no arquivo.
+
+```bash
+grabit -r 720                       # só desta vez, até 720p
+grabit -F -l links_falhos.txt       # baixa os que ficaram de fora, na qualidade máxima
+```
+
+> Vídeos baixados com limite entram no histórico normalmente. Para trocar um deles por uma versão maior depois, apague o arquivo e rode com `-F -i`.
 
 Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_COLOR` (desliga as cores), só como variáveis de ambiente.
 
