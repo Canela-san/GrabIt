@@ -58,6 +58,45 @@ if [[ ${1:-} == --verificar-arquivo ]]; then
   exit 0
 fi
 
+# Modo auxiliar do -m (Jellyfin/Plex/Kodi): o yt-dlp chama o GrabIt assim depois de cada
+# vídeo. Lê os metadados que o próprio yt-dlp gravou no arquivo e escreve, ao lado dele,
+# o .nfo do episódio (e o tvshow.nfo do canal, se ainda não existir).
+if [[ ${1:-} == --nfo ]]; then
+  arq=$2; base=${arq%.*}; serie_dir=${arq%/*}; serie_dir=${serie_dir%/*}; serie=${serie_dir##*/}
+  # o nome da pasta traz os sósias que o yt-dlp usa no lugar de / : ? e cia.; o título não
+  serie=${serie//⧸//}; serie=${serie//⧹/\\}; serie=${serie//：/:}; serie=${serie//？/?}; serie=${serie//＊/*}
+  serie=${serie//＂/\"}; serie=${serie//＜/<}; serie=${serie//＞/>}; serie=${serie//｜/|}
+  declare -A tag=()
+  while IFS= read -r l; do                    # format_tags_TITLE="…" (o ffprobe escapa \ " e \n)
+    [[ $l =~ ^format_tags_([A-Za-z0-9_]+)=\"(.*)\"$ ]] || continue
+    v=${BASH_REMATCH[2]}
+    v=${v//\\\\/$'\x01'}; v=${v//\\n/$'\n'}; v=${v//\\r/}; v=${v//\\\"/\"}; v=${v//$'\x01'/\\}
+    tag[${BASH_REMATCH[1],,}]=$v
+  done < <(ffprobe -v error -show_entries format_tags -of flat=s=_ -- "$arq" 2>/dev/null)
+  # (substituições entre aspas: no Bash 5.2+ um & solto vira "o trecho encontrado")
+  xml() { local v=${1//&/"&amp;"}; v=${v//</"&lt;"}; v=${v//>/"&gt;"}; XML=${v//\"/"&quot;"}; }
+  data=${tag[date]:-}
+  [[ $data =~ ^([0-9]{4})([0-9]{2})([0-9]{2})$ ]] && data="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
+  {
+    printf '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<episodedetails>\n'
+    xml "${tag[title]:-${base##*/}}";  printf '  <title>%s</title>\n' "$XML"
+    xml "$serie";                      printf '  <showtitle>%s</showtitle>\n' "$XML"
+    [[ -n $data ]] &&                  printf '  <aired>%s</aired>\n  <premiered>%s</premiered>\n' "$data" "$data"
+    xml "${tag[description]:-${tag[synopsis]:-}}"
+    [[ -n $XML ]] &&                   printf '  <plot>%s</plot>\n' "$XML"
+    for img in "$base".{jpg,png,webp,avif}; do
+      if [[ -f $img ]]; then xml "${img##*/}"; printf '  <thumb>%s</thumb>\n' "$XML"; break; fi
+    done
+    printf '</episodedetails>\n'
+  } > "$base.nfo.tmp" && mv -f -- "$base.nfo.tmp" "$base.nfo"
+  if [[ ! -e $serie_dir/tvshow.nfo ]]; then
+    xml "$serie"
+    printf '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<tvshow>\n  <title>%s</title>\n</tvshow>\n' \
+      "$XML" > "$serie_dir/tvshow.nfo"
+  fi
+  exit 0
+fi
+
 # ───────────────────────────── Configuração ───────────────────────────────────
 # Onde o GrabIt mora de verdade (seguindo links simbólicos, como ~/.local/bin/grabit):
 # é ali, ao lado do script, que fica o grabit.config.
@@ -220,6 +259,9 @@ idioma_pt() {
     [kv_verificar]=", verificação completa"
     [kv_modo]="Modo"
     [kv_subpastas]="<site>/<canal>/"
+    [kv_midia]="<canal>/Season <ano>/  (Jellyfin, Plex, Kodi)"
+    [kv_nfo]=", .nfo"
+    [et_nfo]="gravando o .nfo"
     [kv_audio_original]="só áudio · a melhor faixa, no formato original (sem recomprimir)"
     [kv_audio_conv]="só áudio · convertido para %s"
     [kv_extras_audio]="capa, capítulos, metadados"
@@ -355,6 +397,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
   -x            só o áudio (a melhor faixa, sem recomprimir)
   -d            organiza em subpastas por site e canal: Downloads/site/canal/
+  -m            para Jellyfin, Plex e Kodi: canal/Season ano/, com .nfo e capa
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
@@ -502,6 +545,9 @@ idioma_en() {
     [kv_verificar]=", full check"
     [kv_modo]="Mode"
     [kv_subpastas]="<site>/<channel>/"
+    [kv_midia]="<channel>/Season <year>/  (Jellyfin, Plex, Kodi)"
+    [kv_nfo]=", .nfo"
+    [et_nfo]="writing the .nfo"
     [kv_audio_original]="audio only · the best track, in its original format (no re-encoding)"
     [kv_audio_conv]="audio only · converted to %s"
     [kv_extras_audio]="cover, chapters, metadata"
@@ -637,6 +683,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -u            only the main video (the longest) of pages with several videos
   -x            audio only (the best track, no re-encoding)
   -d            sort into subfolders by site and channel: Downloads/site/channel/
+  -m            for Jellyfin, Plex and Kodi: channel/Season year/, with .nfo and cover
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
@@ -782,8 +829,8 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0
-while getopts ":l:o:j:c:b:r:L:pausivxdFh" op; do
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0
+while getopts ":l:o:j:c:b:r:L:pausivxdmFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -801,6 +848,7 @@ while getopts ":l:o:j:c:b:r:L:pausivxdFh" op; do
     v) VERIFICAR=1;                    ORIGEM[VERIFICAR]=opção ;;
     x) SO_AUDIO=1;                     ORIGEM[SO_AUDIO]=opção ;;
     d) SUBPASTAS=1 ;;                  # só pela opção, de propósito: nada de pastas sem pedir
+    m) MIDIA=1 ;;                      # idem
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -820,6 +868,14 @@ fi
 # -d: uma pasta por site e, dentro dela, uma por canal (quando o site informa o canal;
 # sem ele, o vídeo fica direto na pasta do site)
 (( SUBPASTAS )) && TEMPLATE_SAIDA="%(webpage_url_domain,extractor_key|site)s/%(channel,uploader|).80B/$TEMPLATE_SAIDA"
+# -m: o canal vira uma "série" de Jellyfin/Plex/Kodi, com uma temporada por ano e episódios
+# nomeados pela data (os três reconhecem "Série - 2026-10-24 - Título"). Sem data no
+# site, vale a de hoje.
+printf -v HOJE '%(%Y-%m-%d)T' -1
+if (( MIDIA )); then
+  serie='%(channel,uploader,webpage_url_domain|GrabIt).80B'
+  TEMPLATE_SAIDA="$serie/Season %(upload_date>%Y|${HOJE%%-*})s/$serie - %(upload_date>%Y-%m-%d|$HOJE)s - %(title).150B [%(id)s].%(ext)s"
+fi
 
 if [[ -n $IDIOMA_INVALIDO ]]; then t idioma_invalido "$IDIOMA_INVALIDO" "$LINGUA"; aviso "$TXT"; fi
 origem_txt() { FMT=${T[origem_${ORIGEM[$1]:-padrão}]}; }  # origem_txt CHAVE → FMT: de onde veio o valor
@@ -1120,6 +1176,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     *"aren't any"*|*"are no "*|*"Not remuxing"*|"Deleting original"*|WARNING:*) ;;   # "nada a fazer"
     @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
     "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
+    "[Exec]"*"--nfo "*)                                            ETAPA=${T[et_nfo]} ;;
     "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
     "[Merger]"*)                                                   ETAPA=${T[et_mesclando]} ;;
     "[VideoRemuxer]"*)                                             ETAPA=${T[et_mkv]} ;;
@@ -2037,6 +2094,10 @@ monta_args_ytdlp() {
     printf -v cmd 'bash %q --verificar-arquivo %q' "${GRABIT_SCRIPT//%/%%}" "${T[sufixo_ruim]}"
     YTDLP_ARGS+=(--exec "after_move:$cmd %(filepath)q %(duration|0)q")
   fi
+  if (( MIDIA )); then                        # a capa fica também ao lado do vídeo, e o .nfo
+    printf -v cmd 'bash %q --nfo' "${GRABIT_SCRIPT//%/%%}"
+    YTDLP_ARGS+=(--write-thumbnail --exec "after_move:$cmd %(filepath)q")
+  fi
   # Histórico: o que já foi baixado é pulado antes de tudo (na maioria dos sites,
   # sem nem acessar a página). Sem ele, o yt-dlp reextrai o vídeo, baixa a capa de
   # novo e reescreve o arquivo inteiro só para dizer que ele já existe.
@@ -2087,13 +2148,15 @@ else
 fi
 (( SO_PRINCIPAL )) && txt_extras+=${T[kv_principal]}
 (( VERIFICAR ))    && txt_extras+=${T[kv_verificar]}
+(( MIDIA ))        && txt_extras+=${T[kv_nfo]}
 (( SPONSORBLOCK )) && txt_extras+=", SponsorBlock"
 if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}${T[imp_indisp]}${R}"
 elif (( TENTATIVAS > 1 )); then txt_imp=${T[imp_retry]}
 else txt_imp=${T[imp_off]}; fi
 
 kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
-if (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
+if (( MIDIA )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_midia]}"
+elif (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
 else kv "${T[kv_destino]}" "$PASTA_SAIDA"; fi
 if (( SO_AUDIO )); then
   if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
