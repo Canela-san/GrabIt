@@ -153,6 +153,9 @@ COOKIES_NAVEGADOR=firefox
 | `DOWNLOADS_SIMULTANEOS` | vídeos ao mesmo tempo | `2` |
 | `CONEXOES_POR_VIDEO` | conexões por vídeo | `4` |
 | `TENTATIVAS` | tentativas por link (`1` = sem repetir) | `2` |
+| `LIMITE_POR_SITE` | downloads ao mesmo tempo do mesmo site (`0` = sem limite) | `0` |
+| `PAUSA_ENTRE_VIDEOS` | segundos de pausa antes de cada vídeo, com variação aleatória | `0` |
+| `LIMITE_VELOCIDADE` | velocidade máxima por download, como `5M` ou `500K` (`0` = sem limite) | `0` |
 | `IDIOMAS_LEGENDAS` | idiomas das legendas (`all` = todas) | `pt.*,en.*` |
 | `LEGENDAS_AUTOMATICAS` | `1` inclui legendas automáticas | `0` |
 | `SPONSORBLOCK` | `1` marca patrocínios e intros como capítulos | `0` |
@@ -185,6 +188,18 @@ grabit -F -l links_falhos.txt       # baixa os que ficaram de fora, na qualidade
 ```
 
 > Vídeos baixados com limite entram no histórico normalmente. Para trocar um deles por uma versão maior depois, apague o arquivo e rode com `-F -i`.
+
+### Cortesia com os sites
+
+Alguns sites bloqueiam quem baixa muitos vídeos em sequência. Para esses, dá para ir mais devagar:
+
+```ini
+LIMITE_POR_SITE=1        # um vídeo por vez de cada site (os de outros sites seguem em paralelo)
+PAUSA_ENTRE_VIDEOS=10    # ~10 a 15 s de pausa antes de cada vídeo
+LIMITE_VELOCIDADE=5M     # no máximo 5 MB/s por download
+```
+
+O cabeçalho mostra os limites em uso, e `-F` desliga todos eles (e a resolução máxima) numa execução.
 
 Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_COLOR` (desliga as cores), só como variáveis de ambiente.
 

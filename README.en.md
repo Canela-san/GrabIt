@@ -156,6 +156,9 @@ COOKIES_NAVEGADOR=firefox
 | `DOWNLOADS_SIMULTANEOS` | videos at the same time | `2` |
 | `CONEXOES_POR_VIDEO` | connections per video | `4` |
 | `TENTATIVAS` | attempts per link (`1` = don't retry) | `2` |
+| `LIMITE_POR_SITE` | downloads at once from the same site (`0` = no limit) | `0` |
+| `PAUSA_ENTRE_VIDEOS` | seconds of pause before each video, with random variation | `0` |
+| `LIMITE_VELOCIDADE` | maximum speed per download, like `5M` or `500K` (`0` = no limit) | `0` |
 | `IDIOMAS_LEGENDAS` | subtitle languages (`all` = every one) | `pt.*,en.*` |
 | `LEGENDAS_AUTOMATICAS` | `1` includes automatic subtitles | `0` |
 | `SPONSORBLOCK` | `1` marks sponsors and intros as chapters | `0` |
@@ -190,6 +193,18 @@ grabit -F -l links_falhos.txt       # download the ones left out, at maximum qua
 ```
 
 > Videos downloaded with a limit go into the history as usual. To replace one with a bigger version later, delete the file and run with `-F -i`.
+
+### Being nice to sites
+
+Some sites block whoever downloads many videos in a row. For those, you can slow down:
+
+```ini
+LIMITE_POR_SITE=1        # one video at a time from each site (other sites keep going in parallel)
+PAUSA_ENTRE_VIDEOS=10    # a ~10 to 15 s pause before each video
+LIMITE_VELOCIDADE=5M     # at most 5 MB/s per download
+```
+
+The header shows the limits in use, and `-F` turns all of them (and the maximum resolution) off for a run.
 
 There are also `ARQUIVO_HISTORICO` (where the download history lives) and `NO_COLOR` (turns colors off), as environment variables only.
 

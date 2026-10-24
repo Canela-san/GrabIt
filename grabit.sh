@@ -117,6 +117,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
+  LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
@@ -132,6 +133,9 @@ FORMATO_AUDIO=original                        # original (sem recomprimir), mp3,
 DOWNLOADS_SIMULTANEOS=2                       # vídeos ao mesmo tempo
 CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
 TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
+LIMITE_POR_SITE=0                             # downloads ao mesmo tempo do mesmo site (0 = livre)
+PAUSA_ENTRE_VIDEOS=0                          # segundos de espera antes de cada vídeo
+LIMITE_VELOCIDADE=0                           # por download, ex.: 5M ou 500K (0 = livre)
 IDIOMAS_LEGENDAS='pt.*,en.*'                  # "all" para todas
 LEGENDAS_AUTOMATICAS=0                        # 1 = inclui legendas automáticas
 SPONSORBLOCK=0                                # 1 = marca patrocínios/intros como capítulos
@@ -242,10 +246,17 @@ idioma_pt() {
     [kv_extras]="Extras"
     [kv_ferramentas]="Ferramentas"
     [kv_recursos]="Recursos"
-    [kv_resolucao]="Resolução"
-    [kv_res_ate]="até %dp"
-    [kv_res_origem]=" (%s) · -F ignora o limite"
-    [kv_res_forcado]="%ssem limite (-F)%s · ignorando o limite de %dp (%s)"
+    [kv_limites]="Limites"
+    [lim_res]="até %dp"
+    [lim_site]="%d vídeo(s) por site"
+    [lim_pausa]="pausa de ~%d s"
+    [lim_vel]="%s/s por vídeo"
+    [lim_f]=" · -F ignora"
+    [lim_desligados]="%sdesligados (-F)%s · ignorando: %s"
+    [lim_ignorando]=" · -F desligou: %s"
+    [et_pausa]="pausa entre vídeos (%s s)"
+    [val_inteiro0]="%s precisa ser um número inteiro, 0 para desligar (recebi '%s', de: %s)."
+    [val_velocidade]="%s precisa ser uma velocidade como 5M ou 500K, ou 0 para não limitar (recebi '%s', de: %s)."
     [kv_config_criado]="%scriado agora%s em %s — edite para mudar os padrões"
     [kv_config_ajustes]="grabit.config · %d ajuste(s) · grabit --config mostra tudo"
     [kv_hist_on]="%s vídeo(s) registrados · os já baixados são pulados"
@@ -391,7 +402,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -j N          downloads simultâneos                        (padrão: 2)
   -c N          conexões (fragmentos) por vídeo              (padrão: 4)
   -r ALTURA     resolução máxima: 720, 1080, 2160, 4k…       (padrão: sem limite)
-  -F            força: ignora os limites do grabit.config (resolução máxima…)
+  -F            força: ignora os limites do grabit.config (resolução, sites, pausa…)
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -p            só o vídeo, se o link tiver vídeo + playlist
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
@@ -473,6 +484,14 @@ EOF
 # Tentativas por link quando a falha é passageira (1 = não tentar de novo)
 #TENTATIVAS=2
 
+# Cortesia com os sites (ajuda com os que bloqueiam muitos downloads seguidos): no
+# máximo N downloads ao mesmo tempo do mesmo site, uma pausa de N segundos (com uma
+# variação aleatória) antes de cada vídeo e uma velocidade máxima por download, como
+# 5M ou 500K. 0 = desligado. -F ignora tudo isso numa execução.
+#LIMITE_POR_SITE=0
+#PAUSA_ENTRE_VIDEOS=0
+#LIMITE_VELOCIDADE=0
+
 # Idiomas das legendas ("all" = todas) e se inclui as automáticas (-a)
 #IDIOMAS_LEGENDAS=pt.*,en.*
 #LEGENDAS_AUTOMATICAS=0
@@ -528,10 +547,17 @@ idioma_en() {
     [kv_extras]="Extras"
     [kv_ferramentas]="Tools"
     [kv_recursos]="Features"
-    [kv_resolucao]="Resolution"
-    [kv_res_ate]="up to %dp"
-    [kv_res_origem]=" (%s) · -F ignores the limit"
-    [kv_res_forcado]="%sno limit (-F)%s · ignoring the %dp limit (%s)"
+    [kv_limites]="Limits"
+    [lim_res]="up to %dp"
+    [lim_site]="%d video(s) per site"
+    [lim_pausa]="~%d s pause"
+    [lim_vel]="%s/s per video"
+    [lim_f]=" · -F ignores them"
+    [lim_desligados]="%soff (-F)%s · ignoring: %s"
+    [lim_ignorando]=" · -F turned off: %s"
+    [et_pausa]="pause between videos (%s s)"
+    [val_inteiro0]="%s must be a whole number, 0 to turn it off (got '%s', from: %s)."
+    [val_velocidade]="%s must be a speed like 5M or 500K, or 0 for no limit (got '%s', from: %s)."
     [kv_config_criado]="%sjust created%s at %s — edit it to change the defaults"
     [kv_config_ajustes]="grabit.config · %d setting(s) · grabit --config shows all"
     [kv_hist_on]="%s video(s) recorded · already downloaded ones are skipped"
@@ -677,7 +703,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -j N          simultaneous downloads               (default: 2)
   -c N          connections (fragments) per video    (default: 4)
   -r HEIGHT     maximum resolution: 720, 1080, 4k…   (default: no limit)
-  -F            force: ignore the grabit.config limits (maximum resolution…)
+  -F            force: ignore the grabit.config limits (resolution, sites, pause…)
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -p            only the video, when the link is video + playlist
   -u            only the main video (the longest) of pages with several videos
@@ -762,6 +788,14 @@ EOF
 
 # Attempts per link when the failure is temporary (1 = don't retry)
 #TENTATIVAS=2
+
+# Being nice to sites (helps with the ones that block many downloads in a row): at
+# most N downloads at once from the same site, an N-second pause (with some random
+# variation) before each video and a maximum speed per download, like 5M or 500K.
+# 0 = off. -F ignores all of this for a run.
+#LIMITE_POR_SITE=0
+#PAUSA_ENTRE_VIDEOS=0
+#LIMITE_VELOCIDADE=0
 
 # Subtitle languages ("all" = every one) and whether to include automatic ones (-a)
 #IDIOMAS_LEGENDAS=pt.*,en.*
@@ -891,6 +925,20 @@ for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL
     exit 2
   fi
 done
+for nome in LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS; do
+  [[ -z ${!nome} ]] && printf -v "$nome" 0
+  if ! [[ ${!nome} =~ ^[0-9]+$ ]]; then
+    origem_txt "$nome"; t val_inteiro0 "$nome" "${!nome}" "$FMT"; erro "$TXT"
+    exit 2
+  fi
+  printf -v "$nome" '%d' $(( 10#${!nome} ))
+done
+[[ -z $LIMITE_VELOCIDADE ]] && LIMITE_VELOCIDADE=0
+if ! [[ $LIMITE_VELOCIDADE =~ ^(0|[0-9]+(\.[0-9]+)?[KkMmGg]?)$ ]]; then
+  origem_txt LIMITE_VELOCIDADE; t val_velocidade LIMITE_VELOCIDADE "$LIMITE_VELOCIDADE" "$FMT"; erro "$TXT"
+  exit 2
+fi
+LIMITE_VELOCIDADE=${LIMITE_VELOCIDADE^^}
 case ${FORMATO_AUDIO,,} in
   original|best|"") FORMATO_AUDIO=original ;;
   mp3|m4a|aac|opus|flac|wav|alac|vorbis) FORMATO_AUDIO=${FORMATO_AUDIO,,} ;;
@@ -931,9 +979,13 @@ mostra_config() {
 
 # -F: os limites que vieram do grabit.config (ou do ambiente) não valem nesta execução;
 # os passados no próprio comando continuam valendo.
-LIMITE_IGNORADO=0
-if (( FORCAR && RESOLUCAO_MAXIMA > 0 )) && [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} != opção ]]; then
-  LIMITE_IGNORADO=$RESOLUCAO_MAXIMA; RESOLUCAO_MAXIMA=0
+CHAVES_LIMITE=(RESOLUCAO_MAXIMA LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE)
+declare -A IGNORADO=()
+if (( FORCAR )); then
+  for nome in "${CHAVES_LIMITE[@]}"; do
+    [[ ${!nome} == 0 || ${ORIGEM[$nome]:-} == opção ]] && continue
+    IGNORADO[$nome]=${!nome}; printf -v "$nome" 0
+  done
 fi
 # Alerta de baixa resolução: nunca acima do limite escolhido (com limite de 480p,
 # avisar de tudo abaixo de 720p seria só ruído)
@@ -951,7 +1003,7 @@ FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
-TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ESCOLHIDO=0; ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -1178,6 +1230,8 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
     "[Exec]"*"--nfo "*)                                            ETAPA=${T[et_nfo]} ;;
     "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
+    "[download] Sleeping "*)
+      [[ $1 =~ Sleeping\ ([0-9]+) ]] && { t et_pausa "${BASH_REMATCH[1]}"; ETAPA=$TXT; } ;;
     "[Merger]"*)                                                   ETAPA=${T[et_mesclando]} ;;
     "[VideoRemuxer]"*)                                             ETAPA=${T[et_mkv]} ;;
     "[Metadata]"*|"[EmbedInfoJson]"*)                              ETAPA=${T[et_metadados]} ;;
@@ -1589,6 +1643,46 @@ escolhe_principal() {
   (( n > 1 )) || return 1
   PRINCIPAL=$melhor
   printf '[grabit] principal: item %d de %d\n' "$PRINCIPAL" "$n"
+}
+
+# escolhe_proximo → ESCOLHIDO: o próximo link a começar (primeiro os novos, na ordem da
+# lista, depois as novas tentativas), pulando os de um site que já está no limite.
+escolhe_proximo() {
+  local i k
+  ESCOLHIDO=0
+  while (( PROXIMO <= TOTAL )) && [[ -n ${INICIADO[$PROXIMO]:-} ]]; do PROXIMO=$(( PROXIMO + 1 )); done
+  for (( i = PROXIMO; i <= TOTAL; i++ )); do
+    [[ -n ${INICIADO[$i]:-} ]] && continue
+    site_livre "$i" || continue
+    ESCOLHIDO=$i; INICIADO[$i]=1
+    return 0
+  done
+  for k in "${!REPETIR[@]}"; do
+    site_livre "${REPETIR[$k]}" || continue
+    ESCOLHIDO=${REPETIR[$k]}; unset 'REPETIR[k]'; REPETIR=("${REPETIR[@]}")
+    return 0
+  done
+  return 1
+}
+
+site_livre() {                                # site_livre IDX: o site do link ainda tem vaga?
+  (( LIMITE_POR_SITE > 0 )) || return 0
+  local s n=0 alvo=${SITE[$1]}
+  for (( s = 0; s < J; s++ )); do
+    (( SLOT_IDX[$s] > 0 )) && [[ ${SITE[${SLOT_IDX[$s]}]} == "$alvo" ]] && n=$(( n + 1 ))
+  done
+  (( n < LIMITE_POR_SITE ))
+}
+
+# site_de URL → FMT: o site do link, para o limite por site (www.youtube.com,
+# m.youtube.com e youtu.be contam todos como youtube.com)
+site_de() {
+  local h=${1#*://}
+  h=${h%%[/?#]*}; h=${h##*@}; h=${h%%:*}; h=${h,,}
+  [[ $h == youtu.be ]] && h=youtube.com
+  if [[ $h =~ ([^.]+\.(com|co|net|org|gov|edu|ac)\.[a-z]{2})$ ]]; then h=${BASH_REMATCH[1]}
+  elif [[ $h =~ ([^.]+\.[^.]+)$ ]]; then h=${BASH_REMATCH[1]}; fi
+  FMT=$h
 }
 
 # vale_repetir IDX: falhou por algo passageiro e ainda há tentativas? Se sim,
@@ -2089,6 +2183,10 @@ monta_args_ytdlp() {
   # pede as duas (a manual tem prioridade) e apaga os .vtt depois de embutir.
   (( LEGENDAS_AUTOMATICAS && ! SO_AUDIO )) && YTDLP_ARGS+=(--write-subs --write-auto-subs --compat-options no-keep-subs)
   (( SPONSORBLOCK ))         && YTDLP_ARGS+=(--sponsorblock-mark all)
+  # pausa com variação aleatória (até +50%): um ritmo fixo é a cara de um robô
+  (( PAUSA_ENTRE_VIDEOS > 0 )) &&
+    YTDLP_ARGS+=(--sleep-interval "$PAUSA_ENTRE_VIDEOS" --max-sleep-interval $(( PAUSA_ENTRE_VIDEOS * 3 / 2 )))
+  [[ $LIMITE_VELOCIDADE != 0 ]] && YTDLP_ARGS+=(--limit-rate "$LIMITE_VELOCIDADE")
   (( SEM_PLAYLIST ))         && YTDLP_ARGS+=(--no-playlist)
   if (( VERIFICAR )); then                    # o "%" do caminho viraria campo do modelo do yt-dlp
     printf -v cmd 'bash %q --verificar-arquivo %q' "${GRABIT_SCRIPT//%/%%}" "${T[sufixo_ruim]}"
@@ -2105,6 +2203,17 @@ monta_args_ytdlp() {
   [[ -n $COOKIES_NAVEGADOR ]] && YTDLP_ARGS+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
   (( TEM_JS_RUNTIMES ))       && [[ -n $JS_RUNTIME ]] && YTDLP_ARGS+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
   return 0
+}
+
+# descreve_limites RESOLUÇÃO POR_SITE PAUSA VELOCIDADE → TXT ("até 1080p · 1 vídeo(s) por site…")
+descreve_limites() {
+  local p=() x
+  (( $1 > 0 && ! SO_AUDIO )) && { t lim_res "$1";   p+=("$TXT"); }
+  (( $2 > 0 ))               && { t lim_site "$2";  p+=("$TXT"); }
+  (( $3 > 0 ))               && { t lim_pausa "$3"; p+=("$TXT"); }
+  [[ $4 != 0 ]]              && { t lim_vel "$4";   p+=("$TXT"); }
+  TXT=""
+  for x in "${p[@]}"; do TXT+="${TXT:+ · }$x"; done
 }
 
 # ───────────────────────────── Principal ──────────────────────────────────────
@@ -2132,6 +2241,7 @@ if (( INTERATIVO )); then                       # o painel (2 linhas por vídeo 
   if (( J > max_j )); then LIMITE_J=$J; J=$max_j; fi
 fi
 for (( s = 0; s < J; s++ )); do SLOT_IDX[$s]=0; SLOT_PID[$s]=0; done
+for (( i = 1; i <= TOTAL; i++ )); do site_de "${LINKS[$(( i - 1 ))]}"; SITE[$i]=$FMT; done
 monta_args_ytdlp
 
 extras=""
@@ -2161,14 +2271,23 @@ else kv "${T[kv_destino]}" "$PASTA_SAIDA"; fi
 if (( SO_AUDIO )); then
   if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
   else t kv_audio_conv "$FORMATO_AUDIO"; kv "${T[kv_modo]}" "$TXT"; fi
-elif (( RESOLUCAO_MAXIMA > 0 )); then
-  t kv_res_ate "$RESOLUCAO_MAXIMA"; txt_res=$TXT
-  if [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} != opção ]]; then
-    origem_txt RESOLUCAO_MAXIMA; t kv_res_origem "$FMT"; txt_res+=$TXT
-  fi
-  kv "${T[kv_resolucao]}" "$txt_res"
-elif (( LIMITE_IGNORADO > 0 )); then
-  origem_txt RESOLUCAO_MAXIMA; t kv_res_forcado "$AMARELO" "$R" "$LIMITE_IGNORADO" "$FMT"; kv "${T[kv_resolucao]}" "$TXT"
+fi
+txt_ign=""
+if (( ${#IGNORADO[@]} )); then                  # o que o -F desligou nesta execução
+  descreve_limites "${IGNORADO[RESOLUCAO_MAXIMA]:-0}" "${IGNORADO[LIMITE_POR_SITE]:-0}" \
+    "${IGNORADO[PAUSA_ENTRE_VIDEOS]:-0}" "${IGNORADO[LIMITE_VELOCIDADE]:-0}"
+  txt_ign=$TXT
+fi
+descreve_limites "$RESOLUCAO_MAXIMA" "$LIMITE_POR_SITE" "$PAUSA_ENTRE_VIDEOS" "$LIMITE_VELOCIDADE"
+if [[ -n $TXT ]]; then
+  txt_lim=$TXT
+  for nome in "${CHAVES_LIMITE[@]}"; do         # algum veio do grabit.config? o -F o desligaria
+    if [[ ${!nome} != 0 && ${ORIGEM[$nome]:-} != opção ]]; then txt_lim+=${T[lim_f]}; break; fi
+  done
+  [[ -n $txt_ign ]] && { t lim_ignorando "$txt_ign"; txt_lim+=$TXT; }
+  kv "${T[kv_limites]}" "$txt_lim"
+elif [[ -n $txt_ign ]]; then
+  t lim_desligados "$AMARELO" "$R" "$txt_ign"; kv "${T[kv_limites]}" "$TXT"
 fi
 if (( CONFIG_CRIADO )); then
   t kv_config_criado "$VERDE" "$R" "${CONFIG_ARQ/#$HOME/\~}"; kv "${T[kv_config]}" "$TXT"
@@ -2241,13 +2360,8 @@ while (( FINALIZADOS < TOTAL )); do
   # 2) ocupa os slots livres: primeiro os links novos, depois as novas tentativas
   for (( s = 0; s < J; s++ )); do
     (( SLOT_IDX[$s] == 0 )) || continue
-    if (( PROXIMO <= TOTAL )); then
-      idx=$PROXIMO; PROXIMO=$(( PROXIMO + 1 ))
-    elif (( ${#REPETIR[@]} )); then
-      idx=${REPETIR[0]}; REPETIR=("${REPETIR[@]:1}")
-    else
-      break
-    fi
+    escolhe_proximo || break
+    idx=$ESCOLHIDO
     lanca_job "$idx"
     SLOT_IDX[$s]=$idx
     SLOT_PID[$s]=$ULTIMO_PID
