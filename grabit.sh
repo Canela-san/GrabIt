@@ -50,7 +50,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
-  IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST COOKIES_NAVEGADOR
+  IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
@@ -67,6 +67,7 @@ IDIOMAS_LEGENDAS='pt.*,en.*'                  # "all" para todas
 LEGENDAS_AUTOMATICAS=0                        # 1 = inclui legendas automáticas
 SPONSORBLOCK=0                                # 1 = marca patrocínios/intros como capítulos
 SEM_PLAYLIST=0                                # 1 = link vídeo+playlist baixa só o vídeo
+SO_PRINCIPAL=0                                # 1 = página com vários vídeos baixa só o principal
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
@@ -183,6 +184,7 @@ idioma_pt() {
     [kv_legendas]="legendas %s"
     [kv_automaticas]=" (+automáticas)"
     [kv_extras_resto]=", capa, capítulos, metadados"
+    [kv_principal]=", só o vídeo principal de cada página"
     [imp_indisp]="indisponível"
     [imp_retry]="nas novas tentativas"
     [imp_off]="desligado (TENTATIVAS=1)"
@@ -232,6 +234,7 @@ idioma_pt() {
     [et_hist]="já baixado antes (histórico)"
     [et_existe]="arquivo já existe"
     [et_iniciando]="iniciando download"
+    [et_principal]="procurando o vídeo principal da página"
     [et_processando]="processando"
     [et_item]="obtendo informações · item %s/%s"
     [et_info]="obtendo informações"
@@ -306,6 +309,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -F            força: ignora os limites do grabit.config (resolução máxima…)
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -p            só o vídeo, se o link tiver vídeo + playlist
+  -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
@@ -384,6 +388,9 @@ EOF
 # Link de vídeo dentro de playlist: baixar só o vídeo (-p)
 #SEM_PLAYLIST=0
 
+# Página com vários vídeos (prévias, relacionados…): baixar só o principal, o mais longo (-u)
+#SO_PRINCIPAL=0
+
 # Usar os cookies (login) de um navegador: firefox, chrome, brave… (-b)
 #COOKIES_NAVEGADOR=
 
@@ -434,6 +441,7 @@ idioma_en() {
     [kv_legendas]="subtitles %s"
     [kv_automaticas]=" (+automatic)"
     [kv_extras_resto]=", cover, chapters, metadata"
+    [kv_principal]=", only each page's main video"
     [imp_indisp]="unavailable"
     [imp_retry]="on retries"
     [imp_off]="off (TENTATIVAS=1)"
@@ -483,6 +491,7 @@ idioma_en() {
     [et_hist]="already downloaded (history)"
     [et_existe]="file already exists"
     [et_iniciando]="starting download"
+    [et_principal]="looking for the page's main video"
     [et_processando]="processing"
     [et_item]="fetching info · item %s/%s"
     [et_info]="fetching info"
@@ -557,6 +566,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -F            force: ignore the grabit.config limits (maximum resolution…)
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -p            only the video, when the link is video + playlist
+  -u            only the main video (the longest) of pages with several videos
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
@@ -639,6 +649,9 @@ EOF
 # Video link inside a playlist: download only the video (-p)
 #SEM_PLAYLIST=0
 
+# Page with several videos (previews, related…): download only the main one, the longest (-u)
+#SO_PRINCIPAL=0
+
 # Use a browser's cookies (login): firefox, chrome, brave… (-b)
 #COOKIES_NAVEGADOR=
 
@@ -689,7 +702,7 @@ done
 set -- "${ARGS_CURTOS[@]}"
 
 OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0
-while getopts ":l:o:j:c:b:r:L:pasiFh" op; do
+while getopts ":l:o:j:c:b:r:L:pausiFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -700,6 +713,7 @@ while getopts ":l:o:j:c:b:r:L:pasiFh" op; do
     F) FORCAR=1 ;;
     L) ;;                              # já tratado acima, antes de carregar os textos
     p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
+    u) SO_PRINCIPAL=1;                 ORIGEM[SO_PRINCIPAL]=opção ;;
     a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
     s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
     i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
@@ -723,7 +737,7 @@ for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
     exit 2
   fi
 done
-for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST USAR_HISTORICO; do
+for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL USAR_HISTORICO; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
     origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
@@ -780,7 +794,7 @@ VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; 
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
-FORMATO='bv*+ba/b'
+FORMATO='bv*+ba/b'; PRINCIPAL=0
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
@@ -1003,6 +1017,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
   case $1 in
     *"aren't any"*|*"are no "*|*"Not remuxing"*|"Deleting original"*|WARNING:*) ;;   # "nada a fazer"
     @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
+    "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
     "[Merger]"*)                                                   ETAPA=${T[et_mesclando]} ;;
     "[VideoRemuxer]"*)                                             ETAPA=${T[et_mkv]} ;;
     "[Metadata]"*|"[EmbedInfoJson]"*)                              ETAPA=${T[et_metadados]} ;;
@@ -1334,12 +1349,56 @@ lanca_job() {                                 # lanca_job IDX
   # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
   # histórico e continuam sendo pulados.
   (( ${REBAIXAR[$i]:-0} )) && extra+=(--force-overwrites)
-  yt-dlp "${YTDLP_ARGS[@]}" "${extra[@]}" -- "$url" </dev/null >"$TMP/$i.log" 2>&1 &
+  baixa_link "$url" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
   ULTIMO_PID=$!
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
     if (( tent > 1 )); then t ni_tentativa "$tent"; PERM+=("  ↻ ${idxs}  ${url}  $TXT"); else PERM+=("  ▶ ${idxs}  ${url}"); fi
   fi
+}
+
+# baixa_link URL [OPÇÕES EXTRAS…]: roda em segundo plano, com a saída indo para o log.
+# Com -u, antes descobre qual é o vídeo principal da página e pede só ele.
+baixa_link() {
+  local url=$1 escolha=()
+  shift
+  if (( SO_PRINCIPAL )); then
+    printf '[grabit] principal\n'
+    escolhe_principal "$url" "$@" && escolha=(--playlist-items "$PRINCIPAL")
+  fi
+  exec yt-dlp "${YTDLP_ARGS[@]}" "$@" "${escolha[@]}" -- "$url"
+}
+
+# escolhe_principal URL [OPÇÕES…] → PRINCIPAL: o item mais longo da página (empate: o de
+# maior resolução, depois o primeiro). O yt-dlp lista os vídeos de uma página na ordem
+# em que os acha, não na ordem da página; e prévias e relacionados costumam ser curtos.
+# Quando o site não informa a duração, o ffprobe lê só o cabeçalho do vídeo.
+# Falha (= baixa o link como está) se não houver mais de um vídeo para comparar.
+escolhe_principal() {
+  local url=$1 idx dur alt link n=0 melhor=0 melhor_dur=-1 melhor_alt=-1 args=()
+  shift
+  [[ -n $COOKIES_NAVEGADOR ]] && args+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
+  (( TEM_JS_RUNTIMES )) && [[ -n $JS_RUNTIME ]] && args+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  (( SEM_PLAYLIST )) && args+=(--no-playlist)
+  while IFS=$SEP read -r idx dur alt link; do
+    num "$idx"; idx=$NUM
+    (( idx > 0 )) || continue
+    n=$(( n + 1 ))
+    num "$dur"; dur=$NUM
+    if (( dur == 0 )) && [[ $link == http* ]] && command -v ffprobe >/dev/null 2>&1; then
+      dur=$(ffprobe -v error -rw_timeout 15000000 -show_entries format=duration -of csv=p=0 -- "$link" 2>/dev/null)
+      num "$dur"; dur=$NUM
+    fi
+    num "$alt"; alt=$NUM
+    if (( dur > melhor_dur || (dur == melhor_dur && alt > melhor_alt) )); then
+      melhor=$idx; melhor_dur=$dur; melhor_alt=$alt
+    fi
+  done < <(yt-dlp --ignore-config --no-warnings --simulate --playlist-items 1:20 -f "$FORMATO" \
+             --print "%(playlist_index|0)s${SEP}%(duration|0)s${SEP}%(height|0)s${SEP}%(requested_formats.0.url,url|)s" \
+             "${args[@]}" "$@" -- "$url" 2>/dev/null)
+  (( n > 1 )) || return 1
+  PRINCIPAL=$melhor
+  printf '[grabit] principal: item %d de %d\n' "$PRINCIPAL" "$n"
 }
 
 # vale_repetir IDX: falhou por algo passageiro e ainda há tentativas? Se sim,
@@ -1855,6 +1914,7 @@ extras=""
 t kv_legendas "$IDIOMAS_LEGENDAS"; txt_extras=$TXT
 (( LEGENDAS_AUTOMATICAS )) && txt_extras+=${T[kv_automaticas]}
 txt_extras+=${T[kv_extras_resto]}
+(( SO_PRINCIPAL )) && txt_extras+=${T[kv_principal]}
 (( SPONSORBLOCK )) && txt_extras+=", SponsorBlock"
 if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}${T[imp_indisp]}${R}"
 elif (( TENTATIVAS > 1 )); then txt_imp=${T[imp_retry]}
