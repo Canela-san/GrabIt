@@ -81,7 +81,7 @@ And run it in the same folder:
 grabit
 ```
 
-Successfully downloaded links **leave the list and move to the `DOWNLOADED` section**, at the end of the same `links.txt`, exactly as you wrote them (notes included). Everything in that section is ignored: it becomes your link history, and GrabIt doesn't waste time reprocessing or listing what's already done. The ones that failed stay at the top, ready for next time.
+Successfully downloaded links **leave the list and move to the `DOWNLOADED` section**, at the end of the same `links.txt`, exactly as you wrote them (notes included), with the date and the title of what was downloaded at the end of the line. Everything in that section is ignored: it becomes your link history, and GrabIt doesn't waste time reprocessing or listing what's already done. The ones that failed stay at the top, ready for next time.
 
 ```text
 # comments and empty lines are ignored
@@ -89,8 +89,8 @@ https://vimeo.com/XXXXXXXXX          # this one failed and stays here
 
 # ==================== DOWNLOADED ====================
 # Successfully downloaded links. GrabIt ignores everything below this line.
-https://www.youtube.com/watch?v=XXXXXXXXXXX
-https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
+https://www.youtube.com/watch?v=XXXXXXXXXXX  # ✔ 2026-10-24 · Video title
+https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 videos · Lesson 1 and others
 ```
 
 > In Portuguese the section is called `BAIXADOS`; GrabIt recognizes both names, so switching languages doesn't mess up your list.

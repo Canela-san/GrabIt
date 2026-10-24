@@ -268,6 +268,8 @@ idioma_pt() {
     [d_rede]="falha de rede"
     [d_resolucao]="nenhuma versão até %dp — use -F para baixar mesmo assim"
     [d_resolucao_r]="nenhuma versão até %dp (-r)"
+    [nota_n]="%d vídeos · %s e outros"
+    [nota_n0]="%d vídeos"
     [r_baixa]="resolução baixa:"
     [r_baixa_det]="%dp era a melhor versão disponível (com login, -b, às vezes há mais)"
     [s_baixa]="Baixa resolução"
@@ -525,6 +527,8 @@ idioma_en() {
     [d_rede]="network failure"
     [d_resolucao]="no version up to %dp — use -F to download it anyway"
     [d_resolucao_r]="no version up to %dp (-r)"
+    [nota_n]="%d videos · %s and others"
+    [nota_n0]="%d videos"
     [r_baixa]="low resolution:"
     [r_baixa_det]="%dp was the best version available (logged in, -b, there may be more)"
     [s_baixa]="Low resolution"
@@ -794,11 +798,11 @@ VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; 
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
-FORMATO='bv*+ba/b'; PRINCIPAL=0
+FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
-TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -1202,6 +1206,7 @@ salva_log() {                                 # guarda o log de todas as tentati
 processa_resultado() {                        # processa_resultado IDX CÓDIGO_DE_SAÍDA
   local idx=$1 rc=$2 url idxs d n_done n_ja n_hist t tent logs=() dones=() hist=()
   local tipo h fps hdr vc ac canais dur titulo vid caminho tam glifo cor det l hid filtrados=()
+  local nota="" n_nota=0
   local -A baixados=()
   url=${LINKS[$(( idx - 1 ))]}
   tent=${TENTATIVA[$idx]:-1}
@@ -1230,6 +1235,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     IFS=$SEP read -r tipo h fps hdr vc ac dur titulo vid caminho <<<"$d"
     [[ -n $vid ]] && baixados[$vid]=1
     titulo=${titulo//[[:cntrl:]]/ }
+    n_nota=$(( n_nota + 1 )); [[ -z $nota ]] && nota=$titulo
     canais=0; tam=0
     # os dados do arquivo gravado (ffprobe) valem mais que os do extrator
     if sonda "$caminho"; then h=$S_H; fps=$S_FPS; hdr=$S_HDR; vc=$S_VC; ac=$S_AC; canais=$S_CANAIS; dur=$S_DUR; tam=$S_TAM; fi
@@ -1267,12 +1273,13 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   hist=("${filtrados[@]}")
   n_hist=${#hist[@]}
   if (( n_hist > 0 )); then
-    N_JA=$(( N_JA + n_hist ))
+    N_JA=$(( N_JA + n_hist )); n_nota=$(( n_nota + n_hist ))
     if (( n_done == 0 && n_hist == 1 )); then
       titulo=${hist[0]#\[download\] }
       titulo=${titulo% has already been recorded in the archive}
       if [[ $titulo == *": "* ]]; then titulo=${titulo#*: }; else titulo=""; fi
       titulo=${titulo//[[:cntrl:]]/ }
+      nota=${titulo:-${TITULO[$idx]:-}}
       linha_resultado "↷" "$AMARELO" "$idxs" "${titulo:-${TITULO[$idx]:-$url}}" "${T[r_ja_baixado]}"
     else
       t r_n_ja_baixados "$n_hist"; linha_resultado "↷" "$AMARELO" "$idxs" "$url" "$TXT"
@@ -1282,6 +1289,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
 
   if (( n_done == 0 && n_hist == 0 && rc == 0 )); then
     titulo=${TITULO[$idx]:-$url}
+    nota=${TITULO[$idx]:-}
     n_ja=$(cat "${logs[@]}" 2>/dev/null | grep -ac 'has already been downloaded')
     if (( n_ja > 0 )); then
       N_JA=$(( N_JA + 1 ))
@@ -1333,7 +1341,14 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     N_ERRO=$(( N_ERRO + 1 ))
     salva_log "$idx"
   fi
-  (( rc == 0 )) && SUCESSO[$idx]=1
+  if (( rc == 0 )); then
+    SUCESSO[$idx]=1
+    if (( n_nota > 1 )); then
+      if [[ -n $nota ]]; then t nota_n "$n_nota" "$nota"; else t nota_n0 "$n_nota"; fi
+      nota=$TXT
+    fi
+    NOTA[$idx]=$nota                           # vai junto com o link para a seção BAIXADOS
+  fi
 
   FEITO[$idx]=1
   FINALIZADOS=$(( FINALIZADOS + 1 ))
@@ -1782,10 +1797,12 @@ ler_links() {
 # sucesso saem da parte de cima e vão para o fim da seção BAIXADOS (criada se preciso).
 # O arquivo é relido agora: o que você acrescentou durante a execução não se perde.
 move_baixados() {
-  local -A ok=()
+  local -A ok=() nota=()
   local i arq
+  printf -v HOJE '%(%Y-%m-%d)T' -1
   for (( i = 1; i <= TOTAL; i++ )); do
-    [[ -n ${SUCESSO[$i]:-} ]] && ok[${LINKS[$(( i - 1 ))]}]=1
+    [[ -n ${SUCESSO[$i]:-} ]] || continue
+    ok[${LINKS[$(( i - 1 ))]}]=1; nota[${LINKS[$(( i - 1 ))]}]=${NOTA[$i]:-}
   done
   (( ${#ok[@]} )) || return 0
   for arq in "${ARQUIVOS_ENTRADA[@]}"; do
@@ -1796,8 +1813,23 @@ move_baixados() {
   return 0
 }
 
-move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" de move_baixados)
-  local arq=$1 linha p todos secao=0 bom="" eol=""
+# anota LINHA NOTA → FMT: a linha com a data e o título do que foi baixado, ex.:
+#   https://site/video  # ✔ 2026-10-24 · Título do vídeo
+# Se a linha já tem um comentário seu, a anotação entra no fim dele (sem outro "#").
+ANOTACAO_ANTIGA='^(.*[^[:space:]])[[:space:]]+(#[[:space:]]*)?✔ [0-9]{4}-[0-9]{2}-[0-9]{2}( · .*)?$'
+anota() {
+  local l=$1 n=${2//[[:cntrl:]]/ } cr=""
+  [[ $l == *$'\r' ]] && { cr=$'\r'; l=${l%$'\r'}; }
+  # link que voltou da seção para ser baixado de novo: troca a anotação antiga
+  [[ $l =~ $ANOTACAO_ANTIGA ]] && l=${BASH_REMATCH[1]}
+  (( ${#n} > 120 )) && n="${n:0:119}…"
+  if [[ $l =~ (^|[[:space:]])# ]]; then FMT="$l  ✔ $HOJE"; else FMT="$l  # ✔ $HOJE"; fi
+  [[ -n $n ]] && FMT+=" · $n"
+  FMT+=$cr
+}
+
+move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" e "nota" de move_baixados)
+  local arq=$1 linha p todos secao=0 bom="" eol="" n
   local conteudo=() ativa=() resto=() movidas=()
   mapfile -t conteudo < "$arq" || return 0
   (( ${#conteudo[@]} )) || return 0
@@ -1809,7 +1841,13 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
     links_da_linha "$linha"
     todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
     for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${ok[$p]:-} ]] || { todos=0; break; }; done
-    if (( todos )); then movidas+=("$linha"); else ativa+=("$linha"); fi
+    if (( todos )); then
+      n=""
+      for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${nota[$p]:-} ]] && n+="${n:+ | }${nota[$p]}"; done
+      anota "$linha" "$n"; movidas+=("$FMT")
+    else
+      ativa+=("$linha")
+    fi
   done
   (( ${#movidas[@]} )) || return 0
   if (( ! secao )); then

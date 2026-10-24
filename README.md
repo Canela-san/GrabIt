@@ -79,7 +79,7 @@ E rode na mesma pasta:
 grabit
 ```
 
-Os links baixados com sucesso **saem da lista e vão para a seção `BAIXADOS`**, no fim do próprio `links.txt`, exatamente como você os escreveu (anotações incluídas). Tudo o que está nessa seção é ignorado: ela vira o seu histórico de links, e o GrabIt não perde tempo reprocessando nem listando o que já foi baixado. Os que falharam continuam em cima, prontos para a próxima vez.
+Os links baixados com sucesso **saem da lista e vão para a seção `BAIXADOS`**, no fim do próprio `links.txt`, exatamente como você os escreveu (anotações incluídas), com a data e o título do que foi baixado no fim da linha. Tudo o que está nessa seção é ignorado: ela vira o seu histórico de links, e o GrabIt não perde tempo reprocessando nem listando o que já foi baixado. Os que falharam continuam em cima, prontos para a próxima vez.
 
 ```text
 # comentários e linhas vazias são ignorados
@@ -87,8 +87,8 @@ https://vimeo.com/XXXXXXXXX          # este falhou e continua aqui
 
 # ==================== BAIXADOS ====================
 # Links já baixados com sucesso. O GrabIt ignora tudo daqui para baixo.
-https://www.youtube.com/watch?v=XXXXXXXXXXX
-https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
+https://www.youtube.com/watch?v=XXXXXXXXXXX  # ✔ 2026-10-24 · Título do vídeo
+https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 vídeos · Aula 1 e outros
 ```
 
 > Em inglês, a seção se chama `DOWNLOADED`; o GrabIt reconhece os dois nomes, então trocar de idioma não bagunça a lista.
