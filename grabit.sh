@@ -49,7 +49,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
-CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
+CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST COOKIES_NAVEGADOR
   USAR_HISTORICO ARQUIVO_FALHAS)
 declare -A DO_AMBIENTE=() ORIGEM=()
@@ -59,6 +59,7 @@ IDIOMA=auto                                   # pt, en ou auto (pelo idioma do s
 ARQUIVO_LINKS=links.txt
 PASTA_SAIDA=./Downloads
 RESOLUCAO_MAXIMA=0                            # altura máxima (1080, 2160…); 0 = sem limite
+RESOLUCAO_ALERTA=720                          # avisa quando o melhor disponível é menor; 0 = nunca
 DOWNLOADS_SIMULTANEOS=2                       # vídeos ao mesmo tempo
 CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
 TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
@@ -264,6 +265,10 @@ idioma_pt() {
     [d_rede]="falha de rede"
     [d_resolucao]="nenhuma versão até %dp — use -F para baixar mesmo assim"
     [d_resolucao_r]="nenhuma versão até %dp (-r)"
+    [r_baixa]="resolução baixa:"
+    [r_baixa_det]="%dp era a melhor versão disponível (com login, -b, às vezes há mais)"
+    [s_baixa]="Baixa resolução"
+    [s_baixa_det]="%d vídeo(s) abaixo de %dp"
     [s_resumo]="Resumo"
     [s_resumo_parcial]="Resumo parcial"
     [s_baixados]="Baixados"
@@ -358,6 +363,9 @@ EOF
 # lado menor da imagem: um vídeo vertical de 1080×1920 conta como 1080p. Vídeo sem
 # nenhuma versão dentro do limite falha com um aviso; -F ignora o limite numa execução.
 #RESOLUCAO_MAXIMA=0
+
+# Avisa quando a melhor versão que o site oferece fica abaixo desta resolução (0 = nunca)
+#RESOLUCAO_ALERTA=720
 
 # Quantos vídeos baixar ao mesmo tempo (-j) e conexões por vídeo (-c)
 #DOWNLOADS_SIMULTANEOS=2
@@ -508,6 +516,10 @@ idioma_en() {
     [d_rede]="network failure"
     [d_resolucao]="no version up to %dp — use -F to download it anyway"
     [d_resolucao_r]="no version up to %dp (-r)"
+    [r_baixa]="low resolution:"
+    [r_baixa_det]="%dp was the best version available (logged in, -b, there may be more)"
+    [s_baixa]="Low resolution"
+    [s_baixa_det]="%d video(s) below %dp"
     [s_resumo]="Summary"
     [s_resumo_parcial]="Partial summary"
     [s_baixados]="Downloaded"
@@ -606,6 +618,9 @@ EOF
 # the shorter side of the picture: a 1080×1920 vertical video counts as 1080p. A video
 # with no version within the limit fails with a notice; -F ignores the limit for a run.
 #RESOLUCAO_MAXIMA=0
+
+# Warn when the best version a site offers is below this resolution (0 = never)
+#RESOLUCAO_ALERTA=720
 
 # How many videos to download at once (-j) and connections per video (-c)
 #DOWNLOADS_SIMULTANEOS=2
@@ -714,19 +729,21 @@ for nome in LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST USAR_HISTORICO; do
     exit 2
   fi
 done
-# Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = sem limite
-case ${RESOLUCAO_MAXIMA,,} in
-  "") RESOLUCAO_MAXIMA=0 ;;
-  4k) RESOLUCAO_MAXIMA=2160 ;;
-  8k) RESOLUCAO_MAXIMA=4320 ;;
-  *)
-    if [[ ${RESOLUCAO_MAXIMA,,} =~ ^([0-9]{1,5})p?$ ]]; then
-      RESOLUCAO_MAXIMA=$(( 10#${BASH_REMATCH[1]} ))
-    else
-      origem_txt RESOLUCAO_MAXIMA; t val_resolucao RESOLUCAO_MAXIMA "$RESOLUCAO_MAXIMA" "$FMT"; erro "$TXT"
-      exit 2
-    fi ;;
-esac
+# Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = desligado
+for nome in RESOLUCAO_MAXIMA RESOLUCAO_ALERTA; do
+  case ${!nome,,} in
+    "") printf -v "$nome" 0 ;;
+    4k) printf -v "$nome" 2160 ;;
+    8k) printf -v "$nome" 4320 ;;
+    *)
+      if [[ ${!nome,,} =~ ^([0-9]{1,5})p?$ ]]; then
+        printf -v "$nome" '%d' $(( 10#${BASH_REMATCH[1]} ))
+      else
+        origem_txt "$nome"; t val_resolucao "$nome" "${!nome}" "$FMT"; erro "$TXT"
+        exit 2
+      fi ;;
+  esac
+done
 
 # --config: onde está o arquivo e os valores em uso, com a origem de cada um
 mostra_config() {
@@ -751,6 +768,10 @@ LIMITE_IGNORADO=0
 if (( FORCAR && RESOLUCAO_MAXIMA > 0 )) && [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} != opção ]]; then
   LIMITE_IGNORADO=$RESOLUCAO_MAXIMA; RESOLUCAO_MAXIMA=0
 fi
+# Alerta de baixa resolução: nunca acima do limite escolhido (com limite de 480p,
+# avisar de tudo abaixo de 720p seria só ruído)
+ALERTA=$RESOLUCAO_ALERTA
+(( RESOLUCAO_MAXIMA > 0 && RESOLUCAO_MAXIMA < ALERTA )) && ALERTA=$RESOLUCAO_MAXIMA
 
 # ───────────────────────────── Estado global ──────────────────────────────────
 J=0; TOTAL=0; COLS=100; TICK=0; LIVE_H=0; CANCELADO=0; SINAL=""; STTY_SAVE=""; TMP=""
@@ -760,7 +781,7 @@ ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VE
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
 FORMATO='bv*+ba/b'
-FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0
+FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
@@ -1210,6 +1231,13 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     fi
     linha_resultado "$glifo" "$cor" "$idxs" "$titulo" "$META"
     PERM+=("$LINHA")
+    # Baixou, mas o melhor que o site tinha é pouco: talvez com login (-b) haja mais
+    num "$h"
+    if [[ $tipo == N ]] && (( ALERTA > 0 && NUM > 0 && NUM < ALERTA )); then
+      N_BAIXA_RES=$(( N_BAIXA_RES + 1 ))
+      t r_baixa_det "$NUM"; corta "$TXT" $(( COLS - 13 - ${#T[r_baixa]} ))
+      PERM+=("         ${AMARELO}↳ ${T[r_baixa]}${R}${DIM} ${FMT}${R}")
+    fi
   done
 
   # Pulados pelo histórico: o yt-dlp nem abre o vídeo, então não há @@D@@.
@@ -1417,6 +1445,9 @@ resumo() {
   linha_resumo "✖" "$VERMELHO" "${T[s_erro]}"     "${NEG}${N_ERRO}${R}"
   if (( N_AVISOS > 0 )); then
     t s_aviso_det "$LOG_DIR"; linha_resumo "⚠" "$AMARELO" "${T[s_aviso]}" "${NEG}${N_AVISOS}${R}  ${DIM}${TXT}${R}"
+  fi
+  if (( N_BAIXA_RES > 0 )); then
+    t s_baixa_det "$N_BAIXA_RES" "$ALERTA"; linha_resumo "▾" "$AMARELO" "${T[s_baixa]}" "$TXT"
   fi
   linha_resumo "◷" "$DIM" "${T[s_tempo]}"         "$t"
   linha_resumo "▣" "$DIM" "${T[s_baixado_agora]}" "${b}${media}"

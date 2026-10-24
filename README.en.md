@@ -143,6 +143,7 @@ COOKIES_NAVEGADOR=firefox
 | `ARQUIVO_LINKS` | list read when you run just `grabit` | `links.txt` |
 | `PASTA_SAIDA` | where videos are saved | `./Downloads` |
 | `RESOLUCAO_MAXIMA` | maximum resolution (`1080`, `2160`, `4k`…); `0` = no limit | `0` |
+| `RESOLUCAO_ALERTA` | warn when the best version available is below this; `0` = never | `720` |
 | `DOWNLOADS_SIMULTANEOS` | videos at the same time | `2` |
 | `CONEXOES_POR_VIDEO` | connections per video | `4` |
 | `TENTATIVAS` | attempts per link (`1` = don't retry) | `2` |
@@ -193,6 +194,7 @@ There are also `ARQUIVO_HISTORICO` (where the download history lives) and `NO_CO
 | ↷ | had already been downloaded (by the history or because the file was already in the folder), skipped |
 | ✖ | failed, with the reason explained right below |
 | ⚠ | the video is complete, but some detail failed (e.g. converting the cover) |
+| ▾ | downloaded, but the best version the site offered was below `RESOLUCAO_ALERTA` (sometimes, logged in with `-b`, there's more) |
 
 Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command to retry just those. If they all succeed on the next run, the file is deleted automatically.
 

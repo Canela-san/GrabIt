@@ -140,6 +140,7 @@ COOKIES_NAVEGADOR=firefox
 | `ARQUIVO_LINKS` | lista lida quando você roda só `grabit` | `links.txt` |
 | `PASTA_SAIDA` | onde os vídeos são salvos | `./Downloads` |
 | `RESOLUCAO_MAXIMA` | resolução máxima (`1080`, `2160`, `4k`…); `0` = sem limite | `0` |
+| `RESOLUCAO_ALERTA` | avisa quando a melhor versão disponível fica abaixo disso; `0` = nunca | `720` |
 | `DOWNLOADS_SIMULTANEOS` | vídeos ao mesmo tempo | `2` |
 | `CONEXOES_POR_VIDEO` | conexões por vídeo | `4` |
 | `TENTATIVAS` | tentativas por link (`1` = sem repetir) | `2` |
@@ -188,6 +189,7 @@ Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_C
 | ↷ | já tinha sido baixado (pelo histórico ou porque o arquivo já estava na pasta), foi pulado |
 | ✖ | falhou, com o motivo explicado logo abaixo |
 | ⚠ | o vídeo está completo, mas algum detalhe falhou (ex.: converter a capa) |
+| ▾ | baixado, mas a melhor versão que o site oferecia estava abaixo de `RESOLUCAO_ALERTA` (às vezes, com login, `-b`, há mais) |
 
 Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o comando para tentar só eles de novo. Se todos derem certo na nova rodada, o arquivo é apagado sozinho.
 
