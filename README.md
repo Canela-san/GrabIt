@@ -107,6 +107,15 @@ grabit -d                                    # separa em pastas: Downloads/site/
 cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 ```
 
+### Durante o download
+
+| Tecla | O que faz |
+|---|---|
+| <kbd>p</kbd> | pausa tudo (os downloads em andamento congelam) e continua |
+| <kbd>q</kbd> | termina depois dos downloads atuais; os que faltavam vão para `links_falhos.txt`. De novo: cancela na hora |
+| <kbd>+</kbd> / <kbd>-</kbd> | aumenta ou diminui quantos vídeos baixam ao mesmo tempo |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancela na hora; o que estava pela metade recomeça do zero na próxima vez |
+
 ### Opções
 
 | Opção | O que faz | Padrão |

@@ -109,6 +109,15 @@ grabit -d                                    # sort into folders: Downloads/site
 cat list.txt | grabit -l -                   # read links from standard input
 ```
 
+### While downloading
+
+| Key | What it does |
+|---|---|
+| <kbd>p</kbd> | pauses everything (running downloads freeze) and resumes |
+| <kbd>q</kbd> | stops after the current downloads; the remaining ones go to `links_falhos.txt`. Again: cancels right away |
+| <kbd>+</kbd> / <kbd>-</kbd> | raises or lowers how many videos download at once |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancels right away; anything half-done starts over from scratch next time |
+
 ### Options
 
 | Option | What it does | Default |

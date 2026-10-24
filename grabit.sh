@@ -295,6 +295,10 @@ idioma_pt() {
     [av_js]="Sem runtime JavaScript: o YouTube pode falhar ou vir em qualidade menor."
     [av_js2]="     Instale o Deno (https://deno.com) e mantenha o yt-dlp atualizado."
     [dica_ctrlc]="Ctrl+C cancela · o que estiver pela metade recomeça do zero"
+    [dica_teclas]="p pausa · q termina depois dos atuais · + e - mudam quantos baixam ao mesmo tempo"
+    [k_pausado]="pausado · p continua"
+    [k_parando]="terminando os downloads atuais · q de novo cancela"
+    [k_simultaneos]="%d download(s) ao mesmo tempo"
     [dep_faltando]="Faltando: %s"
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
@@ -597,6 +601,10 @@ idioma_en() {
     [av_js]="No JavaScript runtime: YouTube may fail or come in lower quality."
     [av_js2]="     Install Deno (https://deno.com) and keep yt-dlp up to date."
     [dica_ctrlc]="Ctrl+C cancels · anything half-done starts over from scratch"
+    [dica_teclas]="p pauses · q stops after the current ones · + and - change how many run at once"
+    [k_pausado]="paused · p resumes"
+    [k_parando]="finishing the current downloads · q again cancels"
+    [k_simultaneos]="%d download(s) at once"
     [dep_faltando]="Missing: %s"
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
@@ -1006,7 +1014,8 @@ FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0;
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ESCOLHIDO=0;
-INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0; ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0;
+TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0; ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -1276,6 +1285,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
 
   printf -v idxs "%0${#TOTAL}d/%d" "$idx" "$TOTAL"
   spin=${SPIN[$(( TICK % ${#SPIN[@]} ))]}
+  (( PAUSADO )) && spin="‖"
   titulo=${TITULO[$idx]:-${LINKS[$(( idx - 1 ))]}}
   tent=${TENTATIVA[$idx]:-1}
   if (( tent > 1 )); then t tentativa_n "$tent"; pre_txt=$TXT; pre="${AMARELO}${pre_txt}${R}"; fi
@@ -1289,6 +1299,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
     num "$total";   total=$NUM
     num "$vel";     vel=$NUM
     num "$eta";     eta=$NUM
+    (( PAUSADO )) && { vel=0; eta=0; }          # a última velocidade do log não vale mais
     ETA_JOB[$idx]=$eta
     VEL_TOTAL=$(( VEL_TOTAL + vel ))
     if [[ $pidx =~ ^[0-9]+$ ]]; then pre_txt+="item ${pidx}${pn:+/$pn} · "; pre+="${DIM}item ${pidx}${pn:+/$pn} · ${R}"; fi
@@ -1372,8 +1383,19 @@ monta_live() {
   for (( s = 0; s < J; s++ )); do bloco_job "$s"; done
 
   larg=$(( COLS - 4 )); (( larg > 78 )) && larg=78
-  printf -v reg '%*s' "$larg" ''
-  LIVE+=("  ${CINZA}${reg// /─}${R}")
+  # a régua entre os downloads e o total mostra o estado das teclas (pausado, parando…)
+  local msg=""
+  if (( PARANDO )); then msg=${T[k_parando]}
+  elif (( PAUSADO )); then msg=${T[k_pausado]}
+  elif (( MSG_ATE >= SECONDS )); then msg=$MSG_PAINEL; fi
+  if [[ -n $msg ]]; then
+    corta "$msg" $(( larg - 6 )); msg=$FMT
+    printf -v reg '%*s' $(( larg - 4 - LARG )) ''
+    LIVE+=("  ${CINZA}── ${R}${AMARELO}${msg}${R} ${CINZA}${reg// /─}${R}")
+  else
+    printf -v reg '%*s' "$larg" ''
+    LIVE+=("  ${CINZA}${reg// /─}${R}")
+  fi
 
   # barra total com largura fixa por terminal; some em terminal estreito
   l="  ${NEG}${T[total]}${R} "; w=$(( 3 + ${#T[total]} ))
@@ -1715,6 +1737,47 @@ site_de() {
   FMT=$h
 }
 
+# ───── Teclas no painel: p pausa/continua · q termina depois dos atuais (de novo: cancela)
+# ───── + e - mudam quantos downloads rodam ao mesmo tempo
+sinaliza_arvore() {                           # sinaliza_arvore PID SINAL (o processo e seus filhos)
+  local f
+  for f in $(pgrep -P "$1" 2>/dev/null); do sinaliza_arvore "$f" "$2"; done
+  kill -s "$2" "$1" 2>/dev/null
+}
+
+alterna_pausa() {
+  local s sinal=STOP
+  if (( PAUSADO )); then PAUSADO=0; sinal=CONT; else PAUSADO=1; fi
+  for (( s = 0; s < J; s++ )); do
+    (( SLOT_IDX[$s] > 0 )) && sinaliza_arvore "${SLOT_PID[$s]}" "$sinal"
+  done
+}
+
+muda_simultaneos() {                          # muda_simultaneos +1|-1
+  local novo=$(( J_ALVO + $1 )) linhas max
+  linhas=$(tput lines 2>/dev/null); [[ $linhas =~ ^[0-9]+$ ]] || linhas=24
+  max=$(( (linhas - 3) / 2 )); (( max < 1 )) && max=1          # o painel precisa caber na tela
+  (( max > TOTAL )) && max=$TOTAL
+  (( novo > max )) && novo=$max
+  (( novo < 1 )) && novo=1
+  J_ALVO=$novo
+  while (( J < J_ALVO )); do SLOT_IDX[$J]=0; SLOT_PID[$J]=0; J=$(( J + 1 )); done
+  t k_simultaneos "$J_ALVO"; MSG_PAINEL=$TXT; MSG_ATE=$(( SECONDS + 3 ))
+}
+
+trata_tecla() {
+  case $1 in
+    p|P|" ") alterna_pausa ;;
+    q|Q)
+      if (( PARANDO )); then CANCELADO=1; SINAL=INT; exit 130; fi   # q de novo = Ctrl+C
+      PARANDO=1
+      (( PAUSADO )) && alterna_pausa ;;
+    +|=) muda_simultaneos 1 ;;
+    -|_) muda_simultaneos -1 ;;
+  esac
+  return 0
+}
+
 # vale_repetir IDX: falhou por algo passageiro e ainda há tentativas? Se sim,
 # guarda o log desta tentativa e põe o link no fim da fila.
 vale_repetir() {
@@ -1737,6 +1800,7 @@ mata_arvore() {                               # mata o processo e seus filhos (f
     for filho in $(pgrep -P "$pid" 2>/dev/null); do mata_arvore "$filho"; done
   fi
   kill -TERM "$pid" 2>/dev/null
+  kill -CONT "$pid" 2>/dev/null               # pausado (tecla p), ele só morre depois de continuar
 }
 
 mata_jobs() {
@@ -1769,7 +1833,7 @@ comando_repetir() {                           # → FMT: o mesmo comando, só co
 
 salva_falhas() {                              # grava links_falhos.txt (+ o que faltava, se cancelado)
   local lista=("${FALHAS[@]}") i n_pend=0 f era_falhas=0 o_que=${T[f_com_erro]}
-  if (( CANCELADO )); then
+  if (( CANCELADO || PARANDO )); then
     for (( i = 1; i <= TOTAL; i++ )); do
       [[ -n ${FEITO[$i]:-} ]] && continue
       lista+=("${LINKS[$(( i - 1 ))]}"); n_pend=$(( n_pend + 1 ))
@@ -1811,7 +1875,7 @@ resumo() {
   if (( BYTES_NOVOS > 0 && SECONDS > 0 )); then
     fmt_bytes $(( BYTES_NOVOS / SECONDS )); t s_media "$FMT"; media="  ${DIM}${TXT}${R}"
   fi
-  (( CANCELADO )) && titulo_r=${T[s_resumo_parcial]}
+  (( CANCELADO || (PARANDO && FINALIZADOS < TOTAL) )) && titulo_r=${T[s_resumo_parcial]}
   printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "$titulo_r" "$R"
   linha_resumo "✔" "$VERDE"    "${T[s_baixados]}" "${NEG}${N_OK}${R}"
   linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"       "${NEG}${N_JA}${R}"
@@ -1848,7 +1912,7 @@ limpa() {                                     # trap EXIT: sempre devolve o term
   if (( INTERATIVO )); then
     printf '%s' "${ESC}[?7h${ESC}[?25h"
     (( TITULO_EMPILHADO )) && printf '%s' "${ESC}[23;0t"     # devolve o título original da janela
-    [[ -n $STTY_SAVE ]] && stty "$STTY_SAVE" 2>/dev/null
+    [[ -n $STTY_SAVE ]] && stty "$STTY_SAVE" </dev/tty 2>/dev/null
   fi
   [[ -n $TMP ]] && rm -rf "$TMP"
   # Morre pelo mesmo sinal recebido: assim um laço que chamou o script (ex.:
@@ -2356,7 +2420,14 @@ if [[ -z $JS_RUNTIME ]]; then
   aviso "${T[av_js]}"
   printf '%s\n' "${T[av_js2]}"
 fi
-printf '  %s%s%s\n\n' "$DIM" "${T[dica_ctrlc]}" "$R"
+# Teclas: o terminal para de ecoar e entrega cada tecla na hora (sem esperar o Enter)
+if (( INTERATIVO )) && { exec 3</dev/tty; } 2>/dev/null; then
+  if STTY_SAVE=$(stty -g <&3 2>/dev/null) && stty -echo -icanon min 1 time 0 <&3 2>/dev/null; then TECLAS=1; fi
+fi
+J_ALVO=$J
+printf '  %s%s%s\n' "$DIM" "${T[dica_ctrlc]}" "$R"
+(( TECLAS )) && printf '  %s%s%s\n' "$DIM" "${T[dica_teclas]}" "$R"
+printf '\n'
 
 # Redimensionou a janela? O painel se ajusta no próximo quadro. (O trap só entra
 # agora: antes ele interromperia o "wait" das consultas ao yt-dlp.)
@@ -2367,9 +2438,6 @@ SECONDS=0
 if (( INTERATIVO )); then
   printf '%s' "${ESC}[?25l${ESC}[?7l${ESC}[22;0t"   # esconde o cursor, desliga a quebra de linha, guarda o título
   TITULO_EMPILHADO=1
-  if [[ -t 0 ]]; then
-    STTY_SAVE=$(stty -g 2>/dev/null) && stty -echo 2>/dev/null
-  fi
 fi
 
 while (( FINALIZADOS < TOTAL )); do
@@ -2391,16 +2459,28 @@ while (( FINALIZADOS < TOTAL )); do
   done
 
   # 2) ocupa os slots livres: primeiro os links novos, depois as novas tentativas
+  ativos=0
+  for (( s = 0; s < J; s++ )); do (( SLOT_IDX[$s] > 0 )) && ativos=$(( ativos + 1 )); done
   for (( s = 0; s < J; s++ )); do
     (( SLOT_IDX[$s] == 0 )) || continue
+    (( PAUSADO || PARANDO || ativos >= J_ALVO )) && break
     escolhe_proximo || break
     idx=$ESCOLHIDO
     lanca_job "$idx"
     SLOT_IDX[$s]=$idx
     SLOT_PID[$s]=$ULTIMO_PID
+    ativos=$(( ativos + 1 ))
   done
+  (( PARANDO && ativos == 0 )) && break         # q: os que estavam rodando terminaram
 
   desenha
+  # Tecla apertada? "read -t 0" só confere, sem esperar. (Esperar no próprio read, com
+  # "read -t 0.2", deixa o Ctrl+C fazer a limpeza toda de dentro do read, e o alarme dele
+  # disparando no meio derruba o Bash 5.2.)
+  if (( TECLAS )) && read -t 0 -u 3 2>/dev/null; then
+    tecla=""
+    read -rsn1 -u 3 tecla 2>/dev/null && trata_tecla "$tecla"
+  fi
   sleep 0.2
 done
 
@@ -2408,5 +2488,5 @@ desenha final
 descarta_parciais
 move_baixados
 resumo
-(( N_ERRO > 0 )) && exit 1
+(( N_ERRO > 0 || FINALIZADOS < TOTAL )) && exit 1
 exit 0
