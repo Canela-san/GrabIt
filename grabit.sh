@@ -311,6 +311,14 @@ idioma_pt() {
     [fv_sem_arquivo]="-f vigia arquivos de links, mas a lista veio do comando ou da entrada padrão: nada a vigiar."
     [kv_fila_viva]="Fila viva"
     [kv_fv]="ligada (-f): o GrabIt continua aberto esperando novos links · q sai"
+    [kv_captura]="Captura"
+    [kv_clip]="área de transferência (%s): links copiados vão para %s e entram na fila"
+    [clip_aguardando]="copie um link para baixar · q sai"
+    [clip_capturado]="%d link(s) capturado(s) da área de transferência"
+    [clip_origem]="(área de transferência)"
+    [clip_stdin]="-C anota os links capturados no arquivo de links, então ele não pode ser a entrada padrão (-l -)."
+    [clip_sem]="-C precisa de um programa que leia a área de transferência."
+    [clip_sem2]="     Instale um: wl-clipboard (Wayland), xclip ou xsel (X11); no macOS o pbpaste já vem instalado."
     [dep_faltando]="Faltando: %s"
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
@@ -429,6 +437,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -m            para Jellyfin, Plex e Kodi: canal/Season ano/, com .nfo e capa
   -f            fila viva: depois da lista, continua aberto baixando o que você
                 acrescentar no arquivo de links (q ou Ctrl+C para sair)
+  -C            captura: com o GrabIt aberto, todo link que você copiar entra na
+                fila (anotado no links.txt); nada fica rodando depois que ele fecha
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
   -s            marca patrocínios/intros como capítulos (SponsorBlock)
   -i            ignora o histórico de baixados (confere arquivo por arquivo)
@@ -639,6 +649,14 @@ idioma_en() {
     [fv_sem_arquivo]="-f watches link files, but the list came from the command line or standard input: nothing to watch."
     [kv_fila_viva]="Live queue"
     [kv_fv]="on (-f): GrabIt stays open waiting for new links · q quits"
+    [kv_captura]="Capture"
+    [kv_clip]="clipboard (%s): copied links go to %s and join the queue"
+    [clip_aguardando]="copy a link to download it · q quits"
+    [clip_capturado]="%d link(s) captured from the clipboard"
+    [clip_origem]="(clipboard)"
+    [clip_stdin]="-C writes the captured links to the link file, so it can't be standard input (-l -)."
+    [clip_sem]="-C needs a program that reads the clipboard."
+    [clip_sem2]="     Install one: wl-clipboard (Wayland), xclip or xsel (X11); on macOS pbpaste is already there."
     [dep_faltando]="Missing: %s"
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
@@ -757,6 +775,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   -m            for Jellyfin, Plex and Kodi: channel/Season year/, with .nfo and cover
   -f            live queue: after the list, stays open downloading whatever you add
                 to the link file (q or Ctrl+C to quit)
+  -C            capture: while GrabIt is open, every link you copy joins the queue
+                (written to links.txt); nothing keeps running once it closes
   -a            include automatic subtitles (manual ones still win)
   -s            mark sponsors/intros as chapters (SponsorBlock)
   -i            ignore the download history (check file by file)
@@ -919,8 +939,8 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0
-while getopts ":l:o:j:c:b:r:L:pausivxdmfFh" op; do
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTURA=0
+while getopts ":l:o:j:c:b:r:L:pausivxdmfCFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -940,6 +960,7 @@ while getopts ":l:o:j:c:b:r:L:pausivxdmfFh" op; do
     d) SUBPASTAS=1 ;;                  # só pela opção, de propósito: nada de pastas sem pedir
     m) MIDIA=1 ;;                      # idem
     f) FILA_VIVA=1 ;;                  # idem: o GrabIt só fica aberto esperando links se pedido
+    C) CAPTURA=1; FILA_VIVA=1 ;;       # idem: só lê a área de transferência se pedido, e só aberto
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -1064,7 +1085,8 @@ TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); 
 ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
 TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
 ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
-declare -A CONHECIDO=() MARCA_ARQ=()
+CLIP_CMD=(); CLIP_ULTIMO=""; CLIP_PRIMEIRA=1; PROX_CLIP=0; ARQ_CAPTURA=""
+declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -1437,6 +1459,7 @@ monta_live() {
   if (( PARANDO )); then msg=${T[k_parando]}
   elif (( PAUSADO )); then msg=${T[k_pausado]}
   elif (( MSG_ATE >= SECONDS )); then msg=$MSG_PAINEL
+  elif (( CAPTURA && ATIVOS == 0 )); then msg=${T[clip_aguardando]}
   elif (( FILA_VIVA && ATIVOS == 0 )); then t fv_aguardando "$FONTE_LINKS"; msg=$TXT; fi
   if [[ -n $msg ]]; then
     corta "$msg" $(( larg - 6 )); msg=$FMT
@@ -1858,6 +1881,41 @@ novos_links() {
   return 0
 }
 
+# ───── Captura da área de transferência (-C): enquanto o GrabIt está aberto, cada link
+# ───── copiado é anotado no fim do arquivo de links e entra na fila viva. Nada roda em
+# ───── segundo plano: fechou o GrabIt, acabou a captura.
+detecta_clip() {                              # → CLIP_CMD: o comando que lê a área de transferência
+  if [[ -n ${WAYLAND_DISPLAY:-} ]] && command -v wl-paste >/dev/null 2>&1; then CLIP_CMD=(wl-paste --no-newline --type text)
+  elif [[ -n ${DISPLAY:-} ]] && command -v xclip >/dev/null 2>&1; then CLIP_CMD=(xclip -o -selection clipboard)
+  elif [[ -n ${DISPLAY:-} ]] && command -v xsel >/dev/null 2>&1; then CLIP_CMD=(xsel --clipboard --output)
+  elif command -v pbpaste >/dev/null 2>&1; then CLIP_CMD=(pbpaste)
+  elif command -v powershell.exe >/dev/null 2>&1; then CLIP_CMD=(powershell.exe -NoProfile -Command Get-Clipboard)
+  elif command -v termux-clipboard-get >/dev/null 2>&1; then CLIP_CMD=(termux-clipboard-get)
+  else return 1; fi
+}
+
+captura_clip() {
+  local txt linha p novos=()
+  txt=$("${CLIP_CMD[@]}" 2>/dev/null | head -c 200000)
+  [[ $txt == "$CLIP_ULTIMO" ]] && return 0
+  CLIP_ULTIMO=$txt
+  if (( CLIP_PRIMEIRA )); then CLIP_PRIMEIRA=0; return 0; fi   # o que já estava copiado antes não conta
+  while IFS= read -r linha; do
+    links_da_linha "$linha"
+    for p in "${PALAVRAS_LINK[@]}"; do
+      [[ -n ${CONHECIDO[$p]:-} || -n ${CAPTURADO[$p]:-} ]] && continue
+      CAPTURADO[$p]=1; novos+=("$p")
+    done
+  done <<<"$txt"
+  (( ${#novos[@]} )) || return 0
+  # anota no arquivo (garantindo a quebra de linha antes) e confere o arquivo já
+  [[ -s $ARQ_CAPTURA && -n $(tail -c 1 -- "$ARQ_CAPTURA" 2>/dev/null) ]] && printf '\n' >> "$ARQ_CAPTURA"
+  printf '%s\n' "${novos[@]}" >> "$ARQ_CAPTURA"
+  for p in "${novos[@]}"; do PERM+=("  ${CIANO}+${R} ${DIM}${p}  ${T[clip_origem]}${R}"); done
+  t clip_capturado "${#novos[@]}"; MSG_PAINEL=$TXT; MSG_ATE=$(( SECONDS + 4 ))
+  PROX_VIGIA=0
+}
+
 # vale_repetir IDX: falhou por algo passageiro e ainda há tentativas? Se sim,
 # guarda o log desta tentativa e põe o link no fim da fila.
 vale_repetir() {
@@ -2205,7 +2263,12 @@ le_lista() {
 ler_links() {
   local bruto=() fontes=() a linha palavra palavras=() soltos=0
   local -A visto=()
-  if (( ${#ARGS_LINKS[@]} == 0 || LISTA_EXPLICITA )); then
+  if (( ${#ARGS_LINKS[@]} == 0 || LISTA_EXPLICITA || CAPTURA )); then
+    if (( CAPTURA )); then
+      [[ $ARQUIVO_LINKS == - ]] && { erro "${T[clip_stdin]}"; exit 2; }
+      [[ -e $ARQUIVO_LINKS ]] || : > "$ARQUIVO_LINKS" 2>/dev/null
+      ARQ_CAPTURA=$ARQUIVO_LINKS
+    fi
     if [[ $ARQUIVO_LINKS == - ]]; then
       le_lista /dev/stdin; fontes+=("${T[fonte_stdin]}")
     elif [[ -f $ARQUIVO_LINKS && -r $ARQUIVO_LINKS ]]; then
@@ -2447,6 +2510,9 @@ atualiza_largura
 cabecalho
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || { erro "${T[tmp_falhou]}"; exit 1; }
 verifica_dependencias
+if (( CAPTURA )) && ! detecta_clip; then
+  erro "${T[clip_sem]}"; printf '%s\n\n' "${T[clip_sem2]}"; exit 1
+fi
 ler_links
 
 mkdir -p "$PASTA_SAIDA" || { t pasta_falhou "$PASTA_SAIDA"; erro "$TXT"; exit 1; }
@@ -2525,7 +2591,8 @@ fi
 t kv_paralelo_v "$J" "$CONEXOES_POR_VIDEO"; txt_paralelo=$TXT
 (( TENTATIVAS > 1 )) && { t kv_tentativas "$TENTATIVAS"; txt_paralelo+=$TXT; }
 kv "${T[kv_paralelo]}" "$txt_paralelo"
-(( FILA_VIVA )) && kv "${T[kv_fila_viva]}" "${T[kv_fv]}"
+if (( CAPTURA )); then t kv_clip "${CLIP_CMD[0]}" "$ARQ_CAPTURA"; kv "${T[kv_captura]}" "$TXT"
+elif (( FILA_VIVA )); then kv "${T[kv_fila_viva]}" "${T[kv_fv]}"; fi
 kv "${T[kv_extras]}"   "$txt_extras"
 FFMPEG_VER=${FFMPEG_VER:-?}
 kv "${T[kv_ferramentas]}" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
@@ -2571,6 +2638,7 @@ fi
 
 while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   atualiza_largura
+  if (( CAPTURA && SECONDS >= PROX_CLIP )); then captura_clip; PROX_CLIP=$(( SECONDS + 1 )); fi
   if (( FILA_VIVA && SECONDS >= PROX_VIGIA )); then novos_links; PROX_VIGIA=$(( SECONDS + 2 )); fi
 
   # 1) recolhe quem terminou (e devolve à fila quem merece outra tentativa)

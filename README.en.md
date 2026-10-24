@@ -109,6 +109,7 @@ grabit -j 4 -c 8                             # 4 videos at a time, 8 connections
 grabit -b firefox                            # use the browser's login (restricted videos)
 grabit -x -l songs.txt -o ~/Music            # audio only, at the best quality
 grabit -d                                    # sort into folders: Downloads/site/channel/
+grabit -C                                    # copy links in the browser and they get downloaded
 cat list.txt | grabit -l -                   # read links from standard input
 ```
 
@@ -136,6 +137,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-x` | audio only: the best track, in its original format, no re-encoding | — |
 | `-d` | sort into subfolders by site and channel: `Downloads/youtube.com/Channel/` | — |
 | `-f` | live queue: after the list, stays open downloading whatever you add to the link file | — |
+| `-C` | capture: while GrabIt is open, every link you copy joins the queue (and is written to `links.txt`) | — |
 | `-m` | lay out for Jellyfin, Plex and Kodi: `Channel/Season 2026/`, with `.nfo` and cover alongside | — |
 | `-u` | on pages with several videos (previews, related…), download only the main one: the longest | — |
 | `-a` | include automatic subtitles (manual ones still take priority) | — |
@@ -246,6 +248,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 - **Retries:** temporary errors (network, 403, 429) go back to the end of the queue, impersonating a browser when `curl-cffi` is installed. Permanent errors (private, removed video, 404) aren't retried.
 - **History:** every downloaded video is recorded in `Downloads/.grabit-historico.txt` (site + video ID). Next time it's skipped before anything else: on most sites GrabIt doesn't even need to open the page. Without the history, yt-dlp would open the page again, download the cover and rewrite the whole file just to conclude it already exists. Videos downloaded before the history existed go through that check only once and are added to it.
 - **Live queue (`-f`):** after finishing the list, GrabIt stays open and checks the link file every 2 seconds: whatever you add (at the top or at the end of the file) joins the queue and starts downloading. When the queue empties, the downloaded links go to the `DOWNLOADED` section and, if the batch took a while, the completion notice arrives. Quit with <kbd>q</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>. It only happens with the option: without `-f`, GrabIt always closes when done.
+- **Clipboard capture (`-C`):** while GrabIt is open, every link you copy (<kbd>Ctrl</kbd>+<kbd>C</kbd> in the browser) is written to the end of `links.txt` and joins the queue — it works like the live queue. Whatever was already copied before it opened and text without links are ignored. Nothing keeps running in the background: once GrabIt closes, the capture is over. It uses `wl-paste` (Wayland), `xclip` or `xsel` (X11), `pbpaste` (macOS) or PowerShell (WSL).
 - **Jellyfin, Plex and Kodi (`-m`):** each channel becomes a show, with one season per year and episodes named by date (`Channel/Season 2026/Channel - 2026-10-24 - Title [id].mkv`), a format all three recognize. Next to each video go the cover and an `.nfo` with title, date and description, and in the channel folder a `tvshow.nfo`. Point a *Shows* library at the downloads folder. It only happens with the option, and it takes priority over `-d`.
 - **Audio only (`-x`):** downloads the best sound track and keeps it in the format the site delivers (opus, m4a…), without re-encoding, with cover, chapters and metadata. With `FORMATO_AUDIO=mp3` (or another one), it converts at the best quality. The audio history is separate (`.grabit-historico-audio.txt`): having downloaded the video doesn't stop you from downloading the audio, and vice versa.
 - **Full check (`-v`):** after downloading, ffmpeg decodes the whole video, frame by frame, with the progress on the panel. Any defect fails the file: it doesn't go into the history, it's kept with `.with-errors` in its name and the video is downloaded again from scratch. If the defect comes from the site itself and happens again, the link goes to `links_falhos.txt`. It guarantees a flawless file, at the cost of CPU and time.
