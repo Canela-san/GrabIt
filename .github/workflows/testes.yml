@@ -9,7 +9,7 @@ jobs:
     name: Testes completos (Ubuntu)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Dependências
         run: |
           sudo apt-get update -qq
@@ -28,7 +28,7 @@ jobs:
       matrix:
         bash: ["4.4", "5.0", "5.1", "5.2"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Testes rápidos
         run: docker run --rm -v "$PWD:/grabit" -w /grabit "bash:${{ matrix.bash }}" bash testes/rodar.sh --rapido
 
@@ -36,7 +36,7 @@ jobs:
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: O Bash 3.2 do sistema é recusado com uma mensagem clara
         run: |
           set +e

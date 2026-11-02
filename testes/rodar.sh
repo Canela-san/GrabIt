@@ -59,8 +59,8 @@ roda "$TMP/op_longa" -L pt --nada
 espera "opção longa desconhecida sai com código 2" codigo "$RC" 2
 roda "$TMP/op_valor" -L pt -j
 espera "opção sem valor sai com código 2" codigo "$RC" 2
-roda "$TMP/lingua" -L xx --config
-espera "idioma inválido vira aviso" contem "$TMP/lingua" "Idioma desconhecido: 'xx'"
+roda "$TMP/lingua" -L xx --config               # cai no idioma do sistema, que pode ser qualquer um
+espera "idioma inválido vira aviso" grep -qE "Idioma desconhecido: 'xx'|Unknown language: 'xx'" "$TMP/lingua"
 
 secao "Configuração"
 mkdir -p "$TMP/cfg"
