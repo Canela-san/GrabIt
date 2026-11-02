@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.png" alt="GrabIt panel downloading several videos at once" width="860">
+  <img src="assets/demo-en.png" alt="GrabIt panel downloading several videos at once" width="860">
 </p>
 
 ## Why GrabIt?
@@ -247,7 +247,7 @@ There are also `ARQUIVO_HISTORICO` (where the download history lives) and `NO_CO
 ## A summary at the end
 
 <p align="center">
-  <img src="assets/resumo.png" alt="GrabIt final summary" width="860">
+  <img src="assets/resumo-en.png" alt="GrabIt final summary" width="860">
 </p>
 
 | Symbol | Meaning |
