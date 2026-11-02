@@ -98,6 +98,34 @@ chaves pt > "$TMP/chaves_pt"; chaves en > "$TMP/chaves_en"
 espera "a tabela em português tem chaves" test -s "$TMP/chaves_pt"
 espera "as tabelas pt e en têm as mesmas chaves" diff "$TMP/chaves_pt" "$TMP/chaves_en"
 
+secao "Seção BAIXADOS (--baixados)"
+L="$TMP/secao.txt"
+printf '%s\n' "# lista" "https://a.exemplo/1" "" "# ==================== BAIXADOS ====================" "# desc" \
+  "https://a.exemplo/2  # ✔ 2026-01-01 · Dois" "https://a.exemplo/3  # meu  ✔ 2026-01-02 · Três" \
+  "# ================ FIM DOS BAIXADOS ================" > "$L"
+roda "$TMP/bx1" -L pt -l "$L" --baixados
+espera "lista os links da seção, numerados" grep -qE '^ +2  https://a.exemplo/3' "$TMP/bx1"
+roda "$TMP/bx2" -L pt -l "$L" --baixados voltar 2
+espera "voltar devolve o link à lista de cima" grep -qx 'https://a.exemplo/3  # meu' "$L"
+espera "…e ele sai da seção" test "$(grep -c 'a.exemplo/3' "$L")" -eq 1
+roda "$TMP/bx3" -L pt -l "$L" --baixados marcar https://a.exemplo/1
+espera "marcar põe o link na seção" grep -qE '^https://a.exemplo/1  # ✔ [0-9-]{10} · marcado à mão$' "$L"
+espera "…e o tira da lista de cima" test "$(grep -c 'a.exemplo/1' "$L")" -eq 1
+roda "$TMP/bx4" -L pt -l "$L" --baixados voltar 7
+espera "número fora da lista é recusado" codigo "$RC" 2
+cp "$L" "$TMP/secao.antes"
+roda "$TMP/bx5" -L pt -l "$L" --baixados limpar </dev/null
+espera "limpar sem confirmação não apaga nada" cmp -s "$L" "$TMP/secao.antes"
+echo s | bash "$G" -L pt -l "$L" --baixados limpar >"$TMP/bx7" 2>&1
+espera "limpar confirmado esvazia a seção" nao_contem "$L" "BAIXADOS"
+espera "…e guarda a cópia .bak" cmp -s "$L.bak" "$TMP/secao.antes"
+cp "$TMP/secao.antes" "$L"
+if { : </dev/tty; } 2>/dev/null; then          # editar precisa de um terminal (no CI não há)
+  printf '#!/bin/sh\nsed -i.x "/a.exemplo\\/2/d" "$1"\n' > "$TMP/editor"; chmod +x "$TMP/editor"
+  EDITOR="$TMP/editor" roda "$TMP/bx6" -L pt -l "$L" --baixados editar
+  espera "editar aplica o que foi mudado no editor" test "$(grep -c 'a.exemplo/2' "$L")" -eq 0
+fi
+
 if (( RAPIDO )); then
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
   (( ${#FALHAS[@]} == 0 ))

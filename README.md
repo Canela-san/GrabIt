@@ -102,6 +102,18 @@ https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 v
 
 O que vier depois da linha `FIM DOS BAIXADOS` volta a contar como link a baixar, então acrescentar no fim do arquivo funciona (`echo LINK >> links.txt`); na próxima vez, o GrabIt sobe esses links para a lista de cima.
 
+Para mexer na seção sem garimpar o arquivo:
+
+```bash
+grabit --baixados                 # lista os links da seção, numerados, com data e título
+grabit --baixados editar          # abre só a seção no seu editor ($EDITOR, nano ou vim)
+grabit --baixados voltar 3 5      # devolve os links 3 e 5 para a lista de baixar
+grabit --baixados marcar LINK     # põe um link na seção sem baixá-lo
+grabit --baixados limpar          # esvazia a seção (pede confirmação e guarda links.txt.bak)
+```
+
+No editor, apague as linhas que quer tirar da seção, acrescente links para marcá-los como baixados e mova para baixo da última linha os que devem voltar para a lista. Use `-l ARQUIVO` para outro arquivo de links. O histórico de vídeos não muda: para baixar de novo algo que já foi baixado, rode com `-i`.
+
 > Em inglês, a seção se chama `DOWNLOADED`; o GrabIt reconhece os dois nomes, então trocar de idioma não bagunça a lista.
 >
 > Pode editar o arquivo enquanto o GrabIt roda: ele é relido no fim, e o que você acrescentou não se perde. Quer baixar de novo algo da seção? Mova a linha para cima e rode com `-i` (veja o histórico em [Como funciona](#como-funciona)).

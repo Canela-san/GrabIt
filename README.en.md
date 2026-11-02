@@ -102,6 +102,18 @@ https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 v
 
 Whatever comes after the `END OF DOWNLOADED` line counts as a link to download again, so appending to the end of the file works (`echo LINK >> links.txt`); next time, GrabIt moves those links up to the list at the top.
 
+To work on the section without digging through the file:
+
+```bash
+grabit --downloaded               # list the section's links, numbered, with date and title
+grabit --downloaded edit          # open just the section in your editor ($EDITOR, nano or vim)
+grabit --downloaded back 3 5      # send links 3 and 5 back to the list to download
+grabit --downloaded add LINK      # put a link in the section without downloading it
+grabit --downloaded clear         # empty the section (asks first and keeps links.txt.bak)
+```
+
+In the editor, delete the lines you want out of the section, add links to mark them as downloaded and move below the last line the ones that should go back to the list. Use `-l FILE` for another link file. The video history doesn't change: to download again something already downloaded, run with `-i`.
+
 > In Portuguese the section is called `BAIXADOS`; GrabIt recognizes both names, so switching languages doesn't mess up your list.
 >
 > You can edit the file while GrabIt runs: it's read again at the end, and whatever you added isn't lost. Want to download something from the section again? Move the line up and run with `-i` (see the history in [How it works](#how-it-works)).

@@ -359,6 +359,32 @@ idioma_pt() {
     [vc_sem_link]="%d arquivo(s) com problema não têm o link registrado (só os MKV do GrabIt têm): baixe-os de novo à mão."
     [vc_terminal]="Para baixar de novo os que têm problema, rode grabit --verificar num terminal."
     [vc_pergunta]="Baixar de novo os %d com problema? O arquivo atual fica com %s no nome. [S/n]"
+    [bx_cab]="%s · seção BAIXADOS · %d link(s)"
+    [bx_vazia]="A seção BAIXADOS está vazia."
+    [bx_ajuda]="  grabit --baixados editar          abre só a seção no seu editor
+  grabit --baixados voltar 3 5      devolve os links 3 e 5 para a lista de baixar
+  grabit --baixados marcar LINK…    põe links na seção sem baixá-los
+  grabit --baixados limpar          esvazia a seção (guarda uma cópia .bak)
+  Para outro arquivo de links: grabit -l ARQUIVO --baixados …"
+    [bx_limpar_p]="Apagar os %d links da seção BAIXADOS de %s? Uma cópia fica em %s. [s/N]"
+    [bx_limpo]="Seção esvaziada (%d links)."
+    [bx_historico]="O histórico de vídeos continua valendo: para baixar de novo um vídeo que já foi baixado, use -i."
+    [bx_voltar_uso]="Diga quais: grabit --baixados voltar 3 5 (os números saem em grabit --baixados)."
+    [bx_numero]="'%s' não é um número da lista (vai de 1 a %d)."
+    [bx_voltou]="%d link(s) de volta à lista de baixar."
+    [bx_marcar_uso]="Diga quais: grabit --baixados marcar LINK…"
+    [bx_nao_link]="'%s' não é um link (http ou https)."
+    [bx_a_mao]="marcado à mão"
+    [bx_marcou]="%d link(s) marcados como baixados."
+    [bx_sem_editor]="Nenhum editor encontrado: defina a variável EDITOR (ex.: EDITOR=nano)."
+    [bx_sem_terminal]="Para editar é preciso um terminal."
+    [bx_ed_cab]="#: Seção BAIXADOS — apague as linhas dos links que quer tirar daqui e acrescente
+#: links (um por linha) para marcá-los como baixados. Para devolver um link à lista
+#: de baixar, mova-o para baixo da última linha. Salve e feche para aplicar."
+    [bx_ed_volta]="#: ============ abaixo daqui: volta para a lista de baixar ============"
+    [bx_nada_mudou]="Nada mudou."
+    [bx_editado]="Seção atualizada: %d link(s) nela, %d de volta à lista de baixar."
+    [bx_acao]="Ação desconhecida: '%s'."
     [atu_ytdlp]="atualizar o yt-dlp"
     [atu_sem_ytdlp]="O yt-dlp não está instalado: rode grabit --instalar."
     [atu_pacote]="Este yt-dlp veio do gerenciador de pacotes, que costuma ficar para trás: prefira pipx install \"yt-dlp[default,curl-cffi]\"."
@@ -510,6 +536,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   --atualizar   atualiza o GrabIt e o yt-dlp
   --verificar [PASTA]  confere os vídeos já baixados (defeitos e incompletos)
                 e oferece baixar de novo os que tiverem problema
+  --baixados [AÇÃO]  lista a seção BAIXADOS; ações: editar, voltar N…,
+                marcar LINK…, limpar
 
 • Links e arquivos de links também podem vir direto no comando (aí o
   links.txt só é lido se você passar -l):
@@ -757,6 +785,32 @@ idioma_en() {
     [vc_sem_link]="%d file(s) with problems have no recorded link (only GrabIt's MKVs do): download them again by hand."
     [vc_terminal]="To download the problem ones again, run grabit --check in a terminal."
     [vc_pergunta]="Download the %d problem one(s) again? The current file keeps %s in its name. [Y/n]"
+    [bx_cab]="%s · DOWNLOADED section · %d link(s)"
+    [bx_vazia]="The DOWNLOADED section is empty."
+    [bx_ajuda]="  grabit --downloaded edit          open just the section in your editor
+  grabit --downloaded back 3 5      send links 3 and 5 back to the list to download
+  grabit --downloaded add LINK…     put links in the section without downloading them
+  grabit --downloaded clear         empty the section (keeps a .bak copy)
+  For another link file: grabit -l FILE --downloaded …"
+    [bx_limpar_p]="Delete the %d links in the DOWNLOADED section of %s? A copy stays in %s. [y/N]"
+    [bx_limpo]="Section emptied (%d links)."
+    [bx_historico]="The video history still applies: to download again a video already downloaded, use -i."
+    [bx_voltar_uso]="Say which: grabit --downloaded back 3 5 (the numbers come from grabit --downloaded)."
+    [bx_numero]="'%s' isn't a number in the list (it goes from 1 to %d)."
+    [bx_voltou]="%d link(s) back in the list to download."
+    [bx_marcar_uso]="Say which: grabit --downloaded add LINK…"
+    [bx_nao_link]="'%s' isn't a link (http or https)."
+    [bx_a_mao]="marked by hand"
+    [bx_marcou]="%d link(s) marked as downloaded."
+    [bx_sem_editor]="No editor found: set the EDITOR variable (e.g. EDITOR=nano)."
+    [bx_sem_terminal]="Editing needs a terminal."
+    [bx_ed_cab]="#: DOWNLOADED section — delete the lines of the links you want out of here and add
+#: links (one per line) to mark them as downloaded. To send a link back to the list
+#: to download, move it below the last line. Save and close to apply."
+    [bx_ed_volta]="#: ============ below here: back to the list to download ============"
+    [bx_nada_mudou]="Nothing changed."
+    [bx_editado]="Section updated: %d link(s) in it, %d back in the list to download."
+    [bx_acao]="Unknown action: '%s'."
     [atu_ytdlp]="update yt-dlp"
     [atu_sem_ytdlp]="yt-dlp isn't installed: run grabit --instalar."
     [atu_pacote]="This yt-dlp came from the package manager, which tends to lag behind: prefer pipx install \"yt-dlp[default,curl-cffi]\"."
@@ -908,6 +962,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   --update      update GrabIt and yt-dlp
   --check [FOLDER]  check the videos already downloaded (defects and incomplete
                 files) and offer to download the problem ones again
+  --downloaded [ACTION]  list the DOWNLOADED section; actions: edit, back N…,
+                add LINK…, clear
 
 • Links and link files can also go straight on the command line (then
   links.txt is only read if you pass -l):
@@ -1058,6 +1114,7 @@ for a in "$@"; do
     --instalar|--install)  COMANDO=instalar ;;
     --atualizar|--update)  COMANDO=atualizar ;;
     --verificar|--check)   COMANDO=verificar ;;
+    --baixados|--downloaded) COMANDO=baixados ;;
     --)             ARGS_CURTOS+=("$a") ;;
     --*)            t opcao_invalida "$a"; erro "$TXT"; uso; exit 2 ;;
     *)              ARGS_CURTOS+=("$a") ;;
@@ -3101,11 +3158,176 @@ verifica_colecao() {
   return "$rc"
 }
 
+# ───────────────────────────── Seção BAIXADOS (--baixados) ───────────────────
+# grabit --baixados [listar|editar|voltar N…|marcar LINK…|limpar] cuida da seção BAIXADOS
+# do arquivo de links (-l, ou o links.txt): listar, editar só ela no editor, devolver
+# links para a lista de baixar, marcar links como baixados ou esvaziá-la.
+
+# le_partes ARQUIVO → P_ANTES (lista de cima) P_CAB (a linha da seção e o comentário
+# dela) P_SECAO (os links da seção) P_DEPOIS (o que veio depois da linha de fim),
+# P_BOM e P_EOL (para regravar do mesmo jeito)
+le_partes() {
+  local linha estado=0 conteudo=()
+  P_ANTES=(); P_CAB=(); P_SECAO=(); P_DEPOIS=(); P_VOLTA=(); P_BOM=""; P_EOL=""
+  mapfile -t conteudo < "$1" || return 1
+  if (( ${#conteudo[@]} )); then
+    if [[ ${conteudo[0]} == $'\xef\xbb\xbf'* ]]; then P_BOM=$'\xef\xbb\xbf'; conteudo[0]=${conteudo[0]#$'\xef\xbb\xbf'}; fi
+    [[ ${conteudo[0]} == *$'\r' ]] && P_EOL=$'\r'
+  fi
+  for linha in "${conteudo[@]}"; do
+    case $estado in
+      0) if eh_marca_baixados "$linha"; then estado=1; P_CAB+=("$linha"); else P_ANTES+=("$linha"); fi ;;
+      1) if eh_fim_baixados "$linha"; then estado=3
+         elif [[ ${#P_SECAO[@]} -eq 0 && $linha == \#* ]]; then P_CAB+=("$linha")   # o comentário da seção
+         elif [[ -n ${linha//[[:space:]]/} ]]; then P_SECAO+=("$linha"); fi ;;
+      3) P_DEPOIS+=("$linha") ;;
+    esac
+  done
+}
+
+grava_partes() {                              # grava_partes ARQUIVO: o inverso de le_partes (seção vazia some)
+  local arq=$1 saida=() l
+  # a lista de cima, o que estava depois da seção e o que volta dela (P_VOLTA), sem
+  # linhas em branco sobrando no meio
+  saida=("${P_ANTES[@]}")
+  for l in "${P_DEPOIS[@]}" "${P_VOLTA[@]}"; do
+    [[ -z ${l//[[:space:]]/} ]] && continue
+    while (( ${#saida[@]} )) && [[ -z ${saida[-1]//[[:space:]]/} ]]; do unset 'saida[-1]'; done
+    saida+=("$l")
+  done
+  while (( ${#saida[@]} )) && [[ -z ${saida[-1]//[[:space:]]/} ]]; do unset 'saida[-1]'; done
+  if (( ${#P_SECAO[@]} )); then
+    (( ${#saida[@]} )) && saida+=("$P_EOL")
+    (( ${#P_CAB[@]} )) || P_CAB=("${MARCA_BAIXADOS}${P_EOL}" "${T[marca_desc]}${P_EOL}")
+    saida+=("${P_CAB[@]}" "${P_SECAO[@]}" "${T[marca_fim]}${P_EOL}")
+  fi
+  { printf '%s' "$P_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$arq.grabit-tmp" &&
+    cat "$arq.grabit-tmp" > "$arq"
+  rm -f -- "$arq.grabit-tmp"
+}
+
+sem_anotacao() {                              # sem_anotacao LINHA → FMT: a linha sem o "✔ data · título"
+  FMT=${1%$'\r'}
+  [[ $FMT =~ $ANOTACAO_ANTIGA ]] && FMT=${BASH_REMATCH[1]}
+  [[ $FMT =~ ^(.*[^[:space:]])[[:space:]]+#[[:space:]]*$ ]] && FMT=${BASH_REMATCH[1]}
+}
+
+pergunta_nao() {                              # pergunta_nao TEXTO → 0 só se a resposta for sim (Enter = não)
+  local resp=""                               # da entrada padrão: dá para confirmar com "echo s |"
+  printf '\n  %s%s%s ' "$NEG" "$1" "$R"
+  read -r resp || resp=""
+  [[ ${resp,,} == s* || ${resp,,} == y* ]]
+}
+
+gerencia_baixados() {
+  local arq=$ARQUIVO_LINKS acao=${ARGS_LINKS[0]:-listar} i n l lin url resto
+  [[ -f $arq ]] || { t sem_arquivo "$arq"; erro "$TXT"; return 1; }
+  le_partes "$arq"
+  n=${#P_SECAO[@]}
+  case ${acao,,} in
+    listar|list|"")
+      t bx_cab "$arq" "$n"; printf '\n  %s%s%s\n\n' "$NEG" "$TXT" "$R"
+      atualiza_largura
+      for i in "${!P_SECAO[@]}"; do
+        l=${P_SECAO[$i]%$'\r'}; url=${l%%[[:space:]]*}; resto=${l#"$url"}
+        resto=${resto#"${resto%%[![:space:]]*}"}; resto=${resto#\#}; resto=${resto# }
+        corta "$url" $(( COLS - 12 )); lin=$FMT
+        if [[ -n $resto ]] && (( LARG + ${#resto} + 12 < COLS )); then lin+="  ${DIM}${resto}${R}"; fi
+        printf '  %s%4d%s  %s\n' "$DIM" $(( i + 1 )) "$R" "$lin"
+      done
+      (( n )) || printf '  %s\n' "${T[bx_vazia]}"
+      printf '\n%s\n\n' "${T[bx_ajuda]}" ;;
+
+    limpar|clear)
+      (( n )) || { printf '\n  %s\n\n' "${T[bx_vazia]}"; return 0; }
+      t bx_limpar_p "$n" "$arq" "$arq.bak"
+      pergunta_nao "$TXT" || { printf '\n  %s\n\n' "${T[ins_cancelado]}"; return 1; }
+      cp -p -- "$arq" "$arq.bak" || return 1
+      P_SECAO=(); grava_partes "$arq"
+      t bx_limpo "$n"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+      printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R" ;;
+
+    voltar|back|restore)
+      local nums=("${ARGS_LINKS[@]:1}")
+      local -A sai=()
+      (( ${#nums[@]} )) || { erro "${T[bx_voltar_uso]}"; return 2; }
+      for i in "${nums[@]}"; do
+        if [[ $i =~ ^[0-9]+$ ]] && (( i >= 1 && i <= n )); then sai[$(( i - 1 ))]=1
+        else t bx_numero "$i" "$n"; erro "$TXT"; return 2; fi
+      done
+      local fica=()
+      for i in "${!P_SECAO[@]}"; do
+        if [[ -n ${sai[$i]:-} ]]; then sem_anotacao "${P_SECAO[$i]}"; P_VOLTA+=("${FMT}${P_EOL}")
+        else fica+=("${P_SECAO[$i]}"); fi
+      done
+      P_SECAO=("${fica[@]}"); grava_partes "$arq"
+      t bx_voltou "${#sai[@]}"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+      printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R" ;;
+
+    marcar|add)
+      local novos=("${ARGS_LINKS[@]:1}") fica=() p todos
+      local -A marca=()
+      (( ${#novos[@]} )) || { erro "${T[bx_marcar_uso]}"; return 2; }
+      printf -v HOJE '%(%Y-%m-%d)T' -1
+      for url in "${novos[@]}"; do
+        links_da_linha "$url"
+        (( ${#PALAVRAS_LINK[@]} )) || { t bx_nao_link "$url"; erro "$TXT"; return 2; }
+        marca[${PALAVRAS_LINK[0]}]=1
+        anota "${PALAVRAS_LINK[0]}" "${T[bx_a_mao]}"; P_SECAO+=("${FMT}${P_EOL}")
+      done
+      for l in "${P_ANTES[@]}"; do               # na lista de cima, a linha sai se todos os links dela foram marcados
+        links_da_linha "$l"; todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
+        for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${marca[$p]:-} ]] || todos=0; done
+        (( todos )) || fica+=("$l")
+      done
+      P_ANTES=("${fica[@]}"); grava_partes "$arq"
+      t bx_marcou "${#novos[@]}"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
+
+    editar|edit)
+      local ed=() tmp="$arq.grabit-editar.txt" depois=0 antes_md5 fica=() volta=()
+      local -A original=()
+      for l in "${P_SECAO[@]}"; do original[${l%$'\r'}]=1; done
+      read -ra ed <<<"${VISUAL:-${EDITOR:-}}"
+      if (( ${#ed[@]} == 0 )); then
+        for l in nano vim vi; do command -v "$l" >/dev/null 2>&1 && { ed=("$l"); break; }; done
+      fi
+      (( ${#ed[@]} )) || { erro "${T[bx_sem_editor]}"; return 1; }
+      { : </dev/tty; } 2>/dev/null || { erro "${T[bx_sem_terminal]}"; return 1; }
+      { printf '%s\n' "${T[bx_ed_cab]}" ""
+        for l in "${P_SECAO[@]}"; do printf '%s\n' "${l%$'\r'}"; done
+        printf '\n%s\n' "${T[bx_ed_volta]}"; } > "$tmp"
+      antes_md5=$(cksum < "$tmp")
+      "${ed[@]}" "$tmp" </dev/tty >/dev/tty
+      if [[ ! -f $tmp || $(cksum < "$tmp") == "$antes_md5" ]]; then
+        rm -f -- "$tmp"; printf '\n  %s\n\n' "${T[bx_nada_mudou]}"; return 0
+      fi
+      while IFS= read -r l || [[ -n $l ]]; do
+        l=${l%$'\r'}
+        [[ $l == "${T[bx_ed_volta]}" ]] && { depois=1; continue; }
+        [[ $l == '#:'* || -z ${l//[[:space:]]/} ]] && continue
+        if (( depois )); then sem_anotacao "$l"; volta+=("${FMT}${P_EOL}"); continue; fi
+        # link novo, acrescentado agora: ganha a mesma anotação do "marcar"
+        if [[ -z ${original[$l]:-} && ! $l =~ $ANOTACAO_ANTIGA ]]; then
+          links_da_linha "$l"
+          (( ${#PALAVRAS_LINK[@]} )) && { printf -v HOJE '%(%Y-%m-%d)T' -1; anota "$l" "${T[bx_a_mao]}"; l=$FMT; }
+        fi
+        fica+=("${l}${P_EOL}")
+      done < "$tmp"
+      rm -f -- "$tmp"
+      P_SECAO=("${fica[@]}"); P_VOLTA=("${volta[@]}"); grava_partes "$arq"
+      t bx_editado "${#fica[@]}" "${#volta[@]}"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
+
+    *) t bx_acao "$acao"; erro "$TXT"; printf '%s\n\n' "${T[bx_ajuda]}"; return 2 ;;
+  esac
+  return 0
+}
+
 # ───────────────────────────── Principal ──────────────────────────────────────
 case $COMANDO in
   instalar)  instalar;  exit $? ;;
   atualizar) atualizar; exit $? ;;
   verificar) verifica_colecao; exit $? ;;
+  baixados)  gerencia_baixados; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM
