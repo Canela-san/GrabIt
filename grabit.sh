@@ -312,6 +312,14 @@ idioma_pt() {
     [kv_fila_viva]="Fila viva"
     [kv_fv]="ligada (-f): o GrabIt continua aberto esperando novos links · q sai"
     [kv_captura]="Captura"
+    [kv_upgrade]="upgrade (-U): troca os vídeos já baixados por versões melhores, se o site tiver"
+    [et_upgrade]="comparando com o vídeo já baixado"
+    [r_sem_melhor]="nenhuma versão melhor que %sp"
+    [r_sem_melhor_n]="%d sem versão melhor"
+    [r_fora_n]="%d fora da pasta"
+    [r_fora]="não está na pasta (pulado)"
+    [up_audio]="-U compara a qualidade de vídeo; com -x ele fica desligado."
+    [up_fila]="-U trabalha com a lista que já existe; -f e -C ficam desligados."
     [kv_clip]="área de transferência (%s): links copiados vão para %s e entram na fila"
     [clip_aguardando]="copie um link para baixar · q sai"
     [clip_capturado]="%d link(s) capturado(s) da área de transferência"
@@ -437,6 +445,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -m            para Jellyfin, Plex e Kodi: canal/Season ano/, com .nfo e capa
   -f            fila viva: depois da lista, continua aberto baixando o que você
                 acrescentar no arquivo de links (q ou Ctrl+C para sair)
+  -U            upgrade: confere os vídeos já baixados (inclusive os da seção
+                BAIXADOS) e troca pelos que hoje têm versão melhor no site
   -C            captura: com o GrabIt aberto, todo link que você copiar entra na
                 fila (anotado no links.txt); nada fica rodando depois que ele fecha
   -a            inclui legendas automáticas (a manual continua tendo prioridade)
@@ -650,6 +660,14 @@ idioma_en() {
     [kv_fila_viva]="Live queue"
     [kv_fv]="on (-f): GrabIt stays open waiting for new links · q quits"
     [kv_captura]="Capture"
+    [kv_upgrade]="upgrade (-U): replaces videos already downloaded with better versions, if the site has them"
+    [et_upgrade]="comparing with the video already downloaded"
+    [r_sem_melhor]="no version better than %sp"
+    [r_sem_melhor_n]="%d with no better version"
+    [r_fora_n]="%d not in the folder"
+    [r_fora]="not in the folder (skipped)"
+    [up_audio]="-U compares video quality; with -x it's turned off."
+    [up_fila]="-U works on the list that already exists; -f and -C are turned off."
     [kv_clip]="clipboard (%s): copied links go to %s and join the queue"
     [clip_aguardando]="copy a link to download it · q quits"
     [clip_capturado]="%d link(s) captured from the clipboard"
@@ -775,6 +793,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   -m            for Jellyfin, Plex and Kodi: channel/Season year/, with .nfo and cover
   -f            live queue: after the list, stays open downloading whatever you add
                 to the link file (q or Ctrl+C to quit)
+  -U            upgrade: check videos already downloaded (including the ones in the
+                DOWNLOADED section) and replace those with a better version today
   -C            capture: while GrabIt is open, every link you copy joins the queue
                 (written to links.txt); nothing keeps running once it closes
   -a            include automatic subtitles (manual ones still win)
@@ -939,8 +959,8 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTURA=0
-while getopts ":l:o:j:c:b:r:L:pausivxdmfCFh" op; do
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTURA=0; UPGRADE=0
+while getopts ":l:o:j:c:b:r:L:pausivxdmfCUFh" op; do
   case $op in
     l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
     o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -961,6 +981,7 @@ while getopts ":l:o:j:c:b:r:L:pausivxdmfCFh" op; do
     m) MIDIA=1 ;;                      # idem
     f) FILA_VIVA=1 ;;                  # idem: o GrabIt só fica aberto esperando links se pedido
     C) CAPTURA=1; FILA_VIVA=1 ;;       # idem: só lê a área de transferência se pedido, e só aberto
+    U) UPGRADE=1 ;;
     h) COMANDO=ajuda ;;
     :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
     *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -976,6 +997,8 @@ if [[ -z $ARQUIVO_HISTORICO ]]; then
 fi
 
 [[ $COMANDO == ajuda ]] && { uso; exit 0; }
+if (( UPGRADE && SO_AUDIO )); then aviso "${T[up_audio]}"; UPGRADE=0; fi
+if (( UPGRADE && FILA_VIVA )); then aviso "${T[up_fila]}"; FILA_VIVA=0; CAPTURA=0; fi
 
 # -d: uma pasta por site e, dentro dela, uma por canal (quando o site informa o canal;
 # sem ele, o vídeo fica direto na pasta do site)
@@ -1315,6 +1338,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
     "[download] Sleeping "*)
       [[ $1 =~ Sleeping\ ([0-9]+) ]] && { t et_pausa "${BASH_REMATCH[1]}"; ETAPA=$TXT; } ;;
+    "[grabit] upgrade"*)                                           ETAPA=${T[et_upgrade]} ;;
     "[Merger]"*)                                                   ETAPA=${T[et_mesclando]} ;;
     "[VideoRemuxer]"*)                                             ETAPA=${T[et_mkv]} ;;
     "[Metadata]"*|"[EmbedInfoJson]"*)                              ETAPA=${T[et_metadados]} ;;
@@ -1585,6 +1609,19 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     END { for (i = 1; i <= k; i++) if (!ruim[ordem[i]]) print (st[ordem[i]] ? "N" : "J") S dado[ordem[i]] }')
   n_done=${#dones[@]}
 
+  # -U: o que melhorou (resolução antiga), o que já estava no melhor e o que não está na pasta
+  local -A antes=()
+  local iguais=() fora=() lado
+  if (( UPGRADE )); then
+    while IFS= read -r l; do
+      case $l in
+        "@@U@@↑"*) l=${l#@@U@@↑}; antes[${l%%"$SEP"*}]=${l#*"$SEP"} ;;
+        "@@U@@="*) iguais+=("${l#@@U@@=}") ;;
+        "@@U@@?"*) fora+=("${l#@@U@@?}") ;;
+      esac
+    done < <(grep -a '^@@U@@' "$TMP/$idx.log" 2>/dev/null)
+  fi
+
   for d in "${dones[@]}"; do
     IFS=$SEP read -r tipo h fps hdr vc ac dur titulo vid caminho <<<"$d"
     [[ -n $vid ]] && baixados[$vid]=1
@@ -1598,6 +1635,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       num "$tam"; tam=$NUM
     fi
     montar_meta "$h" "$fps" "$hdr" "$vc" "$ac" "$canais" "$dur" "$tam"
+    [[ -n ${antes[$vid]:-} ]] && META="${antes[$vid]}p → $META"     # -U: o que era antes
     if [[ $tipo == J ]]; then
       glifo="↷"; cor=$AMARELO; N_JA=$(( N_JA + 1 ))
       META="${T[r_ja_existia]}${META:+ · $META}"
@@ -1639,6 +1677,25 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       t r_n_ja_baixados "$n_hist"; linha_resultado "↷" "$AMARELO" "$idxs" "$url" "$TXT"
     fi
     PERM+=("$LINHA")
+  fi
+
+  if (( ${#iguais[@]} + ${#fora[@]} > 0 )); then
+    N_JA=$(( N_JA + ${#iguais[@]} + ${#fora[@]} ))
+    if (( n_done == 0 && ${#iguais[@]} + ${#fora[@]} == 1 )); then
+      if (( ${#iguais[@]} )); then
+        IFS=$SEP read -r _ lado titulo <<<"${iguais[0]}"; t r_sem_melhor "$lado"
+      else
+        IFS=$SEP read -r _ titulo <<<"${fora[0]}"; TXT=${T[r_fora]}
+      fi
+      linha_resultado "↷" "$AMARELO" "$idxs" "${titulo:-$url}" "$TXT"
+    else
+      lado=""
+      (( ${#iguais[@]} )) && { t r_sem_melhor_n "${#iguais[@]}"; lado=$TXT; }
+      (( ${#fora[@]} )) && { t r_fora_n "${#fora[@]}"; lado+="${lado:+, }$TXT"; }
+      linha_resultado "↷" "$AMARELO" "$idxs" "$url" "$lado"
+    fi
+    PERM+=("$LINHA")
+    n_hist=1                                    # já foi contado: o bloco de baixo não vale
   fi
 
   if (( n_done == 0 && n_hist == 0 && rc == 0 )); then
@@ -1732,11 +1789,90 @@ lanca_job() {                                 # lanca_job IDX
 baixa_link() {
   local url=$1 escolha=()
   shift
+  if (( UPGRADE )); then upgrade_link "$url" "$@"; exit $?; fi
   if (( SO_PRINCIPAL )); then
     printf '[grabit] principal\n'
     escolhe_principal "$url" "$@" && escolha=(--playlist-items "$PRINCIPAL")
   fi
   exec yt-dlp "${YTDLP_ARGS[@]}" "$@" "${escolha[@]}" -- "$url"
+}
+
+# ───── Modo upgrade (-U): para cada vídeo do link, compara a melhor versão que o site tem
+# ───── hoje com o arquivo que já está na pasta e só baixa de novo o que ficou melhor
+# ───── (resolução maior, mais quadros por segundo ou HDR). O arquivo antigo sai do
+# ───── caminho e só é apagado quando o novo chega; se não chegar, ele volta.
+acha_arquivo() {                              # acha_arquivo ID → ACHADO: o vídeo "… [ID].ext" na pasta
+  local g=$1 f
+  ACHADO=""
+  g=${g//\\/\\\\}; g=${g//\*/\\*}; g=${g//\?/\\?}; g=${g//\[/\\[}; g=${g//\]/\\]}
+  while IFS= read -r -d '' f; do
+    case $f in
+      *.part|*.ytdl|*.nfo|*.jpg|*.png|*.webp|*.avif|*.json|*.vtt|*.srt|*.grabit-antigo) continue ;;
+      *"${T[sufixo_ruim]}".*) continue ;;
+    esac
+    ACHADO=$f; return 0
+  done < <(find "$PASTA_SAIDA" \( -path "$PASTA_SAIDA/.parciais" -o -path "$PASTA_SAIDA/logs" \) -prune \
+             -o -type f -name "*\\[$g\\].*" -print0 2>/dev/null)
+  return 1
+}
+
+upgrade_link() {
+  local url=$1 args=() itens=() id idx alt larg fps hdr titulo novo melhor n=0 rc
+  local -A antigo=()
+  shift
+  printf '[grabit] upgrade\n'
+  [[ -n $COOKIES_NAVEGADOR ]] && args+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
+  (( TEM_JS_RUNTIMES )) && [[ -n $JS_RUNTIME ]] && args+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  (( SEM_PLAYLIST )) && args+=(--no-playlist)
+  while IFS=$SEP read -r idx id alt larg fps hdr titulo; do
+    [[ -n $id ]] || continue
+    n=$(( n + 1 ))
+    titulo=${titulo//[[:cntrl:]]/ }
+    if ! acha_arquivo "$id"; then printf '@@U@@?%s%s%s\n' "$id" "$SEP" "$titulo"; continue; fi
+    sonda "$ACHADO"
+    num "$alt"; novo=$NUM; num "$larg"; (( NUM > 0 && NUM < novo )) && novo=$NUM   # o lado menor
+    num "$fps"; fps=$NUM
+    melhor=0                                    # resolução maior; ou a mesma com mais fps ou com HDR
+    if (( novo > S_H )); then melhor=1
+    elif (( novo == S_H && novo > 0 )); then
+      (( fps > S_FPS + 1 )) && melhor=1
+      [[ $hdr != SDR && $hdr != NA && $S_HDR == SDR ]] && melhor=1
+    fi
+    if (( melhor )); then
+      itens+=("$idx"); antigo[$id]=$ACHADO
+      printf '@@U@@↑%s%s%s\n' "$id" "$SEP" "$S_H"
+    else
+      printf '@@U@@=%s%s%s%s%s\n' "$id" "$SEP" "$S_H" "$SEP" "$titulo"
+    fi
+  done < <(yt-dlp --ignore-config --no-warnings --simulate -f "$FORMATO" \
+             --print "%(playlist_index|0)s${SEP}%(id)s${SEP}%(height|0)s${SEP}%(width|0)s${SEP}%(fps|0)s${SEP}%(dynamic_range|SDR)s${SEP}%(title)s" \
+             "${args[@]}" "$@" -- "$url" 2>/dev/null)
+  # a consulta falhou (site fora do ar, link removido…): o download normal mostra o motivo
+  (( n > 0 )) || exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url"
+  (( ${#itens[@]} )) || return 0
+
+  # Sem o histórico (o vídeo já está nele) e sobrescrevendo; só os itens que melhoraram
+  local filtrados=() i sel=()
+  for (( i = 0; i < ${#YTDLP_ARGS[@]}; i++ )); do
+    if [[ ${YTDLP_ARGS[$i]} == --download-archive ]]; then i=$(( i + 1 )); continue; fi
+    filtrados+=("${YTDLP_ARGS[$i]}")
+  done
+  [[ ${itens[0]} != 0 ]] && sel=(--playlist-items "$(IFS=,; printf '%s' "${itens[*]}")")
+  for id in "${!antigo[@]}"; do mv -f -- "${antigo[$id]}" "${antigo[$id]}.grabit-antigo"; done
+  trap 'devolve_antigos; exit 143' TERM INT HUP
+  yt-dlp "${filtrados[@]}" --force-overwrites "${sel[@]}" "$@" -- "$url"; rc=$?
+  trap - TERM INT HUP
+  devolve_antigos
+  return "$rc"
+}
+
+devolve_antigos() {                           # o novo chegou? apaga o antigo. Não chegou? ele volta.
+  local id
+  for id in "${!antigo[@]}"; do
+    [[ -e ${antigo[$id]}.grabit-antigo ]] || continue
+    if acha_arquivo "$id"; then rm -f -- "${antigo[$id]}.grabit-antigo"
+    else mv -f -- "${antigo[$id]}.grabit-antigo" "${antigo[$id]}"; fi
+  done
 }
 
 # escolhe_principal URL [OPÇÕES…] → PRINCIPAL: o item mais longo da página (empate: o de
@@ -2250,6 +2386,7 @@ le_lista() {
   for linha in "${conteudo[@]}"; do
     if (( secao )); then
       if eh_fim_baixados "$linha"; then secao=0; continue; fi
+      if (( UPGRADE )); then bruto+=("$linha"); continue; fi   # -U: são justamente esses
       links_da_linha "$linha"; N_NA_SECAO=$(( N_NA_SECAO + ${#PALAVRAS_LINK[@]} ))
     elif eh_marca_baixados "$linha"; then
       secao=1
@@ -2319,6 +2456,7 @@ ler_links() {
 # sucesso saem da parte de cima e vão para o fim da seção BAIXADOS (criada se preciso).
 # O arquivo é relido agora: o que você acrescentou durante a execução não se perde.
 move_baixados() {
+  (( UPGRADE )) && return 0                   # no -U nada muda de lugar: os links já são da seção
   local -A ok=() nota=()
   local i arq
   printf -v HOJE '%(%Y-%m-%d)T' -1
@@ -2556,6 +2694,7 @@ kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 if (( MIDIA )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_midia]}"
 elif (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
 else kv "${T[kv_destino]}" "$PASTA_SAIDA"; fi
+if (( UPGRADE )); then kv "${T[kv_modo]}" "${T[kv_upgrade]}"; fi
 if (( SO_AUDIO )); then
   if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
   else t kv_audio_conv "$FORMATO_AUDIO"; kv "${T[kv_modo]}" "$TXT"; fi

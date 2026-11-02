@@ -135,6 +135,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
 | `-d` | organiza em subpastas por site e canal: `Downloads/youtube.com/Canal/` | — |
 | `-f` | fila viva: depois da lista, continua aberto baixando o que você acrescentar ao arquivo de links | — |
+| `-U` | upgrade: confere os vídeos já baixados e troca pelos que hoje têm versão melhor no site | — |
 | `-C` | captura: com o GrabIt aberto, todo link que você copiar entra na fila (e é anotado no `links.txt`) | — |
 | `-m` | organiza para Jellyfin, Plex e Kodi: `Canal/Season 2026/`, com `.nfo` e capa ao lado | — |
 | `-u` | em páginas com vários vídeos (prévias, relacionados…), baixa só o principal: o mais longo | — |
@@ -204,7 +205,7 @@ grabit -r 720                       # só desta vez, até 720p
 grabit -F -l links_falhos.txt       # baixa os que ficaram de fora, na qualidade máxima
 ```
 
-> Vídeos baixados com limite entram no histórico normalmente. Para trocar um deles por uma versão maior depois, apague o arquivo e rode com `-F -i`.
+> Vídeos baixados com limite entram no histórico normalmente. Para trocá-los depois pela melhor versão, rode `grabit -U -F`.
 
 ### Cortesia com os sites
 
@@ -243,6 +244,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
 - **Fila viva (`-f`):** depois de terminar a lista, o GrabIt continua aberto e confere o arquivo de links a cada 2 segundos: o que você acrescentar (em cima ou no fim do arquivo) entra na fila e começa a baixar. Quando a fila esvazia, os baixados vão para a seção `BAIXADOS` e, se o lote demorou, chega o aviso de término. Sai com <kbd>q</kbd> ou <kbd>Ctrl</kbd>+<kbd>C</kbd>. Só acontece com a opção: sem `-f`, o GrabIt sempre fecha ao terminar.
+- **Upgrade (`-U`):** para cada link da lista — inclusive os da seção `BAIXADOS` —, compara a melhor versão que o site oferece hoje com o arquivo que já está na pasta (achado pelo `[id]` no nome). Só baixa de novo o que ficou melhor: resolução maior, ou a mesma com mais quadros por segundo ou com HDR. O arquivo antigo só é apagado depois que o novo chega inteiro; se o download falhar ou for cancelado, ele volta. Vídeos que você tirou da pasta são pulados. Útil depois de baixar com limite de resolução, ou quando um site passa a oferecer 4K.
 - **Captura da área de transferência (`-C`):** com o GrabIt aberto, cada link que você copiar (<kbd>Ctrl</kbd>+<kbd>C</kbd> no navegador) é anotado no fim do `links.txt` e entra na fila — funciona como a fila viva. O que já estava copiado antes de abrir e textos sem link são ignorados. Nada fica rodando em segundo plano: fechou o GrabIt, acabou a captura. Usa `wl-paste` (Wayland), `xclip` ou `xsel` (X11), `pbpaste` (macOS) ou o PowerShell (WSL).
 - **Jellyfin, Plex e Kodi (`-m`):** cada canal vira uma série, com uma temporada por ano e episódios nomeados pela data (`Canal/Season 2026/Canal - 2026-10-24 - Título [id].mkv`), formato que os três reconhecem. Ao lado de cada vídeo ficam a capa e um `.nfo` com título, data e descrição, e na pasta do canal um `tvshow.nfo`. Aponte uma biblioteca do tipo *Séries* para a pasta de downloads. Só acontece com a opção, e ela tem prioridade sobre `-d`.
 - **Só áudio (`-x`):** baixa a melhor faixa de som e a guarda no formato em que o site entrega (opus, m4a…), sem recomprimir, com capa, capítulos e metadados. Com `FORMATO_AUDIO=mp3` (ou outro), converte na melhor qualidade. O histórico de áudio é separado (`.grabit-historico-audio.txt`): ter baixado o vídeo não impede de baixar o áudio, e vice-versa.
