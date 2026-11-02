@@ -19,6 +19,8 @@ fi
 set -uo pipefail
 shopt -s extglob
 
+PATH_ORIGINAL=$PATH
+
 # O idioma do sistema é lido antes de forçar o UTF-8 logo abaixo
 LOCALE_ORIGINAL=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
 
@@ -313,6 +315,32 @@ idioma_pt() {
     [kv_fv]="ligada (-f): o GrabIt continua aberto esperando novos links · q sai"
     [kv_captura]="Captura"
     [kv_upgrade]="upgrade (-U): troca os vídeos já baixados por versões melhores, se o site tiver"
+    [dep_instalador]="     Para instalar tudo de uma vez: %s"
+    [ins_titulo]="GrabIt · instalação das dependências"
+    [ins_sem_ger]="Não achei um gerenciador de pacotes conhecido (apt, dnf, pacman, zypper, apk ou brew)."
+    [ins_manual]="Instale à mão pelo sistema: %s"
+    [ins_p_sistema]="instalar pelo %s: %s"
+    [ins_p_ytdlp]="instalar o yt-dlp (com curl-cffi) pelo pipx"
+    [ins_p_curlcffi]="acrescentar o curl-cffi ao yt-dlp (para imitar um navegador)"
+    [ins_p_deno]="instalar o Deno, exigido pelo YouTube (instalador oficial, na sua pasta pessoal)"
+    [ins_p_comando]="criar o comando grabit (%s)"
+    [ins_nada]="Tudo o que o GrabIt usa já está instalado."
+    [ins_vai]="O GrabIt vai:"
+    [ins_continuar]="Continuar? [S/n]"
+    [ins_cancelado]="Nada foi feito."
+    [ins_ok]="feito"
+    [ins_falhou]="falhou (veja as mensagens acima)"
+    [ins_path]="A pasta ~/.local/bin não está no seu PATH. Acrescente ao ~/.bashrc (ou ~/.zshrc): %s"
+    [ins_pronto]="Pronto! Rode: grabit -h"
+    [atu_titulo]="GrabIt · atualização"
+    [atu_git]="atualizar o GrabIt (git pull)"
+    [atu_baixa]="baixar a versão mais nova do GrabIt"
+    [atu_igual]="o GrabIt já está na versão mais nova"
+    [atu_trocado]="GrabIt atualizado"
+    [atu_sem_escrita]="Sem permissão para gravar em %s: rode com sudo ou atualize à mão."
+    [atu_ytdlp]="atualizar o yt-dlp"
+    [atu_sem_ytdlp]="O yt-dlp não está instalado: rode grabit --instalar."
+    [atu_pacote]="Este yt-dlp veio do gerenciador de pacotes, que costuma ficar para trás: prefira pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparando com o vídeo já baixado"
     [r_sem_melhor]="nenhuma versão melhor que %sp"
     [r_sem_melhor_n]="%d sem versão melhor"
@@ -457,6 +485,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -h            mostra esta ajuda
 
   --config      mostra o grabit.config e os valores em uso
+  --instalar    instala o que falta (ffmpeg, yt-dlp, Deno…) e o comando grabit
+  --atualizar   atualiza o GrabIt e o yt-dlp
 
 • Links e arquivos de links também podem vir direto no comando (aí o
   links.txt só é lido se você passar -l):
@@ -661,6 +691,32 @@ idioma_en() {
     [kv_fv]="on (-f): GrabIt stays open waiting for new links · q quits"
     [kv_captura]="Capture"
     [kv_upgrade]="upgrade (-U): replaces videos already downloaded with better versions, if the site has them"
+    [dep_instalador]="     To install everything at once: %s"
+    [ins_titulo]="GrabIt · installing dependencies"
+    [ins_sem_ger]="Couldn't find a known package manager (apt, dnf, pacman, zypper, apk or brew)."
+    [ins_manual]="Install these through your system: %s"
+    [ins_p_sistema]="install with %s: %s"
+    [ins_p_ytdlp]="install yt-dlp (with curl-cffi) through pipx"
+    [ins_p_curlcffi]="add curl-cffi to yt-dlp (to impersonate a browser)"
+    [ins_p_deno]="install Deno, required by YouTube (official installer, in your home folder)"
+    [ins_p_comando]="create the grabit command (%s)"
+    [ins_nada]="Everything GrabIt uses is already installed."
+    [ins_vai]="GrabIt is going to:"
+    [ins_continuar]="Continue? [Y/n]"
+    [ins_cancelado]="Nothing was done."
+    [ins_ok]="done"
+    [ins_falhou]="failed (see the messages above)"
+    [ins_path]="The ~/.local/bin folder isn't in your PATH. Add this to ~/.bashrc (or ~/.zshrc): %s"
+    [ins_pronto]="Done! Run: grabit -h"
+    [atu_titulo]="GrabIt · update"
+    [atu_git]="update GrabIt (git pull)"
+    [atu_baixa]="download the newest GrabIt"
+    [atu_igual]="GrabIt is already the newest version"
+    [atu_trocado]="GrabIt updated"
+    [atu_sem_escrita]="No permission to write to %s: run it with sudo or update by hand."
+    [atu_ytdlp]="update yt-dlp"
+    [atu_sem_ytdlp]="yt-dlp isn't installed: run grabit --instalar."
+    [atu_pacote]="This yt-dlp came from the package manager, which tends to lag behind: prefer pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparing with the video already downloaded"
     [r_sem_melhor]="no version better than %sp"
     [r_sem_melhor_n]="%d with no better version"
@@ -805,6 +861,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   -h            show this help
 
   --config      show grabit.config and the values in use
+  --install     install what's missing (ffmpeg, yt-dlp, Deno…) and the grabit command
+  --update      update GrabIt and yt-dlp
 
 • Links and link files can also go straight on the command line (then
   links.txt is only read if you pass -l):
@@ -952,6 +1010,8 @@ for a in "$@"; do
   case $a in
     --config)       COMANDO=config ;;
     --help|--ajuda) COMANDO=ajuda ;;
+    --instalar|--install)  COMANDO=instalar ;;
+    --atualizar|--update)  COMANDO=atualizar ;;
     --)             ARGS_CURTOS+=("$a") ;;
     --*)            t opcao_invalida "$a"; erro "$TXT"; uso; exit 2 ;;
     *)              ARGS_CURTOS+=("$a") ;;
@@ -2265,6 +2325,7 @@ verifica_dependencias() {
   command -v ffmpeg >/dev/null 2>&1 || faltando+=("ffmpeg")
   if (( ${#faltando[@]} )); then
     t dep_faltando "${faltando[*]}"; erro "$TXT"
+    t dep_instalador "${CIANO}grabit --instalar${R}"; printf '%s\n' "$TXT"
     comando_instalar ffmpeg
     printf '\n     %syt-dlp%s  →  pipx install "yt-dlp[default,curl-cffi]"\n' "$CIANO" "$R"
     printf '     %sffmpeg%s  →  %s\n\n' "$CIANO" "$R" "$FMT"
@@ -2638,7 +2699,209 @@ descreve_limites() {
   for x in "${p[@]}"; do TXT+="${TXT:+ · }$x"; done
 }
 
+# ───────────────────────────── Instalador e atualizador ───────────────────────
+# grabit --instalar: instala o que falta (pedindo uma confirmação só, com o plano à vista).
+# grabit --atualizar: atualiza o próprio GrabIt e o yt-dlp, cada um pelo seu caminho.
+URL_SCRIPT="https://raw.githubusercontent.com/Canela-san/GrabIt/main/grabit.sh"
+
+gerenciador() {                               # → GER (brew, apt, dnf, pacman, zypper, apk ou "")
+  GER=""
+  local g
+  for g in brew apt dnf pacman zypper apk; do command -v "$g" >/dev/null 2>&1 && { GER=$g; return 0; }; done
+  return 1
+}
+
+pacote() {                                    # pacote NOME → PKG: o nome do pacote neste sistema
+  PKG=$1
+  case $GER:$1 in
+    pacman:pipx)          PKG=python-pipx ;;
+    zypper:pipx)          PKG=python3-pipx ;;
+    apk:pipx)             PKG=pipx ;;
+  esac
+}
+
+instala_pacotes() {                           # instala_pacotes PACOTE... (pelo gerenciador do sistema)
+  local sudo=()
+  [[ $GER != brew ]] && (( EUID != 0 )) && sudo=(sudo)
+  case $GER in
+    brew)   brew install "$@" ;;
+    apt)    "${sudo[@]}" apt-get update -qq && "${sudo[@]}" apt-get install -y "$@" ;;
+    dnf)    "${sudo[@]}" dnf install -y "$@" ;;
+    pacman) "${sudo[@]}" pacman -S --needed --noconfirm "$@" ;;
+    zypper) "${sudo[@]}" zypper --non-interactive install "$@" ;;
+    apk)    "${sudo[@]}" apk add "$@" ;;
+    *)      return 1 ;;
+  esac
+}
+
+pergunta_sim() {                              # pergunta_sim TEXTO → 0 se a resposta for sim (Enter = sim)
+  local resp=""
+  printf '\n  %s%s%s ' "$NEG" "$1" "$R"
+  if [[ -r /dev/tty ]]; then read -r resp </dev/tty || resp=n; else resp=n; fi
+  [[ -z $resp || ${resp,,} == s* || ${resp,,} == y* ]]
+}
+
+passo() {                                     # passo DESCRIÇÃO COMANDO... (mostra, roda e diz se deu certo)
+  local d=$1
+  shift
+  printf '\n  %s▸%s %s\n' "$CIANO" "$R" "$d"
+  if "$@"; then printf '  %s✔%s %s\n' "$VERDE" "$R" "${T[ins_ok]}"; return 0; fi
+  printf '  %s✖%s %s\n' "$VERMELHO" "$R" "${T[ins_falhou]}"; FALHOU_PASSO=1
+  return 1
+}
+
+instalar() {
+  local sistema=() etapas=() plano=() js="" clip="" alvo="$HOME/.local/bin/grabit" p
+  FALHOU_PASSO=0
+  gerenciador
+  export PATH="$HOME/.local/bin:$HOME/.deno/bin:$PATH"     # onde pipx e deno instalam
+  printf '\n  %s%s%s\n' "$NEG" "${T[ins_titulo]}" "$R"
+  [[ -z $GER ]] && aviso "${T[ins_sem_ger]}"
+
+  # o que falta no sistema
+  command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 || sistema+=(ffmpeg)
+  command -v curl >/dev/null 2>&1 || sistema+=(curl)
+  if ! command -v yt-dlp >/dev/null 2>&1; then
+    command -v pipx >/dev/null 2>&1 || { pacote pipx; sistema+=("$PKG"); }
+    etapas+=(ytdlp)
+  elif command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q '^yt-dlp ' &&
+       ! yt-dlp --list-impersonate-targets 2>/dev/null | grep -i '^[[:space:]]*chrome' | grep -viq unavailable; then
+    etapas+=(curlcffi)                        # sem o curl_cffi, nada de imitar um navegador
+  fi
+  for p in deno node nodejs qjs quickjs bun; do command -v "$p" >/dev/null 2>&1 && { js=$p; break; }; done
+  if [[ -z $js ]]; then
+    case $GER in
+      brew|pacman) sistema+=(deno) ;;
+      *) command -v unzip >/dev/null 2>&1 || sistema+=(unzip); etapas+=(deno) ;;
+    esac
+  fi
+  if [[ $GER != brew && ( -n ${WAYLAND_DISPLAY:-} || -n ${DISPLAY:-} ) ]] &&
+     ! command -v wl-paste >/dev/null 2>&1 && ! command -v xclip >/dev/null 2>&1 && ! command -v xsel >/dev/null 2>&1; then
+    if [[ -n ${WAYLAND_DISPLAY:-} ]]; then clip=wl-clipboard; else clip=xclip; fi
+    sistema+=("$clip")
+  fi
+  command -v grabit >/dev/null 2>&1 || [[ -e $alvo ]] || etapas+=(comando)
+
+  # o plano
+  if [[ -n $GER && ${#sistema[@]} -gt 0 ]]; then t ins_p_sistema "$GER" "${sistema[*]}"; plano+=("$TXT"); fi
+  for p in "${etapas[@]}"; do
+    case $p in
+      ytdlp)    plano+=("${T[ins_p_ytdlp]}") ;;
+      curlcffi) plano+=("${T[ins_p_curlcffi]}") ;;
+      deno)     plano+=("${T[ins_p_deno]}") ;;
+      comando)  t ins_p_comando "${alvo/#$HOME/\~}"; plano+=("$TXT") ;;
+    esac
+  done
+  if (( ${#plano[@]} == 0 )); then
+    printf '\n  %s✔%s %s\n' "$VERDE" "$R" "${T[ins_nada]}"
+    mostra_versoes; return 0
+  fi
+  if [[ -z $GER && ${#sistema[@]} -gt 0 ]]; then
+    t ins_manual "${sistema[*]}"; aviso "$TXT"
+  fi
+  printf '\n  %s\n' "${T[ins_vai]}"
+  for p in "${!plano[@]}"; do printf '    %d. %s\n' $(( p + 1 )) "${plano[$p]}"; done
+  pergunta_sim "${T[ins_continuar]}" || { printf '\n  %s\n\n' "${T[ins_cancelado]}"; return 1; }
+
+  # a execução
+  if [[ -n $GER && ${#sistema[@]} -gt 0 ]]; then
+    if ! passo "${plano[0]}" instala_pacotes "${sistema[@]}" && [[ $GER == dnf && " ${sistema[*]} " == *" ffmpeg "* ]]; then
+      # Fedora sem o RPM Fusion: o ffmpeg do repositório oficial se chama ffmpeg-free
+      FALHOU_PASSO=0
+      passo "dnf: ffmpeg-free" instala_pacotes "${sistema[@]/#ffmpeg/ffmpeg-free}"
+    fi
+  fi
+  for p in "${etapas[@]}"; do
+    case $p in
+      ytdlp)    passo "${T[ins_p_ytdlp]}" pipx install "yt-dlp[default,curl-cffi]" && pipx ensurepath >/dev/null 2>&1 ;;
+      curlcffi) passo "${T[ins_p_curlcffi]}" pipx inject yt-dlp curl-cffi ;;
+      deno)     passo "${T[ins_p_deno]}" sh -c 'curl -fsSL https://deno.land/install.sh | sh -s -- -y' ;;
+      comando)  t ins_p_comando "${alvo/#$HOME/\~}"
+                passo "$TXT" sh -c 'mkdir -p "$(dirname "$1")" && ln -sf "$2" "$1"' _ "$alvo" "$GRABIT_SCRIPT" ;;
+    esac
+  done
+  mostra_versoes
+  if [[ -e $alvo || -e $HOME/.local/bin/yt-dlp ]]; then  # só importa se algo foi parar lá
+    case ":$PATH_ORIGINAL:" in
+      *":$HOME/.local/bin:"*) ;;
+      *) t ins_path "${CIANO}export PATH=\"\$HOME/.local/bin:\$PATH\"${R}"; aviso "$TXT" ;;
+    esac
+  fi
+  (( FALHOU_PASSO )) && return 1
+  printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "${T[ins_pronto]}"
+}
+
+mostra_versoes() {
+  local v
+  printf '\n'
+  v=$(yt-dlp --version 2>/dev/null) || v="—"
+  kv "yt-dlp" "$v"
+  v=$(ffmpeg -version 2>/dev/null | awk 'NR==1{print $3}'); kv "ffmpeg" "${v:-—}"
+  for v in deno node nodejs qjs bun; do command -v "$v" >/dev/null 2>&1 && { kv "JavaScript" "$v"; break; }; done
+  printf '\n'
+}
+
+atualizar() {
+  local antes depois tmp modo saida
+  FALHOU_PASSO=0
+  export PATH="$HOME/.local/bin:$PATH"
+  printf '\n  %s%s%s\n' "$NEG" "${T[atu_titulo]}" "$R"
+
+  # 1) o GrabIt: clone do Git → git pull; arquivo solto → baixa, confere e troca
+  if git -C "$GRABIT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    antes=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
+    if passo "${T[atu_git]}" git -C "$GRABIT_DIR" pull --ff-only --quiet; then
+      depois=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
+      if [[ $antes == "$depois" ]]; then printf '    %s\n' "${T[atu_igual]}"
+      else printf '    %s → %s\n' "$antes" "$depois"; git -C "$GRABIT_DIR" log --format='      · %s' "$antes..$depois" | head -15; fi
+    fi
+  else
+    if ! tmp=$(mktemp "${GRABIT_SCRIPT}.XXXXXX" 2>/dev/null); then
+      t atu_sem_escrita "$GRABIT_DIR"; erro "$TXT"; return 1
+    fi
+    # bash -n e a assinatura do cabeçalho: uma página de erro nunca substitui o script
+    if passo "${T[atu_baixa]}" sh -c 'curl -fsSL "$1" -o "$2" && bash -n "$2" && grep -q "GrabIt (grabit.sh)" "$2"' _ "$URL_SCRIPT" "$tmp"; then
+      if cmp -s "$tmp" "$GRABIT_SCRIPT"; then
+        printf '    %s\n' "${T[atu_igual]}"; rm -f -- "$tmp"
+      else
+        # arquivo novo no lugar (mv), com as permissões do antigo: o GrabIt em execução
+        # continua lendo o arquivo velho, sem tropeçar no meio da troca
+        modo=$(stat -c %a -- "$GRABIT_SCRIPT" 2>/dev/null || stat -f %Lp -- "$GRABIT_SCRIPT" 2>/dev/null)
+        chmod "${modo:-755}" "$tmp" && mv -f -- "$tmp" "$GRABIT_SCRIPT" && printf '    %s\n' "${T[atu_trocado]}"
+      fi
+    else
+      rm -f -- "$tmp"
+    fi
+  fi
+
+  # 2) o yt-dlp, pelo caminho por onde foi instalado
+  antes=$(yt-dlp --version 2>/dev/null)
+  if [[ -z $antes ]]; then
+    aviso "${T[atu_sem_ytdlp]}"
+  elif command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q '^yt-dlp '; then
+    passo "${T[atu_ytdlp]} (pipx)" pipx upgrade --include-injected yt-dlp
+  else
+    saida=$(yt-dlp -U 2>&1); printf '%s\n' "$saida" | sed 's/^/    /' | tail -3
+    if [[ $saida == *"with pip"* ]]; then
+      local usuario=()                        # instalado com --user? atualiza no mesmo lugar
+      [[ $(command -v yt-dlp) == "$HOME"/* ]] && usuario=(--user)
+      passo "${T[atu_ytdlp]} (pip)" python3 -m pip install -U --quiet "${usuario[@]}" "yt-dlp[default,curl-cffi]"
+    elif [[ $saida == *"package manager"* ]]; then
+      aviso "${T[atu_pacote]}"
+    fi
+  fi
+  depois=$(yt-dlp --version 2>/dev/null)
+  [[ -n $antes ]] && printf '    yt-dlp %s → %s\n' "$antes" "${depois:-?}"
+  printf '\n'
+  (( FALHOU_PASSO )) && return 1
+  return 0
+}
+
 # ───────────────────────────── Principal ──────────────────────────────────────
+case $COMANDO in
+  instalar)  instalar;  exit $? ;;
+  atualizar) atualizar; exit $? ;;
+esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM
 trap 'CANCELADO=1; SINAL=HUP;  exit 129' HUP

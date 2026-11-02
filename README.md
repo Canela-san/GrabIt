@@ -36,7 +36,22 @@
 
 ## Instalação
 
-### 1. Dependências
+```bash
+git clone https://github.com/Canela-san/GrabIt.git
+cd GrabIt
+bash grabit.sh --instalar
+```
+
+O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer coisa: instala o FFmpeg e o yt-dlp (com o `curl-cffi`, para imitar um navegador quando um site bloqueia downloads automáticos) pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, um runtime JavaScript se não houver nenhum (o YouTube exige um para liberar as melhores resoluções) e cria o comando `grabit` em `~/.local/bin`. Uma confirmação só, e nada acontece se você responder não.
+
+Para atualizar o GrabIt e o yt-dlp de uma vez:
+
+```bash
+grabit --atualizar
+```
+
+<details>
+<summary>Instalação manual</summary>
 
 | Programa | Para quê | Como instalar |
 |---|---|---|
@@ -45,22 +60,14 @@
 | [Deno](https://deno.com) *(recomendado)* | exigido pelo YouTube para liberar as melhores resoluções | veja o site |
 | Bash 4.4+ | rodar o script | já vem no Linux · no macOS: `brew install bash` |
 
-> O `curl-cffi` permite imitar um navegador quando um site bloqueia downloads automáticos. É opcional, mas recomendado.
-
-### 2. GrabIt
-
-```bash
-git clone https://github.com/Canela-san/GrabIt.git
-cd GrabIt
-chmod +x grabit.sh
-```
-
-Para usar o comando `grabit` em qualquer pasta (e atualizar com um simples `git pull`):
+E, para usar o comando `grabit` em qualquer pasta:
 
 ```bash
 mkdir -p ~/.local/bin
 ln -s "$PWD/grabit.sh" ~/.local/bin/grabit
 ```
+
+</details>
 
 ## Uso
 
@@ -255,7 +262,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 
 ## Dicas
 
-- **Mantenha o yt-dlp atualizado** (`yt-dlp -U` ou `pipx upgrade yt-dlp`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
+- **Mantenha o yt-dlp atualizado** (`grabit --atualizar`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
 - **Vídeo pede login ou confirmação de idade?** Use `-b firefox` (ou o navegador em que você está logado).
 - **Deixou baixando e saiu?** Com `NTFY_TOPICO=um-nome-dificil` no `grabit.config` e o app do [ntfy](https://ntfy.sh) assinando o mesmo tópico, o celular avisa quando o lote acabar. Só vai o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
 - **Retomar o que falhou:** `grabit -l links_falhos.txt`.

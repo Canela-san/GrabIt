@@ -36,7 +36,22 @@
 
 ## Installation
 
-### 1. Dependencies
+```bash
+git clone https://github.com/Canela-san/GrabIt.git
+cd GrabIt
+bash grabit.sh --install
+```
+
+`--install` checks what's missing and shows the plan before doing anything: it installs FFmpeg and yt-dlp (with `curl-cffi`, to impersonate a browser when a site blocks automated downloads) through your system's package manager (apt, dnf, pacman, zypper, apk or Homebrew) and `pipx`, a JavaScript runtime if there's none (YouTube requires one to unlock the best resolutions), and creates the `grabit` command in `~/.local/bin`. A single confirmation, and nothing happens if you answer no.
+
+To update GrabIt and yt-dlp in one go:
+
+```bash
+grabit --update
+```
+
+<details>
+<summary>Manual installation</summary>
 
 | Program | What for | How to install |
 |---|---|---|
@@ -45,24 +60,14 @@
 | [Deno](https://deno.com) *(recommended)* | required by YouTube to unlock the best resolutions | see the website |
 | Bash 4.4+ | running the script | ships with Linux · on macOS: `brew install bash` |
 
-> `curl-cffi` lets GrabIt impersonate a browser when a site blocks automated downloads. It's optional, but recommended.
-
-### 2. GrabIt
-
-```bash
-git clone https://github.com/Canela-san/GrabIt.git
-cd GrabIt
-chmod +x grabit.sh
-```
-
-To use the `grabit` command from any folder (and update with a simple `git pull`):
+And, to use the `grabit` command from any folder:
 
 ```bash
 mkdir -p ~/.local/bin
 ln -s "$PWD/grabit.sh" ~/.local/bin/grabit
 ```
 
-GrabIt speaks Portuguese and English and follows your system's language. To pick one for good, set `IDIOMA=en` in `grabit.config` (see [Configuration](#configuration)), or use `-L en` for a single run.
+</details>
 
 ## Usage
 
@@ -260,7 +265,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 
 ## Tips
 
-- **Keep yt-dlp up to date** (`yt-dlp -U` or `pipx upgrade yt-dlp`): sites change all the time. GrabIt warns you when the installed version is old.
+- **Keep yt-dlp up to date** (`grabit --update`): sites change all the time. GrabIt warns you when the installed version is old.
 - **Video asks for a login or age confirmation?** Use `-b firefox` (or the browser you're logged in with).
 - **Left it downloading and walked away?** With `NTFY_TOPICO=a-hard-name` in `grabit.config` and the [ntfy](https://ntfy.sh) app subscribed to the same topic, your phone tells you when the batch is done. Only the summary goes out (how many downloaded and how many failed), never links or titles.
 - **Retry what failed:** `grabit -l links_falhos.txt`.
