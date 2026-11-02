@@ -13,6 +13,7 @@
   <img alt="Bash 4.4+" src="https://img.shields.io/badge/bash-4.4%2B-4EAA25?logo=gnubash&logoColor=white">
   <img alt="Motor: yt-dlp" src="https://img.shields.io/badge/motor-yt--dlp-red">
   <img alt="Linux e macOS" src="https://img.shields.io/badge/plataforma-Linux%20%7C%20macOS-informational">
+  <a href="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml"><img alt="Testes" src="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-blue"></a>
 </p>
 
@@ -267,6 +268,15 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Deixou baixando e saiu?** Com `NTFY_TOPICO=um-nome-dificil` no `grabit.config` e o app do [ntfy](https://ntfy.sh) assinando o mesmo tópico, o celular avisa quando o lote acabar. Só vai o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
 - **Retomar o que falhou:** `grabit -l links_falhos.txt`.
 - **Apagou um vídeo e quer baixá-lo de novo?** Rode com `-i` (ignora o histórico) ou apague a linha dele em `Downloads/.grabit-historico.txt`.
+
+## Testes
+
+```bash
+bash testes/rodar.sh            # todos: sobe um servidor local e baixa vídeos gerados pelo ffmpeg
+bash testes/rodar.sh --rapido   # só opções, configuração e traduções (sem yt-dlp nem ffmpeg)
+```
+
+Nada sai da sua máquina: os vídeos de teste são criados na hora e servidos em `127.0.0.1`. A cada envio, o GitHub Actions roda os testes completos no Ubuntu, os rápidos no Bash 4.4, 5.0, 5.1 e 5.2 e no macOS, e o ShellCheck.
 
 ## Aviso
 

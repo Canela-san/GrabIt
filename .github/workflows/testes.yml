@@ -1,0 +1,49 @@
+name: Testes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  completos:
+    name: Testes completos (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependências
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg shellcheck
+          pipx install "yt-dlp[default]"
+      - name: ShellCheck
+        run: shellcheck -s bash -S warning grabit.sh testes/rodar.sh
+      - name: Testes
+        run: bash testes/rodar.sh
+
+  versoes-do-bash:
+    name: Bash ${{ matrix.bash }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bash: ["4.4", "5.0", "5.1", "5.2"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testes rápidos
+        run: docker run --rm -v "$PWD:/grabit" -w /grabit "bash:${{ matrix.bash }}" bash testes/rodar.sh --rapido
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: O Bash 3.2 do sistema é recusado com uma mensagem clara
+        run: |
+          set +e
+          saida=$(/bin/bash grabit.sh -h 2>&1); rc=$?
+          echo "$saida"
+          [ "$rc" = 1 ] && echo "$saida" | grep -q "Bash 4.4"
+      - name: Testes rápidos com o Bash do Homebrew
+        run: |
+          brew install bash
+          "$(brew --prefix)/bin/bash" testes/rodar.sh --rapido

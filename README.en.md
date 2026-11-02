@@ -13,6 +13,7 @@
   <img alt="Bash 4.4+" src="https://img.shields.io/badge/bash-4.4%2B-4EAA25?logo=gnubash&logoColor=white">
   <img alt="Engine: yt-dlp" src="https://img.shields.io/badge/engine-yt--dlp-red">
   <img alt="Linux and macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-informational">
+  <a href="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml"><img alt="Tests" src="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
@@ -270,6 +271,15 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 - **Left it downloading and walked away?** With `NTFY_TOPICO=a-hard-name` in `grabit.config` and the [ntfy](https://ntfy.sh) app subscribed to the same topic, your phone tells you when the batch is done. Only the summary goes out (how many downloaded and how many failed), never links or titles.
 - **Retry what failed:** `grabit -l links_falhos.txt`.
 - **Deleted a video and want it again?** Run with `-i` (ignores the history) or delete its line in `Downloads/.grabit-historico.txt`.
+
+## Tests
+
+```bash
+bash testes/rodar.sh            # all of them: starts a local server and downloads videos made by ffmpeg
+bash testes/rodar.sh --rapido   # only options, configuration and translations (no yt-dlp or ffmpeg)
+```
+
+Nothing leaves your machine: the test videos are created on the spot and served on `127.0.0.1`. On every push, GitHub Actions runs the full tests on Ubuntu, the quick ones on Bash 4.4, 5.0, 5.1 and 5.2 and on macOS, plus ShellCheck.
 
 ## Disclaimer
 
