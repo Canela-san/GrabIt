@@ -149,6 +149,7 @@ USAR_HISTORICO=1                              # 0 = não pula o que já foi baix
 ARQUIVO_FALHAS=links_falhos.txt
 NOTIFICAR=1                                   # sino + notificação no fim (lotes de 1 min ou mais)
 NTFY_TOPICO=                                  # tópico do ntfy.sh (ou URL completa) para avisar no celular
+HIST_DO_AMBIENTE=${ARQUIVO_HISTORICO:+1}
 ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
 CONFIG_CRIADO=0; AVISOS_CONFIG=(); N_AJUSTES_CONFIG=0
@@ -339,6 +340,25 @@ idioma_pt() {
     [atu_igual]="o GrabIt já está na versão mais nova"
     [atu_trocado]="GrabIt atualizado"
     [atu_sem_escrita]="Sem permissão para gravar em %s: rode com sudo ou atualize à mão."
+    [vc_titulo]="GrabIt · verificação dos vídeos já baixados"
+    [vc_sem_pasta]="A pasta '%s' não existe."
+    [vc_vazio]="Nenhum vídeo ou áudio para verificar nesta pasta."
+    [vc_arquivos_r]="Arquivos"
+    [vc_arquivos]="%d vídeo(s) e áudio(s)"
+    [vc_dica]="Cada arquivo é decodificado do começo ao fim: pode demorar · Ctrl+C para"
+    [vc_verificando]="verificando"
+    [vc_ilegivel]="o ffprobe não consegue ler o arquivo"
+    [vc_defeito]="com defeito"
+    [vc_incompleto]="incompleto"
+    [vc_incompleto_det]="tem %s de %s"
+    [vc_s_titulo]="Verificação"
+    [vc_s_parcial]="Verificação interrompida"
+    [vc_s_ok]="Perfeitos"
+    [vc_s_defeito]="Com defeito"
+    [vc_s_incompleto]="Incompletos"
+    [vc_sem_link]="%d arquivo(s) com problema não têm o link registrado (só os MKV do GrabIt têm): baixe-os de novo à mão."
+    [vc_terminal]="Para baixar de novo os que têm problema, rode grabit --verificar num terminal."
+    [vc_pergunta]="Baixar de novo os %d com problema? O arquivo atual fica com %s no nome. [S/n]"
     [atu_ytdlp]="atualizar o yt-dlp"
     [atu_sem_ytdlp]="O yt-dlp não está instalado: rode grabit --instalar."
     [atu_pacote]="Este yt-dlp veio do gerenciador de pacotes, que costuma ficar para trás: prefira pipx install \"yt-dlp[default,curl-cffi]\"."
@@ -488,6 +508,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   --config      mostra o grabit.config e os valores em uso
   --instalar    instala o que falta (ffmpeg, yt-dlp, Deno…) e o comando grabit
   --atualizar   atualiza o GrabIt e o yt-dlp
+  --verificar [PASTA]  confere os vídeos já baixados (defeitos e incompletos)
+                e oferece baixar de novo os que tiverem problema
 
 • Links e arquivos de links também podem vir direto no comando (aí o
   links.txt só é lido se você passar -l):
@@ -716,6 +738,25 @@ idioma_en() {
     [atu_igual]="GrabIt is already the newest version"
     [atu_trocado]="GrabIt updated"
     [atu_sem_escrita]="No permission to write to %s: run it with sudo or update by hand."
+    [vc_titulo]="GrabIt · checking the videos already downloaded"
+    [vc_sem_pasta]="Folder '%s' doesn't exist."
+    [vc_vazio]="No video or audio to check in this folder."
+    [vc_arquivos_r]="Files"
+    [vc_arquivos]="%d video(s) and audio file(s)"
+    [vc_dica]="Each file is decoded from start to end: it may take a while · Ctrl+C stops"
+    [vc_verificando]="checking"
+    [vc_ilegivel]="ffprobe can't read the file"
+    [vc_defeito]="defective"
+    [vc_incompleto]="incomplete"
+    [vc_incompleto_det]="has %s of %s"
+    [vc_s_titulo]="Check"
+    [vc_s_parcial]="Check interrupted"
+    [vc_s_ok]="Flawless"
+    [vc_s_defeito]="Defective"
+    [vc_s_incompleto]="Incomplete"
+    [vc_sem_link]="%d file(s) with problems have no recorded link (only GrabIt's MKVs do): download them again by hand."
+    [vc_terminal]="To download the problem ones again, run grabit --check in a terminal."
+    [vc_pergunta]="Download the %d problem one(s) again? The current file keeps %s in its name. [Y/n]"
     [atu_ytdlp]="update yt-dlp"
     [atu_sem_ytdlp]="yt-dlp isn't installed: run grabit --instalar."
     [atu_pacote]="This yt-dlp came from the package manager, which tends to lag behind: prefer pipx install \"yt-dlp[default,curl-cffi]\"."
@@ -865,6 +906,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   --config      show grabit.config and the values in use
   --install     install what's missing (ffmpeg, yt-dlp, Deno…) and the grabit command
   --update      update GrabIt and yt-dlp
+  --check [FOLDER]  check the videos already downloaded (defects and incomplete
+                files) and offer to download the problem ones again
 
 • Links and link files can also go straight on the command line (then
   links.txt is only read if you pass -l):
@@ -1014,6 +1057,7 @@ for a in "$@"; do
     --help|--ajuda) COMANDO=ajuda ;;
     --instalar|--install)  COMANDO=instalar ;;
     --atualizar|--update)  COMANDO=atualizar ;;
+    --verificar|--check)   COMANDO=verificar ;;
     --)             ARGS_CURTOS+=("$a") ;;
     --*)            t opcao_invalida "$a"; erro "$TXT"; uso; exit 2 ;;
     *)              ARGS_CURTOS+=("$a") ;;
@@ -2910,10 +2954,158 @@ atualizar() {
   return 0
 }
 
+# ───────────────────────────── Verificação da coleção ─────────────────────────
+# grabit --verificar [PASTA]: confere os vídeos que já estão na pasta. Cada um é
+# decodificado inteiro (defeitos) e tem a duração comparada com a registrada no
+# info.json que o GrabIt embute nos MKV (incompletos). No fim, oferece baixar de novo
+# os que tiverem problema, pelo link guardado nesse mesmo info.json.
+le_info() {                                   # le_info ARQUIVO → I_DUR I_URL I_CHAVE (do info.json embutido)
+  local j="$TMP/info.json"
+  I_DUR=0; I_URL=""; I_CHAVE=""
+  rm -f -- "$j"
+  ffmpeg -v quiet -y -dump_attachment:m:filename:info.json "$j" -i "$1" >/dev/null 2>&1
+  [[ -s $j ]] || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    IFS=$'\t' read -r I_DUR I_URL I_CHAVE < <(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+k = d.get("extractor_key") or d.get("ie_key") or ""
+print(int(float(d.get("duration") or 0)), d.get("webpage_url") or "",
+      (k.lower() + " " + str(d.get("id"))) if k and d.get("id") else "", sep="\t")' "$j" 2>/dev/null)
+  else                                        # sem Python: ao menos o link
+    I_URL=$(grep -o '"webpage_url": *"[^"]*"' "$j" | tail -n 1 | sed 's/.*: *"//; s/"$//')
+  fi
+  num "$I_DUR"; I_DUR=$NUM
+  return 0
+}
+
+verifica_um() {                               # verifica_um ARQUIVO ROTULO → V_ESTADO (ok|defeito|incompleto) V_DET
+  local arq=$1 k v pos tol erros="$TMP/erros" pct lin
+  V_ESTADO=ok; V_DET=""
+  if ! sonda "$arq"; then V_ESTADO=defeito; V_DET=${T[vc_ilegivel]}; return 0; fi
+  le_info "$arq"
+  while IFS='=' read -r k v; do
+    [[ $k == out_time_us && $v =~ ^[0-9]+$ ]] || continue
+    (( INTERATIVO )) || continue
+    pos=$(( v / 1000000 )); pct=""
+    (( S_DUR > 0 )) && { pct=$(( pos * 100 / S_DUR )); (( pct > 100 )) && pct=100; pct=" ${pct}%"; }
+    corta "$2" $(( COLS - 30 )); lin="  ${ACENTO}${SPIN[$(( pos % ${#SPIN[@]} ))]}${R} ${FMT} ${DIM}· ${T[vc_verificando]}${pct}${R}"
+    printf '\r%s[K%s' "$ESC" "$lin"
+  done < <(ffmpeg -nostdin -hide_banner -v error -i "$arq" -map '0:v?' -map '0:a?' \
+             -f null -progress pipe:1 -nostats - 2>"$erros")
+  (( INTERATIVO )) && printf '\r%s[K' "$ESC"
+  (( CANCELADO )) && return 0
+  if [[ -s $erros ]]; then
+    V_ESTADO=defeito
+    V_DET=$(head -c 300 "$erros" | tr '\r\n' '  ' | sed -E 's/\[[^]]* @ 0x[0-9a-f]+\] //g')
+    return 0
+  fi
+  tol=$(( I_DUR / 50 )); (( tol < 3 )) && tol=3          # 2% ou 3 s de folga
+  if (( I_DUR > 0 && S_DUR + tol < I_DUR )); then
+    V_ESTADO=incompleto
+    fmt_dur "$S_DUR"; v=$FMT; fmt_dur "$I_DUR"; t vc_incompleto_det "$v" "$FMT"; V_DET=$TXT
+  fi
+  return 0
+}
+
+verifica_colecao() {
+  local pasta=$PASTA_SAIDA arqs=() f i=0 n idxs nome hist rel bandeira rc=0 seg
+  local n_ok=0 n_def=0 n_inc=0 ruins=() urls=() chaves=() sem_link=()
+  (( ${#ARGS_LINKS[@]} )) && pasta=${ARGS_LINKS[0]}
+  pasta=${pasta%/}
+  if [[ ! -d $pasta ]]; then t vc_sem_pasta "$pasta"; erro "$TXT"; return 1; fi
+  if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+    t dep_faltando ffmpeg; erro "$TXT"; t dep_instalador "${CIANO}grabit --instalar${R}"; printf '%s\n\n' "$TXT"
+    return 1
+  fi
+  TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || return 1
+  trap 'rm -rf -- "$TMP"; (( INTERATIVO )) && printf "%s" "${ESC}[?25h"' EXIT
+  trap 'CANCELADO=1' INT TERM                 # o ffmpeg recebe o mesmo Ctrl+C e para; o resumo sai
+  atualiza_largura
+  mapfile -d '' arqs < <(find "$pasta" \( -name .parciais -o -path "$pasta/logs" \) -prune -o -type f \
+    \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.m4a' \
+       -o -iname '*.opus' -o -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.wav' \) \
+    ! -name "*${T[sufixo_ruim]}.*" -print0 2>/dev/null | sort -z)
+  n=${#arqs[@]}
+  printf '\n  %s%s%s\n\n' "$NEG" "${T[vc_titulo]}" "$R"
+  kv "${T[s_pasta]}" "$pasta"
+  if (( n == 0 )); then printf '\n  %s\n\n' "${T[vc_vazio]}"; return 0; fi
+  t vc_arquivos "$n"; kv "${T[vc_arquivos_r]}" "$TXT"
+  printf '  %s%s%s\n\n' "$DIM" "${T[vc_dica]}" "$R"
+  (( INTERATIVO )) && printf '%s' "${ESC}[?25l"
+  SECONDS=0
+  for f in "${arqs[@]}"; do
+    i=$(( i + 1 ))
+    printf -v idxs "%0${#n}d/%d" "$i" "$n"
+    nome=${f##*/}; nome=${nome%.*}
+    verifica_um "$f" "$idxs  $nome"
+    (( CANCELADO )) && break
+    montar_meta "$S_H" "$S_FPS" "$S_HDR" "$S_VC" "$S_AC" "$S_CANAIS" "$S_DUR" "$S_TAM"
+    case $V_ESTADO in
+      ok)         n_ok=$(( n_ok + 1 )); linha_resultado "✔" "$VERDE" "$idxs" "$nome" "$META"; printf '%s\n' "$LINHA" ;;
+      *)
+        if [[ $V_ESTADO == defeito ]]; then
+          n_def=$(( n_def + 1 )); linha_resultado "✖" "$VERMELHO" "$idxs" "$nome" "${T[vc_defeito]}"
+        else
+          n_inc=$(( n_inc + 1 )); linha_resultado "⚠" "$AMARELO" "$idxs" "$nome" "${T[vc_incompleto]}"
+        fi
+        corta "$V_DET" $(( COLS - 12 ))
+        printf '%s\n         %s↳ %s%s\n' "$LINHA" "$DIM" "$FMT" "$R"
+        if [[ -n $I_URL ]]; then ruins+=("$f"); urls+=("$I_URL"); chaves+=("$I_CHAVE")
+        else sem_link+=("$nome"); fi ;;
+    esac
+  done
+  (( INTERATIVO )) && printf '%s' "${ESC}[?25h"
+
+  fmt_tempo "$SECONDS"; seg=$FMT
+  if (( CANCELADO )); then printf '\n  %s── %s ──%s\n' "$DIM" "${T[vc_s_parcial]}" "$R"
+  else printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "${T[vc_s_titulo]}" "$R"; fi
+  linha_resumo "✔" "$VERDE"    "${T[vc_s_ok]}"         "${NEG}${n_ok}${R}"
+  linha_resumo "✖" "$VERMELHO" "${T[vc_s_defeito]}"    "${NEG}${n_def}${R}"
+  linha_resumo "⚠" "$AMARELO"  "${T[vc_s_incompleto]}" "${NEG}${n_inc}${R}"
+  linha_resumo "◷" "$DIM"      "${T[s_tempo]}"         "$seg"
+  printf '\n'
+  (( CANCELADO )) && return 130
+  (( ${#sem_link[@]} )) && { t vc_sem_link "${#sem_link[@]}"; aviso "$TXT"; }
+  (( ${#ruins[@]} )) || return $(( n_def + n_inc > 0 ))
+
+  if (( ! INTERATIVO )) || [[ ! -r /dev/tty ]]; then aviso "${T[vc_terminal]}"; return 1; fi
+  t vc_pergunta "${#ruins[@]}" "${T[sufixo_ruim]}"
+  pergunta_sim "$TXT" || { printf '\n'; return 1; }
+
+  # O arquivo ruim fica guardado à parte, o vídeo sai do histórico e o link volta a ser
+  # baixado — com -m ou -d se o arquivo estava nesse tipo de pasta.
+  if [[ -n $HIST_DO_AMBIENTE ]]; then hist=$ARQUIVO_HISTORICO; else hist="$pasta/.grabit-historico.txt"; fi
+  printf '%s\n' "${chaves[@]}" | grep -v '^$' > "$TMP/chaves"
+  if [[ -s $TMP/chaves && -f $hist ]]; then
+    grep -vxF -f "$TMP/chaves" "$hist" > "$TMP/hist"; cat "$TMP/hist" > "$hist"
+  fi
+  local -a normal=() com_d=() com_m=()
+  for i in "${!ruins[@]}"; do
+    f=${ruins[$i]}
+    mv -f -- "$f" "${f%.*}${T[sufixo_ruim]}.${f##*.}"
+    rel=${f#"$pasta"/}
+    if [[ $rel == *"/Season "*/* ]]; then com_m+=("${urls[$i]}")
+    elif [[ $rel == */* ]]; then com_d+=("${urls[$i]}")
+    else normal+=("${urls[$i]}"); fi
+  done
+  trap - INT TERM
+  for bandeira in "" -d -m; do
+    case $bandeira in
+      "") (( ${#normal[@]} )) || continue; set -- "${normal[@]}" ;;
+      -d) (( ${#com_d[@]} )) || continue; set -- "${com_d[@]}" ;;
+      -m) (( ${#com_m[@]} )) || continue; set -- "${com_m[@]}" ;;
+    esac
+    bash "$GRABIT_SCRIPT" "${OPCOES[@]}" ${bandeira:+"$bandeira"} -o "$pasta" "$@" || rc=1
+  done
+  return "$rc"
+}
+
 # ───────────────────────────── Principal ──────────────────────────────────────
 case $COMANDO in
   instalar)  instalar;  exit $? ;;
   atualizar) atualizar; exit $? ;;
+  verificar) verifica_colecao; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM

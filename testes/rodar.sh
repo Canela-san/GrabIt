@@ -210,6 +210,31 @@ espera "-v aprova o vídeo bom" test -f "Verif/curto [curto].mkv"
 espera "-v reprova o estragado e o guarda à parte" test -n "$(find Verif -name '*.com-erros.*')"
 espera "…sem pô-lo no histórico" nao_contem Verif/.grabit-historico.txt "generic ruim"
 
+secao "Verificação da coleção (--verificar)"
+D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
+roda saida1 -L pt -o ./Col "$B/curto.mp4" "$B/longo.mp4" "$B/res/mestre.m3u8"
+python3 - "Col/longo [longo].mkv" <<'EOF2'
+import random, sys
+f = open(sys.argv[1], 'r+b'); t = f.seek(0, 2); r = random.Random(7)
+for off in range(t // 3, t // 3 + 40000, 2500):
+    f.seek(off); f.write(bytes(r.randrange(256) for _ in range(150)))
+EOF2
+# "incompleto": o info.json embutido passa a dizer 60 s, e o arquivo tem 2
+F="Col/curto [curto].mkv"
+ffmpeg -v quiet -y -dump_attachment:m:filename:info.json info.json -i "$F" 2>/dev/null
+python3 -c "import json; d = json.load(open('info.json')); d['duration'] = 60; json.dump(d, open('info.json', 'w'))"
+ffmpeg -v error -y -i "$F" -map 0 -map -0:t -c copy -attach info.json \
+  -metadata:s:t:0 mimetype=application/json -metadata:s:t:0 filename=info.json Col/novo.mkv && mv Col/novo.mkv "$F"
+roda saida2 -L pt --verificar Col
+espera "com problemas, sai com código 1" codigo "$RC" 1
+espera "acha o vídeo com defeito" grep -qE "longo .*com defeito" saida2
+espera "acha o vídeo incompleto" grep -qE "curto .*incompleto" saida2
+espera "…e diz quanto falta" contem saida2 "tem 00:02 de 01:00"
+espera "o vídeo bom passa" grep -qE "✔ .*mestre" saida2
+espera "sem terminal, não baixa nada sozinho" test ! -e "Col/longo [longo].com-erros.mkv"
+roda saida3 -L pt --verificar ./nao-existe
+espera "pasta inexistente sai com código 1" codigo "$RC" 1
+
 # ───────────────────────────── Resultado ───────────────────────────────────────
 printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
 (( ${#FALHAS[@]} == 0 ))
