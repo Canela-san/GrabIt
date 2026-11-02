@@ -24,12 +24,19 @@ PATH_ORIGINAL=$PATH
 # O idioma do sistema é lido antes de forçar o UTF-8 logo abaixo
 LOCALE_ORIGINAL=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
 
-# Garante UTF-8 (necessário para os símbolos e para medir a largura do texto)
-if [[ "$(locale charmap 2>/dev/null)" != "UTF-8" ]]; then
-  for loc in C.UTF-8 en_US.UTF-8 pt_BR.UTF-8; do
-    if [[ "$(LC_ALL=$loc locale charmap 2>/dev/null)" == "UTF-8" ]]; then export LC_ALL=$loc; break; fi
+# Garante UTF-8 (necessário para os símbolos e para medir a largura do texto). Quem
+# responde é o próprio Bash: "é" tem que contar 1 caractere, não 2 bytes. (Perguntar ao
+# programa "locale" engana: com um LANG que não existe no sistema e um LC_CTYPE válido,
+# ele diz UTF-8, mas o Bash fica no locale C.)
+utf8_teste="é"
+if (( ${#utf8_teste} != 1 )); then
+  for loc in C.UTF-8 C.utf8 en_US.UTF-8 pt_BR.UTF-8 UTF-8; do
+    export LC_ALL=$loc 2>/dev/null
+    (( ${#utf8_teste} == 1 )) && break
+    unset LC_ALL
   done
 fi
+unset utf8_teste loc
 export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
 # Modo auxiliar da verificação completa (-v): o yt-dlp chama o GrabIt assim depois de
@@ -294,7 +301,7 @@ idioma_pt() {
     [av_linhas]="Terminal com só %s linhas: limitei a %d download(s) simultâneo(s)."
     [av_linhas2]="     (pedido: %d — aumente a janela para ver todos no painel)"
     [av_ytdlp]="Seu yt-dlp (%s) está desatualizado: os sites mudam o tempo todo."
-    [av_ytdlp2]="     Atualize:  %s   (ou:  %s)"
+    [av_ytdlp2]="     Atualize:  %s"
     [av_curl]="curl_cffi ausente: sites com proteção anti-robô podem falhar."
     [av_curl2]="     Instale com:  %s"
     [av_js]="Sem runtime JavaScript: o YouTube pode falhar ou vir em qualidade menor."
@@ -387,6 +394,8 @@ idioma_pt() {
     [bx_acao]="Ação desconhecida: '%s'."
     [atu_ytdlp]="atualizar o yt-dlp"
     [atu_sem_ytdlp]="O yt-dlp não está instalado: rode grabit --instalar."
+    [cmd_instalar]="grabit --instalar"
+    [cmd_atualizar]="grabit --atualizar"
     [atu_pacote]="Este yt-dlp veio do gerenciador de pacotes, que costuma ficar para trás: prefira pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparando com o vídeo já baixado"
     [r_sem_melhor]="nenhuma versão melhor que %sp"
@@ -720,7 +729,7 @@ idioma_en() {
     [av_linhas]="The terminal has only %s rows: limited to %d simultaneous download(s)."
     [av_linhas2]="     (requested: %d — enlarge the window to see them all)"
     [av_ytdlp]="Your yt-dlp (%s) is outdated: websites change all the time."
-    [av_ytdlp2]="     Update:  %s   (or:  %s)"
+    [av_ytdlp2]="     Update:  %s"
     [av_curl]="curl_cffi is missing: sites with anti-bot protection may fail."
     [av_curl2]="     Install it with:  %s"
     [av_js]="No JavaScript runtime: YouTube may fail or come in lower quality."
@@ -812,7 +821,9 @@ idioma_en() {
     [bx_editado]="Section updated: %d link(s) in it, %d back in the list to download."
     [bx_acao]="Unknown action: '%s'."
     [atu_ytdlp]="update yt-dlp"
-    [atu_sem_ytdlp]="yt-dlp isn't installed: run grabit --instalar."
+    [atu_sem_ytdlp]="yt-dlp isn't installed: run grabit --install."
+    [cmd_instalar]="grabit --install"
+    [cmd_atualizar]="grabit --update"
     [atu_pacote]="This yt-dlp came from the package manager, which tends to lag behind: prefer pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparing with the video already downloaded"
     [r_sem_melhor]="no version better than %sp"
@@ -2428,7 +2439,7 @@ verifica_dependencias() {
   command -v ffmpeg >/dev/null 2>&1 || faltando+=("ffmpeg")
   if (( ${#faltando[@]} )); then
     t dep_faltando "${faltando[*]}"; erro "$TXT"
-    t dep_instalador "${CIANO}grabit --instalar${R}"; printf '%s\n' "$TXT"
+    t dep_instalador "${CIANO}${T[cmd_instalar]}${R}"; printf '%s\n' "$TXT"
     comando_instalar ffmpeg
     printf '\n     %syt-dlp%s  →  pipx install "yt-dlp[default,curl-cffi]"\n' "$CIANO" "$R"
     printf '     %sffmpeg%s  →  %s\n\n' "$CIANO" "$R" "$FMT"
@@ -3072,7 +3083,7 @@ verifica_colecao() {
   pasta=${pasta%/}
   if [[ ! -d $pasta ]]; then t vc_sem_pasta "$pasta"; erro "$TXT"; return 1; fi
   if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-    t dep_faltando ffmpeg; erro "$TXT"; t dep_instalador "${CIANO}grabit --instalar${R}"; printf '%s\n\n' "$TXT"
+    t dep_faltando ffmpeg; erro "$TXT"; t dep_instalador "${CIANO}${T[cmd_instalar]}${R}"; printf '%s\n\n' "$TXT"
     return 1
   fi
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || return 1
@@ -3435,7 +3446,7 @@ fi
 idade_ytdlp
 if (( NUM >= 3 )) || (( ! TEM_JS_RUNTIMES )); then
   t av_ytdlp "${YTDLP_VER:-?}"; aviso "$TXT"
-  t av_ytdlp2 "${CIANO}yt-dlp -U${R}" "${CIANO}pipx upgrade yt-dlp${R}"; printf '%s\n' "$TXT"
+  t av_ytdlp2 "${CIANO}${T[cmd_atualizar]}${R}"; printf '%s\n' "$TXT"
 fi
 if [[ -z $IMPERSONATE ]]; then
   aviso "${T[av_curl]}"
