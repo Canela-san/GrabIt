@@ -151,7 +151,7 @@ cat > "$STUB/yt-dlp" <<'EOF'
 printf '%s\n' "$*" >> "$STUB_LOG"
 case " $* " in
   *" --version "*) echo "${STUB_VER:-2099.01.01}"; exit 0 ;;
-  *" --list-impersonate-targets "*) exit 0 ;;
+  *" --list-impersonate-targets "*) echo "Chrome-133  Macos-15  curl_cffi"; exit 0 ;;
   *" -v "*) echo "[debug] JS runtimes: ${STUB_JS:-none}"; exit 2 ;;
   *" -U "*) echo "yt-dlp is up to date"; exit 0 ;;
 esac
@@ -161,8 +161,52 @@ echo "ERROR: $STUB_ERRO"; exit 1
 EOF
 printf '#!/bin/sh\necho "ffmpeg version 9.9"\n' > "$STUB/ffmpeg"
 printf '#!/bin/sh\nexit 1\n' > "$STUB/ffprobe"
-printf '#!/bin/sh\nexit 1\n' > "$STUB/curl"
-printf '#!/bin/sh\nexit 1\n' > "$STUB/pipx"
+cat > "$STUB/curl" <<'EOF'
+#!/bin/sh
+case "$*" in
+  *deno.land*) [ -z "${STUB_CURL_FALHA:-}" ] || exit 22
+    cat <<'DENO'
+mkdir -p "$HOME/.deno/bin"
+printf '#!/bin/sh\nprintf "deno %%s\\n" "$*" >> "$STUB_LOG"\n' > "$HOME/.deno/bin/deno"
+chmod +x "$HOME/.deno/bin/deno"
+DENO
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+cat > "$STUB/pipx" <<'EOF'
+#!/bin/sh
+printf 'pipx %s\n' "$*" >> "$STUB_LOG"
+case "$*" in
+  "list --short") [ -z "${STUB_SPEC:-}" ] || echo "yt-dlp 2099.01.01"; exit 0 ;;
+  "list --json") printf '{\n  "venvs": {\n    "yt-dlp": {\n      "metadata": {\n        "main_package": {\n          "package_or_url": "%s",\n        }\n      }\n    }\n  }\n}\n' "$STUB_SPEC"; exit 0 ;;
+esac
+[ -n "${STUB_SPEC:-}" ]
+EOF
+# gerenciadores de mentira, um em cada pasta: nenhum teste chega perto do sistema de verdade
+GBREW="$TMP/gbrew"; GAPT="$TMP/gapt"; mkdir -p "$GBREW" "$GAPT" "$TMP/bun"
+cat > "$GBREW/brew" <<'EOF'
+#!/bin/sh
+printf 'brew %s\n' "$*" >> "$STUB_LOG"
+[ "$1" = outdated ] && [ -n "${STUB_VELHO:-}" ] && echo "$STUB_VELHO"
+exit 0
+EOF
+printf '#!/bin/sh\nexit 0\n' > "$GAPT/apt"
+cat > "$GAPT/apt-get" <<'EOF'
+#!/bin/sh
+printf 'apt-get %s\n' "$*" >> "$STUB_LOG"
+case "$*" in
+  "-s --only-upgrade install "*) [ -z "${STUB_VELHO:-}" ] || echo "Inst $STUB_VELHO [1] (2 stub)" ;;
+esac
+exit 0
+EOF
+cat > "$GAPT/sudo" <<'EOF'
+#!/bin/sh
+if [ "$1" = -n ]; then [ -z "${STUB_SENHA:-}" ]; exit; fi
+exec "$@"
+EOF
+printf '#!/bin/sh\nexit 0\n' > "$TMP/bun/bun"
+chmod +x "$GBREW"/* "$GAPT"/* "$TMP/bun/bun"
 printf '#!/bin/sh\nexit 0\n' > "$STUB/node"
 printf '#!/bin/sh\necho "fs 1K used free %%"\necho "x 1 1 ${STUB_DF:-99999999} 1%% /"\n' > "$STUB/df"
 printf '#!/bin/sh\ncat "$CLIP_ARQ"\ntouch "$CLIP_LIDO"\n' > "$STUB/pbpaste"
@@ -170,7 +214,7 @@ printf '#!/bin/sh\n' > "$TMP/sem/grabit"
 chmod +x "$STUB"/* "$TMP/sem/grabit"
 printf 'sem permissão de execução\n' > "$STUB/bun"
 ln -s "$G" "$TMP/com/grabit"
-falso() { HOME="$TMP/casa" PATH="$STUB:$TMP/sem:$PATH" roda "$@"; }
+falso() { HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
 ate() { local i; for (( i = 0; i < 150; i++ )); do "$@" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
 sem_runtime() { ! grep -F -- "$1" "$STUB_LOG" | grep -qF -- '--js-runtimes'; }
 com_runtime() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "--js-runtimes $2"; }
@@ -272,15 +316,90 @@ if command -v git >/dev/null 2>&1; then
   espera "--versao mostra o commit" contem v1 "$(git -C up rev-parse --short HEAD)"
   espera "…e que está em dia" contem v1 "em dia com o repositório"
   espera "…e o runtime em uso" grep -qE 'JavaScript +nenhum' v1
-  echo '# novo' >> up/grabit.sh; gitq -C up commit -qam dois
+  # a versão nova se denuncia quando é relançada
+  { head -n 1 up/grabit.sh; echo '[[ -n ${GRABIT_RELANCADO:-} ]] && echo "RELANCADO-COM-O-NOVO"'; tail -n +2 up/grabit.sh; } > up/novo
+  mv up/novo up/grabit.sh; gitq -C up commit -qam dois
   G="$D/clone/grabit.sh" falso v2 -L pt --versao
   espera "--versao avisa da versão mais nova" contem v2 "há uma versão mais nova"
-  G="$D/clone/grabit.sh" falso a1 -L pt --atualizar
-  espera "--atualizar puxa a versão nova" contem clone/grabit.sh "# novo"
+  G="$D/clone/grabit.sh" STUB_JS="node-22.1.0" falso a1 -L pt --atualizar
+  espera "--atualizar puxa a versão nova" contem clone/grabit.sh "RELANCADO-COM-O-NOVO"
+  espera "…e é ela que termina o trabalho" contem a1 "RELANCADO-COM-O-NOVO"
   cp "$G" alheio/bin/grabit.sh; gitq init -q alheio; gitq -C alheio add bin; gitq -C alheio commit -qm um
-  G="$D/alheio/bin/grabit.sh" falso a2 -L pt --atualizar
+  G="$D/alheio/bin/grabit.sh" STUB_JS="node-22.1.0" falso a2 -L pt --atualizar
   espera "--atualizar não dá git pull em outro repositório" nao_contem a2 "git pull"
 fi
+
+secao "--atualizar cuida de tudo"
+atu() { HOME="$TMP/casa_a" PATH="$STUB:$GBREW:$TMP/sem:$PATH" G="$D/solto/grabit.sh" roda "$@"; }
+mkdir -p "$TMP/casa_a/.deno/bin"; : > "$STUB_LOG"
+STUB_JS="node-18.19.1 (unsupported)" STUB_SPEC="yt-dlp[curl-cffi,default]" STUB_VELHO=ffmpeg atu at1 -L pt --update
+espera "sem runtime aceito, instala o Deno sem perguntar" contem "$STUB_LOG" "brew install deno"
+espera "atualiza o yt-dlp e as dependências dele" contem "$STUB_LOG" "pipx upgrade --include-injected --pip-args=--upgrade-strategy=eager yt-dlp"
+espera "atualiza o FFmpeg, se houver versão nova" contem "$STUB_LOG" "brew upgrade ffmpeg"
+: > "$STUB_LOG"
+printf '#!/bin/sh\nprintf "deno %%s\\n" "$*" >> "$STUB_LOG"\n' > "$TMP/casa_a/.deno/bin/deno"; chmod +x "$TMP/casa_a/.deno/bin/deno"
+GRABIT_RELANCADO=1 STUB_JS="deno-2.9.8" STUB_SPEC="yt-dlp[curl-cffi,default]" atu at2 -L pt --update   # (a cópia solta não tem de onde se baixar)
+espera "com o Deno instalado, atualiza o Deno" contem "$STUB_LOG" "deno upgrade"
+espera "…sem instalar de novo" nao_contem "$STUB_LOG" "brew install"
+espera "com o FFmpeg em dia, não mexe nele" nao_contem "$STUB_LOG" "brew upgrade"
+espera "tudo certo, diz isso" contem at2 "Tudo na versão mais nova."
+: > "$STUB_LOG"
+STUB_JS="deno-2.9.8" STUB_SPEC="yt-dlp" atu at3 -L pt --update
+espera "yt-dlp sem os extras é reinstalado com eles" contem "$STUB_LOG" "pipx install --force yt-dlp[default,curl-cffi]"
+: > "$STUB_LOG"
+STUB_JS="deno-2.9.8" STUB_SPEC="git+https://exemplo.invalid/yt-dlp" atu at4 -L pt --update
+espera "yt-dlp instalado de um link fica como está" nao_contem "$STUB_LOG" "install --force"
+: > "$STUB_LOG"
+STUB_JS="bun-1.4.2" HOME="$TMP/casa_b" PATH="$TMP/bun:$STUB:$GBREW:$TMP/sem:$PATH" G="$D/solto/grabit.sh" roda at5 -L pt --update
+espera "só com o Bun, que pode ser novo demais, instala o Deno" contem "$STUB_LOG" "brew install deno"
+if ! command -v brew >/dev/null 2>&1; then     # num Mac, o brew de verdade viria antes do apt de mentira
+  aptf() { HOME="$TMP/casa_c" PATH="$STUB:$GAPT:$TMP/sem:$PATH" G="$D/solto/grabit.sh" roda "$@"; }
+  mkdir -p "$TMP/casa_c"
+  STUB_JS="node-18.19.1 (unsupported)" STUB_CURL_FALHA=1 aptf ap1 -L pt --update
+  espera "fora do brew, usa o instalador oficial; download que falha é falha" sh -c 'grep -A1 "instalar o Deno" "$1" | grep -q falhou' _ ap1
+  : > "$STUB_LOG"
+  STUB_JS="node-18.19.1 (unsupported)" STUB_VELHO=ffmpeg aptf ap2 -L pt --update
+  espera "…e o download bom instala o Deno" test -x "$TMP/casa_c/.deno/bin/deno"
+  espera "…sem atualizar o que acabou de chegar" nao_contem "$STUB_LOG" "deno upgrade"
+  espera "apt: atualiza o FFmpeg com versão nova" contem "$STUB_LOG" "apt-get install -y --only-upgrade ffmpeg"
+  if (( EUID != 0 )); then
+    : > "$STUB_LOG"
+    STUB_JS="deno-2.9.8" STUB_VELHO=ffmpeg STUB_SENHA=1 aptf ap3 -L pt --update </dev/null
+    espera "sem terminal para a senha do sudo, avisa e não trava" contem ap3 "pede a senha do sudo"
+    espera "…sem tentar instalar" nao_contem "$STUB_LOG" "--only-upgrade ffmpeg"
+  fi
+fi
+
+secao "Comandos nas duas línguas, com ou sem os traços"
+formas() {                                    # formas TEXTO PALAVRA... [-- ARGS...]: cada forma mostra o TEXTO
+  local texto=$1 p f nomes=() args=()
+  shift
+  while (( $# )) && [[ $1 != -- ]]; do nomes+=("$1"); shift; done
+  (( $# )) && { shift; args=("$@"); }
+  for p in "${nomes[@]}"; do
+    for f in "$p" "--$p"; do
+      G="$D/solto/grabit.sh" STUB_JS="node-22.1.0" falso cmd -L pt "$f" "${args[@]}"
+      espera "grabit $f" contem cmd "$texto"
+    done
+  done
+}
+formas "grabit.config" config
+formas "Uso:  grabit" ajuda help
+formas "instalação das dependências" instalar install
+formas "GrabIt · atualização" atualizar update
+formas "não existe" verificar check -- "$TMP/nao-existe"
+formas "seção BAIXADOS" baixados downloaded -- -l "$L"
+formas "cópia sem Git" versao versão version
+falso w1 -L pt -- update
+espera "depois de -- a palavra não é comando" contem w1 "Nenhum link válido"
+falso w2 -L pt -l update --config
+espera "valor de opção não é comando" grep -qE 'ARQUIVO_LINKS +update' w2
+: > "$STUB_LOG"
+falso w3 -L pt http://a.invalid/w3 update
+espera "só a primeira palavra pode ser comando" nao_contem w3 "atualização"
+echo http://a.invalid/w4 > update
+falso w4 -L pt ./update
+espera "arquivo com nome de comando vale com ./" contem "$STUB_LOG" "a.invalid/w4"
 
 if (( RAPIDO )); then
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
@@ -295,6 +414,9 @@ done
 
 secao "Contrato com o yt-dlp"
 espera "o yt-dlp informa os runtimes no formato esperado" sh -c "yt-dlp -v --ignore-config 2>&1 | grep -qE '^\[debug\] JS runtimes: '"
+if command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q '^yt-dlp '; then
+  espera "o pipx informa como o yt-dlp foi instalado" sh -c "pipx list --json | awk '/\"yt-dlp\": \{/ {y=1} y && /\"main_package\"/ {m=1} m && /\"package_or_url\"/ {print; exit}' | grep -q '\": \"yt-dlp'"
+fi
 
 secao "Preparando os vídeos de teste"
 W="$TMP/www"; mkdir -p "$W/res" "$W/pagina"

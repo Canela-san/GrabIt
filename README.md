@@ -45,11 +45,15 @@ bash grabit.sh --instalar
 
 O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer coisa: instala o FFmpeg e o yt-dlp (com o `curl-cffi`, para imitar um navegador quando um site bloqueia downloads automáticos) pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, um runtime JavaScript se não houver nenhum que o yt-dlp aceite (o YouTube exige um para liberar as melhores resoluções) e cria o comando `grabit` em `~/.local/bin`. Uma confirmação só, e nada acontece se você responder não.
 
-Para atualizar o GrabIt e o yt-dlp de uma vez:
+Para deixar tudo na versão mais nova de uma vez:
 
 ```bash
-grabit --atualizar
+grabit update
 ```
+
+Ele atualiza o GrabIt, o yt-dlp com as dependências dele, o Deno e o FFmpeg (este pelo gerenciador do sistema, pedindo a senha só se houver versão nova) e instala o que estiver faltando, sem perguntar.
+
+Todos os comandos valem em português e inglês, com ou sem os traços: `grabit update`, `grabit atualizar`, `grabit --update` e `grabit --atualizar` são a mesma coisa. O mesmo vale para `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `downloaded`/`baixados` e `help`/`ajuda`. Só um arquivo de links com o nome de um comando precisa de `./` na frente (`grabit ./update`).
 
 Para ver a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript):
 

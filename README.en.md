@@ -45,11 +45,15 @@ bash grabit.sh --install
 
 `--install` checks what's missing and shows the plan before doing anything: it installs FFmpeg and yt-dlp (with `curl-cffi`, to impersonate a browser when a site blocks automated downloads) through your system's package manager (apt, dnf, pacman, zypper, apk or Homebrew) and `pipx`, a JavaScript runtime if there's none that yt-dlp accepts (YouTube requires one to unlock the best resolutions), and creates the `grabit` command in `~/.local/bin`. A single confirmation, and nothing happens if you answer no.
 
-To update GrabIt and yt-dlp in one go:
+To put everything on the newest version in one go:
 
 ```bash
-grabit --update
+grabit update
 ```
+
+It updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter through your system's package manager, asking for the password only if there's a new version) and installs whatever is missing, without asking.
+
+All commands work in English and Portuguese, with or without the dashes: `grabit update`, `grabit atualizar`, `grabit --update` and `grabit --atualizar` are the same thing. The same goes for `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `downloaded`/`baixados` and `help`/`ajuda`. Only a link file named like a command needs `./` in front of it (`grabit ./update`).
 
 To see the installed version, whether there's a newer one and what GrabIt is using (yt-dlp, FFmpeg, JavaScript runtime):
 
