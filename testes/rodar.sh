@@ -471,6 +471,31 @@ EOF
   STUB_ERRO="HTTP Error 404" falso c6 -L pt curl copiado.txt
   espera "link copiado que falha não vai para a lista de falhas" test ! -e links_falhos.txt
   espera "…e avisa que ele costuma expirar" contem c6 "costuma expirar"
+  # como o navegador manda de verdade quando o vídeo está em outro domínio: só a origem no Referer
+  : > "$STUB_LOG"
+  falso c7 -L pt curl 'http://video.c.invalid/pt-BR/701/master.m3u8' --compressed -H 'Referer: http://c.invalid/' -H 'Origin: http://c.invalid' -L
+  espera "o comando colado depois de grabit funciona" codigo "$RC" 0
+  espera "…e leva os cabeçalhos dele" tentou video.c.invalid "--add-header Origin:http://c.invalid"
+  espera "…sem tomar o -L dele pelo idioma" nao_contem c7 "Idioma desconhecido"
+  espera "Referer só com a origem: o nome vem do caminho do vídeo" contem "$STUB_LOG" "c.invalid - pt-BR 701 ["
+  : > "$STUB_LOG"
+  falso c8 -L pt -o ./Pasta --curl 'http://c.invalid/filme.mp4' -H 'Referer: http://c.invalid/'
+  espera "as opções do GrabIt vêm antes de curl" tentou c.invalid/filme.mp4 "-P ./Pasta"
+  espera "…e o nome aproveita o arquivo, se ele disser algo" contem "$STUB_LOG" "c.invalid - filme ["
+  : > "$CLIP_ARQ"
+  falso c9 -L pt curl
+  espera "área de transferência sem cURL explica o que fazer" contem c9 "colar o comando depois de grabit"
+  if ! command -v wl-paste >/dev/null 2>&1; then
+    WAYLAND_DISPLAY=wayland-9 falso c10 -L pt curl
+    espera "no Wayland sem wl-paste, diz o que falta" contem c10 "precisa do wl-clipboard"
+    falso c11 -L pt curl
+    espera "…e fora do Wayland, não" nao_contem c11 "wl-clipboard"
+    if ! command -v brew >/dev/null 2>&1; then
+      : > "$STUB_LOG"
+      D="$TMP/repos" WAYLAND_DISPLAY=wayland-9 STUB_JS="deno-2.9.8" aptf ap4 -L pt --update
+      espera "--atualizar instala o wl-clipboard no Wayland, mesmo com o xclip" contem "$STUB_LOG" "apt-get install -y wl-clipboard"
+    fi
+  fi
 fi
 
 if (( RAPIDO )); then

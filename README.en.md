@@ -197,15 +197,21 @@ grabit -b firefox -A "Mozilla/5.0 (…)" LINK
 **Copy the video's request.** It also works when yt-dlp doesn't recognize the page:
 
 1. Open the page and press play.
-2. Hit <kbd>F12</kbd>, go to the **Network** tab and filter by `m3u8` (or `mp4`).
+2. Hit <kbd>F12</kbd>, go to the **Network** tab and filter by `m3u8` (or `mp4`). If there's more than one, choose the `master`: it points to both the video and the audio.
 3. Right-click the request and choose **Copy as cURL**.
-4. Run the command below, which reads the clipboard (or `grabit curl FILE`, or `grabit curl -` to paste):
+4. Run the command below, which reads the clipboard:
 
 ```bash
 grabit curl
 ```
 
-The copied command is only read, never executed. The file is named after the page the video came from. These links tend to expire: if it fails, copy it again. DRM-protected videos aren't downloaded.
+If you prefer, paste the copied command after `grabit` (GrabIt's options go before `curl`) or use `grabit curl FILE`:
+
+```bash
+grabit -o ~/Videos curl 'https://…/master.m3u8' -H 'Referer: https://…'
+```
+
+The copied command is only read, never executed. The file name comes from the page or, if the browser doesn't tell it, from the video's path. These links tend to expire: if it fails, copy it again. DRM-protected videos aren't downloaded.
 
 ## Configuration
 

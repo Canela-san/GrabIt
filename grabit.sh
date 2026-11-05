@@ -191,6 +191,18 @@ carrega_config() {
 carrega_config
 for k in "${!DO_AMBIENTE[@]}"; do printf -v "$k" '%s' "${DO_AMBIENTE[$k]}"; ORIGEM[$k]=ambiente; done
 
+# "grabit curl 'https://…' -H …": o comando copiado do navegador, colado depois de "grabit".
+# O que vem depois do link é dele, não do GrabIt (um -L ali não é o idioma, por exemplo).
+CURL_ARGS=()
+for (( i = 1; i <= $#; i++ )); do
+  a=${!i}; j=$(( i + 1 ))
+  if [[ ( $a == curl || $a == --curl ) && ${!j:-} == http?(s)://* ]]; then
+    CURL_ARGS=("${@:j}")
+    set -- "${@:1:i}"
+    break
+  fi
+done
+
 # ───────────────────────────── Idioma ─────────────────────────────────────────
 # -L é lido antes do getopts, para que até os erros nas opções saiam no idioma certo.
 # Percorre as opções como o getopts faria (aceita -L en, -Len e -sL en).
@@ -492,9 +504,11 @@ idioma_pt() {
     [s_nav_tit]="Se o vídeo toca no seu navegador, dá para baixá-lo:"
     [s_nav_b]="     · Passe pela verificação no navegador e use a sessão dele:  %s"
     [s_nav_b2]="       (se ainda recusar, acrescente -A com o User Agent do navegador)"
-    [s_nav_c]="     · Ou dê play, aperte F12, aba Rede, filtre por m3u8 ou mp4, clique com o direito no pedido, Copiar como cURL, e rode:  %s"
+    [s_nav_c]="     · Ou dê play, aperte F12, aba Rede, filtre por m3u8 (o master, se houver) ou mp4, clique com o direito no pedido, Copiar como cURL, e rode:  %s"
     [curl_sem_py]="grabit curl precisa do python3 para ler o comando copiado."
     [curl_invalido]="Isso não é um comando cURL com um link. Na aba Rede do navegador (F12), clique com o direito no pedido do vídeo e escolha Copiar como cURL."
+    [curl_colar]="     Também dá para colar o comando depois de grabit:  grabit curl 'https://…' -H …"
+    [clip_wayland]="No Wayland, ler a área de transferência precisa do wl-clipboard. Para instalar:  %s"
     [curl_sem_clip]="Não consegui ler a área de transferência. Guarde o comando num arquivo e rode:  %s"
     [curl_sem_arquivo]="O arquivo '%s' não foi encontrado."
     [kv_curl]="cURL do navegador · %d cabeçalho(s), %d cookie(s) · arquivo: %s"
@@ -581,7 +595,8 @@ que grabit --atualizar):
                      e instala o que faltar
   versao, version    mostra a versão instalada, se há outra mais nova e o que o GrabIt usa
   curl [ARQUIVO]     baixa o que toca no navegador, pelo "Copiar como cURL" da aba Rede (F12):
-                     lê a área de transferência, um arquivo ou, com -, a entrada padrão
+                     lê a área de transferência, um arquivo ou, com -, a entrada padrão;
+                     também dá para colar o comando copiado depois de grabit
   verificar, check [PASTA]
                      confere os vídeos já baixados (defeitos e incompletos)
                      e oferece baixar de novo os que tiverem problema
@@ -967,9 +982,11 @@ idioma_en() {
     [s_nav_tit]="If the video plays in your browser, you can download it:"
     [s_nav_b]="     · Pass the check in the browser and use its session:  %s"
     [s_nav_b2]="       (if it still refuses, add -A with the browser's User Agent)"
-    [s_nav_c]="     · Or press play, hit F12, Network tab, filter by m3u8 or mp4, right-click the request, Copy as cURL, and run:  %s"
+    [s_nav_c]="     · Or press play, hit F12, Network tab, filter by m3u8 (the master, if there is one) or mp4, right-click the request, Copy as cURL, and run:  %s"
     [curl_sem_py]="grabit curl needs python3 to read the copied command."
     [curl_invalido]="That isn't a cURL command with a link. In the browser's Network tab (F12), right-click the video request and choose Copy as cURL."
+    [curl_colar]="     You can also paste the command after grabit:  grabit curl 'https://…' -H …"
+    [clip_wayland]="On Wayland, reading the clipboard needs wl-clipboard. To install it:  %s"
     [curl_sem_clip]="I couldn't read the clipboard. Save the command to a file and run:  %s"
     [curl_sem_arquivo]="The file '%s' wasn't found."
     [kv_curl]="browser cURL · %d header(s), %d cookie(s) · file: %s"
@@ -1056,7 +1073,8 @@ the same as grabit --atualizar):
                      and install what's missing
   version, versao    show the installed version, whether there's a newer one and what GrabIt uses
   curl [FILE]        download what plays in the browser, from "Copy as cURL" in the Network tab
-                     (F12): reads the clipboard, a file or, with -, standard input
+                     (F12): reads the clipboard, a file or, with -, standard input;
+                     you can also paste the copied command after grabit
   check, verificar [FOLDER]
                      check the videos already downloaded (defects and incomplete files)
                      and offer to download the problem ones again
@@ -2376,6 +2394,13 @@ detecta_clip() {                              # → CLIP_CMD: o comando que lê 
   else return 1; fi
 }
 
+# Sem o wl-paste no Wayland, o que se copia no navegador não chega ao xclip nem ao xsel:
+# a leitura vem vazia, sem erro nenhum
+aviso_wayland() {
+  [[ -n ${WAYLAND_DISPLAY:-} ]] && ! command -v wl-paste >/dev/null 2>&1 || return 0
+  comando_grabit "${T[cmd_instalar]}"; t clip_wayland "${CIANO}${FMT}${R}"; aviso "$TXT"
+}
+
 captura_clip() {
   local txt linha p novos=()
   txt=$("${CLIP_CMD[@]}" 2>/dev/null | head -c 200000)
@@ -3037,7 +3062,8 @@ le_curl() {
   local origem=${ARGS_LINKS[0]:-} txt campos=() url h nome valor pagina="" cookies="" par pares=() arq
   local caminho site resto palavras=() ck
   if ! command -v python3 >/dev/null 2>&1; then erro "${T[curl_sem_py]}"; exit 1; fi
-  if [[ $origem == - ]]; then txt=$(cat)
+  if (( ${#CURL_ARGS[@]} )); then txt=""
+  elif [[ $origem == - ]]; then txt=$(cat)
   elif [[ -n $origem ]]; then
     [[ -f $origem ]] || { t curl_sem_arquivo "$origem"; erro "$TXT"; exit 1; }
     txt=$(<"$origem")
@@ -3047,10 +3073,13 @@ le_curl() {
   fi
   mapfile -d '' campos < <(python3 -I -c '
 import shlex, sys
-try:
-    a = shlex.split(sys.stdin.read().replace("\\\n", " "))
-except ValueError:
-    sys.exit(1)
+if len(sys.argv) > 1:
+    a = ["curl"] + sys.argv[1:]
+else:
+    try:
+        a = shlex.split(sys.stdin.read().replace("\\\n", " "))
+    except ValueError:
+        sys.exit(1)
 if not a or a[0] != "curl":
     sys.exit(1)
 com_valor = {"-H", "--header", "-b", "--cookie", "-A", "--user-agent", "-e", "--referer", "--url",
@@ -3077,9 +3106,13 @@ while i < len(a):
         url = o
 if not url.startswith(("http://", "https://")):
     sys.exit(1)
-sys.stdout.write("\0".join([url] + cab) + "\0")' <<<"$txt" 2>/dev/null)
+sys.stdout.write("\0".join([url] + cab) + "\0")' "${CURL_ARGS[@]}" <<<"$txt" 2>/dev/null)
   url=${campos[0]:-}
-  if [[ -z $url ]]; then erro "${T[curl_invalido]}"; exit 2; fi
+  if [[ -z $url ]]; then
+    [[ -z $origem ]] && aviso_wayland
+    erro "${T[curl_invalido]}"; printf '%s\n\n' "${T[curl_colar]}"
+    exit 2
+  fi
 
   # Vão os cabeçalhos que dizem quem pede; os que descrevem aquele pedido (Range…) ficam
   for h in "${campos[@]:1}"; do
@@ -3108,11 +3141,21 @@ sys.stdout.write("\0".join([url] + cab) + "\0")' <<<"$txt" 2>/dev/null)
   fi
 
   # O link do vídeo costuma se chamar só "master.m3u8": o nome vem da página, e o [número] a
-  # separa das outras. Sem histórico, ou o próximo "master" pareceria já baixado.
+  # separa das outras. Sem histórico, ou o próximo "master" pareceria já baixado. Vindo de
+  # outro domínio, o Referer costuma trazer só "https://site/": aí vale o caminho do vídeo.
   pagina=${pagina:-$url}
   caminho=${pagina#*://}; caminho=${caminho%%#*}
   site=${caminho%%[/?]*}; resto=${caminho#"$site"}
   site=${site##*@}; site=${site%%:*}; site=${site#www.}
+  if [[ -z ${resto//[\/?]/} ]]; then
+    resto=${url#*://}; resto=${resto%%[?#]*}
+    if [[ $resto == */* ]]; then resto=/${resto#*/}; else resto=""; fi
+    h=${resto##*/}; h=${h%.*}
+    case ${h,,} in
+      master|index|main|playlist|manifest|chunklist|stream|video) resto=${resto%/*} ;;
+      *) resto=${resto%/*}/$h ;;
+    esac
+  fi
   read -ra palavras <<<"${resto//[\/?&=_+%.]/ }"
   ROTULO_CURL="$site${palavras[*]:+ - ${palavras[*]}}"; ROTULO_CURL=${ROTULO_CURL:0:150}
   ck=$(printf '%s %s' "$pagina" "${url%%\?*}" | cksum); ck=${ck%% *}
@@ -3272,10 +3315,11 @@ monta_plano() {
       *) command -v unzip >/dev/null 2>&1 || SISTEMA+=(unzip); ETAPAS+=(deno) ;;
     esac
   fi
-  if [[ $GER != brew && ( -n ${WAYLAND_DISPLAY:-} || -n ${DISPLAY:-} ) ]] &&
-     ! command -v wl-paste >/dev/null 2>&1 && ! command -v xclip >/dev/null 2>&1 && ! command -v xsel >/dev/null 2>&1; then
-    if [[ -n ${WAYLAND_DISPLAY:-} ]]; then clip=wl-clipboard; else clip=xclip; fi
-    SISTEMA+=("$clip")
+  # No Wayland, só o wl-paste serve: xclip e xsel enxergam apenas o que programas X copiaram
+  if [[ $GER != brew ]] && ! command -v wl-paste >/dev/null 2>&1; then
+    if [[ -n ${WAYLAND_DISPLAY:-} ]]; then clip=wl-clipboard
+    elif [[ -n ${DISPLAY:-} ]] && ! command -v xclip >/dev/null 2>&1 && ! command -v xsel >/dev/null 2>&1; then clip=xclip; fi
+    [[ -n $clip ]] && SISTEMA+=("$clip")
   fi
   command -v grabit >/dev/null 2>&1 || [[ -e $ALVO_GRABIT ]] || ETAPAS+=(comando)
 
@@ -3841,6 +3885,7 @@ verifica_dependencias
 if (( CAPTURA )) && ! detecta_clip; then
   erro "${T[clip_sem]}"; printf '%s\n\n' "${T[clip_sem2]}"; exit 1
 fi
+(( CAPTURA )) && aviso_wayland
 ler_links
 
 mkdir -p "$PASTA_SAIDA" || { t pasta_falhou "$PASTA_SAIDA"; erro "$TXT"; exit 1; }
