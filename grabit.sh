@@ -196,7 +196,7 @@ for (( i = 1; i <= $#; i++ )); do
   a=${!i}
   [[ $a == -- ]] && break
   [[ $a == --* ]] && continue                   # --config, --help…
-  [[ $a == -?* ]] || break                      # primeiro link/arquivo: fim das opções
+  [[ $a == -?* ]] || continue                   # link ou arquivo: pode haver opções depois
   for (( c = 1; c < ${#a}; c++ )); do
     case ${a:c:1} in
       L)         j=$(( i + 1 )); IDIOMA=${a:c+1}; [[ -z $IDIOMA ]] && { IDIOMA=${!j:-}; i=$j; }
@@ -305,7 +305,18 @@ idioma_pt() {
     [av_curl]="curl_cffi ausente: sites com proteção anti-robô podem falhar."
     [av_curl2]="     Instale com:  %s"
     [av_js]="Sem runtime JavaScript: o YouTube pode falhar ou vir em qualidade menor."
-    [av_js2]="     Instale o Deno (https://deno.com) e mantenha o yt-dlp atualizado."
+    [av_js_velho]="O yt-dlp não aceita o %s (versão antiga demais): o YouTube pode falhar ou vir em qualidade menor."
+    [av_js2]="     Para instalar o Deno:  %s"
+    [js_velho]="%s (antigo demais para o yt-dlp)"
+    [s_js_dica]="                       O runtime mais garantido é o Deno: https://deno.com"
+    [av_disco]="Só %s livres em %s: os vídeos podem não caber."
+    [d_disco_para]="Disco cheio: nenhum download novo vai começar; os que faltam vão para a lista de falhas."
+    [f_antes]=" (mais %d de execuções anteriores)"
+    [kv_situacao]="Situação"
+    [ver_em_dia]="em dia com o repositório"
+    [ver_nova]="há uma versão mais nova"
+    [ver_sem_net]="não deu para conferir (sem conexão?)"
+    [ver_sem_git]="cópia sem Git"
     [dica_ctrlc]="Ctrl+C cancela · o que estiver pela metade recomeça do zero"
     [dica_teclas]="p pausa · q termina depois dos atuais · + e - mudam quantos baixam ao mesmo tempo"
     [k_pausado]="pausado · p continua"
@@ -394,8 +405,8 @@ idioma_pt() {
     [bx_acao]="Ação desconhecida: '%s'."
     [atu_ytdlp]="atualizar o yt-dlp"
     [atu_sem_ytdlp]="O yt-dlp não está instalado: rode grabit --instalar."
-    [cmd_instalar]="grabit --instalar"
-    [cmd_atualizar]="grabit --atualizar"
+    [cmd_instalar]="--instalar"
+    [cmd_atualizar]="--atualizar"
     [atu_pacote]="Este yt-dlp veio do gerenciador de pacotes, que costuma ficar para trás: prefira pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparando com o vídeo já baixado"
     [r_sem_melhor]="nenhuma versão melhor que %sp"
@@ -543,14 +554,15 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   --config      mostra o grabit.config e os valores em uso
   --instalar    instala o que falta (ffmpeg, yt-dlp, Deno…) e o comando grabit
   --atualizar   atualiza o GrabIt e o yt-dlp
+  --versao      mostra a versão instalada, se há outra mais nova e o que o GrabIt usa
   --verificar [PASTA]  confere os vídeos já baixados (defeitos e incompletos)
                 e oferece baixar de novo os que tiverem problema
   --baixados [AÇÃO]  lista a seção BAIXADOS; ações: editar, voltar N…,
                 marcar LINK…, limpar
 
 • Links e arquivos de links também podem vir direto no comando (aí o
-  links.txt só é lido se você passar -l):
-      grabit https://youtu.be/xxxx outra_lista.txt
+  links.txt só é lido se você passar -l), e as opções valem antes ou depois deles:
+      grabit https://youtu.be/xxxx outra_lista.txt -j 4
 • Nos arquivos: linhas vazias e comentários (# …, inclusive no fim da linha)
   são ignorados, assim como texto em volta do link; repetidos são descartados.
 • Links baixados com sucesso vão para a seção "# ===== BAIXADOS =====" no fim
@@ -733,7 +745,18 @@ idioma_en() {
     [av_curl]="curl_cffi is missing: sites with anti-bot protection may fail."
     [av_curl2]="     Install it with:  %s"
     [av_js]="No JavaScript runtime: YouTube may fail or come in lower quality."
-    [av_js2]="     Install Deno (https://deno.com) and keep yt-dlp up to date."
+    [av_js_velho]="yt-dlp doesn't accept %s (version too old): YouTube may fail or come in lower quality."
+    [av_js2]="     To install Deno:  %s"
+    [js_velho]="%s (too old for yt-dlp)"
+    [s_js_dica]="                       The safest runtime is Deno: https://deno.com"
+    [av_disco]="Only %s free in %s: the videos may not fit."
+    [d_disco_para]="Disk full: no new download will start; the rest go to the failed list."
+    [f_antes]=" (plus %d from earlier runs)"
+    [kv_situacao]="Status"
+    [ver_em_dia]="up to date with the repository"
+    [ver_nova]="there's a newer version"
+    [ver_sem_net]="couldn't check (no connection?)"
+    [ver_sem_git]="copy without Git"
     [dica_ctrlc]="Ctrl+C cancels · anything half-done starts over from scratch"
     [dica_teclas]="p pauses · q stops after the current ones · + and - change how many run at once"
     [k_pausado]="paused · p resumes"
@@ -822,8 +845,8 @@ idioma_en() {
     [bx_acao]="Unknown action: '%s'."
     [atu_ytdlp]="update yt-dlp"
     [atu_sem_ytdlp]="yt-dlp isn't installed: run grabit --install."
-    [cmd_instalar]="grabit --install"
-    [cmd_atualizar]="grabit --update"
+    [cmd_instalar]="--install"
+    [cmd_atualizar]="--update"
     [atu_pacote]="This yt-dlp came from the package manager, which tends to lag behind: prefer pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparing with the video already downloaded"
     [r_sem_melhor]="no version better than %sp"
@@ -971,14 +994,15 @@ Usage:  grabit [options] [LINK or FILE ...]
   --config      show grabit.config and the values in use
   --install     install what's missing (ffmpeg, yt-dlp, Deno…) and the grabit command
   --update      update GrabIt and yt-dlp
+  --version     show the installed version, whether there's a newer one and what GrabIt uses
   --check [FOLDER]  check the videos already downloaded (defects and incomplete
                 files) and offer to download the problem ones again
   --downloaded [ACTION]  list the DOWNLOADED section; actions: edit, back N…,
                 add LINK…, clear
 
 • Links and link files can also go straight on the command line (then
-  links.txt is only read if you pass -l):
-      grabit https://youtu.be/xxxx another_list.txt
+  links.txt is only read if you pass -l), and options work before or after them:
+      grabit https://youtu.be/xxxx another_list.txt -j 4
 • In the files: empty lines and comments (# …, also at the end of a line)
   are ignored, as is any text around the link; duplicates are dropped.
 • Successfully downloaded links move to the "# ===== DOWNLOADED =====" section
@@ -1126,6 +1150,7 @@ for a in "$@"; do
     --atualizar|--update)  COMANDO=atualizar ;;
     --verificar|--check)   COMANDO=verificar ;;
     --baixados|--downloaded) COMANDO=baixados ;;
+    --versao|--version)    COMANDO=versao ;;
     --)             ARGS_CURTOS+=("$a") ;;
     --*)            t opcao_invalida "$a"; erro "$TXT"; uso; exit 2 ;;
     *)              ARGS_CURTOS+=("$a") ;;
@@ -1133,37 +1158,51 @@ for a in "$@"; do
 done
 set -- "${ARGS_CURTOS[@]}"
 
-OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTURA=0; UPGRADE=0
-while getopts ":l:o:j:c:b:r:L:pausivxdmfCUFh" op; do
-  case $op in
-    l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
-    o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
-    j) DOWNLOADS_SIMULTANEOS=$OPTARG;  ORIGEM[DOWNLOADS_SIMULTANEOS]=opção ;;
-    c) CONEXOES_POR_VIDEO=$OPTARG;     ORIGEM[CONEXOES_POR_VIDEO]=opção ;;
-    b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
-    r) RESOLUCAO_MAXIMA=$OPTARG;       ORIGEM[RESOLUCAO_MAXIMA]=opção ;;
-    F) FORCAR=1 ;;
-    L) ;;                              # já tratado acima, antes de carregar os textos
-    p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
-    u) SO_PRINCIPAL=1;                 ORIGEM[SO_PRINCIPAL]=opção ;;
-    a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
-    s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
-    i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
-    v) VERIFICAR=1;                    ORIGEM[VERIFICAR]=opção ;;
-    x) SO_AUDIO=1;                     ORIGEM[SO_AUDIO]=opção ;;
-    d) SUBPASTAS=1 ;;                  # só pela opção, de propósito: nada de pastas sem pedir
-    m) MIDIA=1 ;;                      # idem
-    f) FILA_VIVA=1 ;;                  # idem: o GrabIt só fica aberto esperando links se pedido
-    C) CAPTURA=1; FILA_VIVA=1 ;;       # idem: só lê a área de transferência se pedido, e só aberto
-    U) UPGRADE=1 ;;
-    h) COMANDO=ajuda ;;
-    :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
-    *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
-  esac
-  OPCOES+=("-$op" ${OPTARG+"$OPTARG"})        # guardadas para sugerir o comando de nova tentativa
+OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTURA=0; UPGRADE=0; ARGS_LINKS=()
+# As opções valem em qualquer posição: "grabit LINK -x" é o mesmo que "grabit -x LINK".
+# O getopts para no primeiro link; aqui ele o guarda e continua. Depois de "--", só há links.
+while (( $# )); do
+  OPTIND=1
+  while getopts ":l:o:j:c:b:r:L:pausivxdmfCUFh" op; do
+    case $op in
+      l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
+      o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
+      j) DOWNLOADS_SIMULTANEOS=$OPTARG;  ORIGEM[DOWNLOADS_SIMULTANEOS]=opção ;;
+      c) CONEXOES_POR_VIDEO=$OPTARG;     ORIGEM[CONEXOES_POR_VIDEO]=opção ;;
+      b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
+      r) RESOLUCAO_MAXIMA=$OPTARG;       ORIGEM[RESOLUCAO_MAXIMA]=opção ;;
+      F) FORCAR=1 ;;
+      L) ;;                              # já tratado acima, antes de carregar os textos
+      p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
+      u) SO_PRINCIPAL=1;                 ORIGEM[SO_PRINCIPAL]=opção ;;
+      a) LEGENDAS_AUTOMATICAS=1;         ORIGEM[LEGENDAS_AUTOMATICAS]=opção ;;
+      s) SPONSORBLOCK=1;                 ORIGEM[SPONSORBLOCK]=opção ;;
+      i) USAR_HISTORICO=0;               ORIGEM[USAR_HISTORICO]=opção ;;
+      v) VERIFICAR=1;                    ORIGEM[VERIFICAR]=opção ;;
+      x) SO_AUDIO=1;                     ORIGEM[SO_AUDIO]=opção ;;
+      d) SUBPASTAS=1 ;;                  # só pela opção, de propósito: nada de pastas sem pedir
+      m) MIDIA=1 ;;                      # idem
+      f) FILA_VIVA=1 ;;                  # idem: o GrabIt só fica aberto esperando links se pedido
+      C) CAPTURA=1; FILA_VIVA=1 ;;       # idem: só lê a área de transferência se pedido, e só aberto
+      U) UPGRADE=1 ;;
+      h) COMANDO=ajuda ;;
+      :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
+      *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
+    esac
+    OPCOES+=("-$op" ${OPTARG+"$OPTARG"})      # guardadas para sugerir o comando de nova tentativa
+  done
+  if (( OPTIND > 1 )) && [[ ${*:OPTIND-1:1} == -- ]]; then
+    shift $(( OPTIND - 1 )); ARGS_LINKS+=("$@"); break
+  fi
+  shift $(( OPTIND - 1 ))
+  (( $# )) || break
+  ARGS_LINKS+=("$1"); shift
 done
-shift $(( OPTIND - 1 ))
-ARGS_LINKS=("$@")
+# "~" num valor que não passou pelo shell (grabit.config, aspas): sem isto, PASTA_SAIDA=~/Vídeos
+# viraria uma pasta chamada "~" aqui e, para o yt-dlp, a pasta pessoal.
+for k in ARQUIVO_LINKS PASTA_SAIDA ARQUIVO_FALHAS ARQUIVO_HISTORICO; do
+  case ${!k} in \~|\~/*) printf -v "$k" '%s' "$HOME${!k:1}" ;; esac
+done
 # Só áudio tem histórico próprio: ter baixado o vídeo não significa ter o áudio, e vice-versa
 if [[ -z $ARQUIVO_HISTORICO ]]; then
   if (( SO_AUDIO )); then ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico-audio.txt"
@@ -1271,9 +1310,9 @@ ALERTA=$RESOLUCAO_ALERTA
 J=0; TOTAL=0; COLS=100; TICK=0; LIVE_H=0; CANCELADO=0; SINAL=""; STTY_SAVE=""; TMP=""
 N_OK=0; N_JA=0; N_ERRO=0; N_AVISOS=0; N_FATAIS=0; N_COSMETICOS=0; AVISO_CTX=""; BYTES_NOVOS=0; FINALIZADOS=0; DUPLICADOS=0; INVALIDAS=0
 VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; COMECOU=0
-ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
+ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; JS_RECUSADO=""; JS_CANDIDATOS=(); AVISO_JSC=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
-FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0
+FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
@@ -1467,9 +1506,10 @@ analisa_log() {
 }
 
 # classifica_erro TEXTO → DICA (explicação curta), REPETE (0 = não adianta tentar de
-# novo) e ARQUIVO_RUIM (1 = o arquivo baixado está corrompido: refazer do zero)
+# novo), ARQUIVO_RUIM (1 = o arquivo baixado está corrompido: refazer do zero) e
+# DISCO_CHEIO (1 = os próximos downloads também não vão caber)
 classifica_erro() {
-  DICA=""; REPETE=1; ARQUIVO_RUIM=0
+  DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0
   case ${1,,} in
     *"[verify]"*)                                           t d_verificacao "${T[sufixo_ruim]}"; DICA=$TXT ;;
     *"private video"*)                                      DICA=${T[d_privado]}; REPETE=0 ;;
@@ -1484,7 +1524,7 @@ classifica_erro() {
     *"unsupported url"*|*"is not a valid url"*)             DICA=${T[d_url]}; REPETE=0 ;;
     *"live event will begin"*|*"premieres in"*)             DICA=${T[d_live]}; REPETE=0 ;;
     *"http error 404"*|*"http error 410"*)                  DICA=${T[d_404]}; REPETE=0 ;;
-    *"no space left"*)                                      DICA=${T[d_disco]}; REPETE=0 ;;
+    *"no space left"*)                                      DICA=${T[d_disco]}; REPETE=0; DISCO_CHEIO=1 ;;
     *"requested format is not available"*)                  REPETE=0
       if (( RESOLUCAO_MAXIMA > 0 )); then
         if [[ ${ORIGEM[RESOLUCAO_MAXIMA]:-} == opção ]]; then t d_resolucao_r "$RESOLUCAO_MAXIMA"
@@ -1765,6 +1805,13 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   for (( t = 1; t < tent; t++ )); do logs+=("$TMP/$idx.t$t.log"); done
   logs+=("$TMP/$idx.log")
 
+  # Só na hora de resolver o desafio do YouTube o yt-dlp descobre que o runtime não tem mais
+  # suporte (ex.: um Bun novo demais). O aviso ficaria perdido no log: vai para o resumo.
+  if [[ -z $AVISO_JSC ]]; then
+    AVISO_JSC=$(cat "${logs[@]}" 2>/dev/null | grep -a -m 1 -E '^WARNING: .*\[jsc:[^]]+\] .*is not supported')
+    AVISO_JSC=${AVISO_JSC##*\[jsc:*\] }; AVISO_JSC=${AVISO_JSC%% DO NOT*}; AVISO_JSC=${AVISO_JSC//[[:cntrl:]]/ }
+  fi
+
   # Cada vídeo concluído deixa uma linha @@D@@ (em qualquer tentativa). Ele "já
   # existia" só se o yt-dlp avisou "<arquivo final> has already been downloaded"
   # e nenhuma tentativa desta execução o baixou de fato. Compara pelo nome do
@@ -1925,6 +1972,11 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     FALHAS+=("$url")
     N_ERRO=$(( N_ERRO + 1 ))
     salva_log "$idx"
+    # Sem espaço, os próximos também falhariam (depois de baixar um bom pedaço): para aqui
+    if (( DISCO_CHEIO && ! PARANDO )); then
+      PARANDO=1
+      PERM+=("  ${AMARELO}⚠${R} ${T[d_disco_para]}")
+    fi
   fi
   if (( rc == 0 )); then
     SUCESSO[$idx]=1
@@ -2047,6 +2099,17 @@ devolve_antigos() {                           # o novo chegou? apaga o antigo. N
     if acha_arquivo "$id"; then rm -f -- "${antigo[$id]}.grabit-antigo"
     else mv -f -- "${antigo[$id]}.grabit-antigo" "${antigo[$id]}"; fi
   done
+}
+
+# Um -U derrubado à força (queda de energia, SIGKILL) não chegou a devolver os antigos: eles
+# ficaram de lado com outro nome, invisíveis para o GrabIt. A próxima execução arruma. Um
+# arquivo com o nome original é o novo, inteiro: só chega à pasta depois de pronto.
+recupera_antigos() {
+  local f
+  while IFS= read -r -d '' f; do
+    if [[ -e ${f%.grabit-antigo} ]]; then rm -f -- "$f"
+    else mv -f -- "$f" "${f%.grabit-antigo}"; fi
+  done < <(find "$PASTA_SAIDA" -type f -name '*.grabit-antigo' -print0 2>/dev/null)
 }
 
 # escolhe_principal URL [OPÇÕES…] → PRINCIPAL: o item mais longo da página (empate: o de
@@ -2280,23 +2343,35 @@ comando_repetir() {                           # → FMT: o mesmo comando, só co
 }
 
 salva_falhas() {                              # grava links_falhos.txt (+ o que faltava, se cancelado)
-  local lista=("${FALHAS[@]}") i n_pend=0 f era_falhas=0 o_que=${T[f_com_erro]}
+  local lista=("${FALHAS[@]}") i l n_pend=0 n_lidos=0 antigos=() o_que=${T[f_com_erro]}
+  local -A desta=()
   if (( CANCELADO || PARANDO )); then
     for (( i = 1; i <= TOTAL; i++ )); do
       [[ -n ${FEITO[$i]:-} ]] && continue
       lista+=("${LINKS[$(( i - 1 ))]}"); n_pend=$(( n_pend + 1 ))
     done
   fi
-  for f in "${ARQUIVOS_ENTRADA[@]}"; do [[ $f -ef $ARQUIVO_FALHAS ]] && era_falhas=1; done
+  # O arquivo pode ter falhas de execuções anteriores, de outros links: elas continuam lá.
+  # Só saem os links desta execução (os que falharam de novo voltam pela lista).
+  if [[ -f $ARQUIVO_FALHAS && -r $ARQUIVO_FALHAS ]]; then
+    for l in "${LINKS[@]}"; do desta[$l]=1; done
+    while IFS= read -r l || [[ -n $l ]]; do
+      links_da_linha "$l"
+      (( ${#PALAVRAS_LINK[@]} )) || continue
+      n_lidos=$(( n_lidos + 1 ))
+      [[ -n ${desta[${PALAVRAS_LINK[0]}]:-} ]] || antigos+=("$l")
+    done < "$ARQUIVO_FALHAS"
+  fi
 
   if (( ${#lista[@]} == 0 )); then
-    # tudo certo: se a lista de entrada era o próprio arquivo de falhas, ele cumpriu o papel
-    if (( era_falhas )) && rm -f -- "$ARQUIVO_FALHAS"; then
+    (( n_lidos == ${#antigos[@]} )) && return 0   # nada desta execução estava no arquivo
+    if (( ${#antigos[@]} )); then printf '%s\n' "${antigos[@]}" > "$ARQUIVO_FALHAS"
+    elif rm -f -- "$ARQUIVO_FALHAS"; then         # todos deram certo: ele cumpriu o papel
       t f_todos_ok "$ARQUIVO_FALHAS"; printf '\n  %s✔%s  %s\n' "$VERDE" "$R" "$TXT"
     fi
     return 0
   fi
-  if ! printf '%s\n' "${lista[@]}" > "$ARQUIVO_FALHAS"; then
+  if ! printf '%s\n' "${antigos[@]}" "${lista[@]}" > "$ARQUIVO_FALHAS"; then
     t f_nao_gravou "$ARQUIVO_FALHAS"; erro "$TXT"
     return 0
   fi
@@ -2304,6 +2379,7 @@ salva_falhas() {                              # grava links_falhos.txt (+ o que 
   (( n_pend > 0 && N_ERRO == 0 )) && o_que=${T[f_pend]}
   t f_salvos "${#lista[@]}" "$o_que" "${NEG}${ARQUIVO_FALHAS}${R}"
   printf '\n  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
+  if (( ${#antigos[@]} )); then t f_antes "${#antigos[@]}"; printf '%s' "$TXT"; fi
   if (( N_ERRO > 0 )); then t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"; else printf '\n'; fi
   comando_repetir
   t f_continuar "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
@@ -2333,6 +2409,9 @@ resumo() {
   fi
   if (( N_BAIXA_RES > 0 )); then
     t s_baixa_det "$N_BAIXA_RES" "$ALERTA"; linha_resumo "▾" "$AMARELO" "${T[s_baixa]}" "$TXT"
+  fi
+  if [[ -n $AVISO_JSC ]]; then
+    linha_resumo "⚠" "$AMARELO" "JavaScript" "$AVISO_JSC"; printf '%s\n' "${T[s_js_dica]}"
   fi
   linha_resumo "◷" "$DIM" "${T[s_tempo]}"         "$t"
   linha_resumo "▣" "$DIM" "${T[s_baixado_agora]}" "${b}${media}"
@@ -2433,43 +2512,89 @@ comando_instalar() {                          # comando_instalar PACOTE → FMT 
   esac
 }
 
+# comando_grabit ARGUMENTOS → FMT: o comando que funciona aqui, para as dicas na tela:
+# "grabit" se ele estiver instalado; senão, o caminho do script
+comando_grabit() {
+  local p=$GRABIT_SCRIPT
+  if [[ $(command -v grabit 2>/dev/null) -ef $p ]]; then FMT="grabit $1"; return; fi
+  [[ $p =~ ^[[:alnum:]_./:=@%+,-]+$ ]] || p=${p@Q}
+  FMT="bash $p $1"
+}
+
+# YouTube precisa de um runtime JavaScript externo. O yt-dlp só liga o Deno sozinho;
+# node/quickjs/bun precisam de --js-runtimes (feito em monta_args_ytdlp). E não basta o
+# programa existir: quem diz se a versão serve é o próprio yt-dlp, porque o mínimo de cada
+# runtime muda com o tempo. Por isso são três passos, e a consulta pode rodar em paralelo:
+#   candidatos_js → JS_CANDIDATOS: os runtimes que podem ser executados aqui, como nome:caminho
+#   consulta_js   → a linha do yt-dlp, ex.: "[debug] JS runtimes: bun-1.4.2, node-18.19.1 (unsupported)"
+#   escolhe_js LINHA → JS_RUNTIME JS_PATH (o primeiro aceito) e JS_RECUSADO (o velho demais)
+candidatos_js() {
+  local par nome p PATH="$PATH:$HOME/.deno/bin:$HOME/.bun/bin"   # onde eles se instalam
+  JS_CANDIDATOS=()
+  for par in deno:deno node:node node:nodejs quickjs:qjs quickjs:quickjs bun:bun; do
+    nome=${par%%:*}
+    [[ " ${JS_CANDIDATOS[*]} " == *" $nome:"* ]] && continue
+    p=$(command -v "${par#*:}" 2>/dev/null) && [[ -x $p ]] && JS_CANDIDATOS+=("$nome:$p")
+  done
+  return 0
+}
+
+consulta_js() {
+  local c args=()
+  for c in "${JS_CANDIDATOS[@]}"; do args+=(--js-runtimes "$c"); done
+  yt-dlp -v --ignore-config "${args[@]}" 2>&1 | grep -a -m 1 '^\[debug\] JS runtimes: '
+  return 0
+}
+
+escolhe_js() {
+  local info=${1#*JS runtimes: } c nome item itens=()
+  JS_RUNTIME=""; JS_PATH=""; JS_RECUSADO=""
+  (( ${#JS_CANDIDATOS[@]} )) || return 0
+  if [[ -z $info ]]; then                     # yt-dlp antigo: não há como perguntar
+    c=${JS_CANDIDATOS[0]}; JS_RUNTIME=${c%%:*}; JS_PATH=${c#*:}
+    return 0
+  fi
+  IFS=, read -ra itens <<<"$info"
+  for c in "${JS_CANDIDATOS[@]}"; do
+    nome=${c%%:*}
+    for item in "${itens[@]}"; do
+      item=${item# }
+      [[ $item == "$nome"-* ]] || continue
+      if [[ $item == *" (unsupported)" ]]; then JS_RECUSADO=${JS_RECUSADO:-${item% (unsupported)}}
+      else JS_RUNTIME=$nome; JS_PATH=${c#*:}; return 0; fi
+    done
+  done
+  return 0
+}
+
 verifica_dependencias() {
-  local faltando=() par bin nome p1 p2 p3
+  local faltando=() p1 p2 p3 linha
   command -v yt-dlp >/dev/null 2>&1 || faltando+=("yt-dlp")
   command -v ffmpeg >/dev/null 2>&1 || faltando+=("ffmpeg")
   if (( ${#faltando[@]} )); then
     t dep_faltando "${faltando[*]}"; erro "$TXT"
-    t dep_instalador "${CIANO}${T[cmd_instalar]}${R}"; printf '%s\n' "$TXT"
+    comando_grabit "${T[cmd_instalar]}"; t dep_instalador "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
     comando_instalar ffmpeg
     printf '\n     %syt-dlp%s  →  pipx install "yt-dlp[default,curl-cffi]"\n' "$CIANO" "$R"
     printf '     %sffmpeg%s  →  %s\n\n' "$CIANO" "$R" "$FMT"
     exit 1
   fi
   # cada consulta ao yt-dlp leva quase 1 s (é Python): roda as três em paralelo
+  candidatos_js
   yt-dlp --version                  >"$TMP/versao" 2>/dev/null & p1=$!
-  yt-dlp --help                     >"$TMP/ajuda"  2>/dev/null & p2=$!
+  consulta_js                       >"$TMP/js"     2>/dev/null & p2=$!
   yt-dlp --list-impersonate-targets >"$TMP/alvos"  2>/dev/null & p3=$!
   FFMPEG_VER=$(ffmpeg -version 2>/dev/null | awk 'NR==1{print $3}')
   wait "$p1" "$p2" "$p3"
   YTDLP_VER=$(head -n 1 "$TMP/versao")
-  grep -q -- '--js-runtimes' "$TMP/ajuda" && TEM_JS_RUNTIMES=1
+  linha=$(<"$TMP/js")
+  [[ -n $linha ]] && TEM_JS_RUNTIMES=1          # yt-dlp antigo não entende --js-runtimes
+  escolhe_js "$linha"
 
   # --impersonate só funciona com curl_cffi instalado; senão o yt-dlp aborta
   if grep -i '^[[:space:]]*chrome' "$TMP/alvos" | grep -viq 'unavailable'; then
     IMPERSONATE="chrome"
   fi
-
-  # YouTube precisa de um runtime JavaScript externo. O yt-dlp só liga o Deno
-  # sozinho; node/quickjs/bun precisam de --js-runtimes (feito em monta_args_ytdlp).
-  JS_RUNTIME=""; JS_PATH=""
-  for par in deno:deno node:node node:nodejs quickjs:qjs quickjs:quickjs bun:bun; do
-    nome=${par%%:*}; bin=${par#*:}
-    if JS_PATH=$(command -v "$bin" 2>/dev/null) && [[ -n $JS_PATH ]]; then
-      JS_RUNTIME=$nome
-      break
-    fi
-    JS_PATH=""
-  done
 }
 
 idade_ytdlp() {                               # meses desde a versão do yt-dlp (AAAA.MM.DD) → NUM (-1 = ?)
@@ -2865,7 +2990,7 @@ passo() {                                     # passo DESCRIÇÃO COMANDO... (mo
 }
 
 instalar() {
-  local sistema=() etapas=() plano=() js="" clip="" alvo="$HOME/.local/bin/grabit" p
+  local sistema=() etapas=() plano=() clip="" alvo="$HOME/.local/bin/grabit" p
   FALHOU_PASSO=0
   gerenciador
   export PATH="$HOME/.local/bin:$HOME/.deno/bin:$PATH"     # onde pipx e deno instalam
@@ -2882,8 +3007,10 @@ instalar() {
        ! yt-dlp --list-impersonate-targets 2>/dev/null | grep -i '^[[:space:]]*chrome' | grep -viq unavailable; then
     etapas+=(curlcffi)                        # sem o curl_cffi, nada de imitar um navegador
   fi
-  for p in deno node nodejs qjs quickjs bun; do command -v "$p" >/dev/null 2>&1 && { js=$p; break; }; done
-  if [[ -z $js ]]; then
+  candidatos_js; escolhe_js "$(consulta_js)"
+  # Sem o yt-dlp ainda não há quem diga se ele aceita os outros: só o Deno é garantido
+  command -v yt-dlp >/dev/null 2>&1 || [[ $JS_RUNTIME == deno ]] || JS_RUNTIME=""
+  if [[ -z $JS_RUNTIME ]]; then
     case $GER in
       brew|pacman) sistema+=(deno) ;;
       *) command -v unzip >/dev/null 2>&1 || sistema+=(unzip); etapas+=(deno) ;;
@@ -2960,8 +3087,50 @@ mostra_versoes() {
   v=$(yt-dlp --version 2>/dev/null) || v="—"
   kv "yt-dlp" "$v"
   v=$(ffmpeg -version 2>/dev/null | awk 'NR==1{print $3}'); kv "ffmpeg" "${v:-—}"
-  for v in deno node nodejs qjs bun; do command -v "$v" >/dev/null 2>&1 && { kv "JavaScript" "$v"; break; }; done
+  candidatos_js; escolhe_js "$(consulta_js)"
+  if [[ -n $JS_RUNTIME ]]; then kv "JavaScript" "$JS_RUNTIME"
+  elif [[ -n $JS_RECUSADO ]]; then t js_velho "$JS_RECUSADO"; kv "JavaScript" "${AMARELO}${TXT}${R}"
+  else kv "JavaScript" "${AMARELO}${T[js_nenhum]}${R}"; fi
   printf '\n'
+}
+
+# eh_clone_grabit: o script está na raiz de um clone do GrabIt? Um grabit.sh copiado para
+# dentro de outro repositório (dotfiles…) não pode levar "git pull" nele.
+eh_clone_grabit() {
+  local raiz
+  raiz=$(git -C "$GRABIT_DIR" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [[ $raiz -ef $GRABIT_DIR ]] && git -C "$GRABIT_DIR" ls-files --error-unmatch grabit.sh >/dev/null 2>&1
+}
+
+# grabit --versao: o que está instalado e se há coisa mais nova. O GrabIt não tem número de
+# versão: num clone do Git, ela é o commit; numa cópia solta, compara com o arquivo publicado.
+mostra_versao() {
+  local v remoto tmp nova=0 situacao=${T[ver_sem_net]}
+  atualiza_largura
+  if eh_clone_grabit; then
+    v=$(git -C "$GRABIT_DIR" log -1 --format='%h · %cd' --date=short 2>/dev/null)
+    remoto=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -oBatchMode=yes -oConnectTimeout=8} \
+      git -C "$GRABIT_DIR" -c http.lowSpeedLimit=1 -c http.lowSpeedTime=8 ls-remote origin HEAD 2>/dev/null)
+    remoto=${remoto%%[[:space:]]*}
+    if [[ -n $remoto ]]; then
+      if git -C "$GRABIT_DIR" merge-base --is-ancestor "$remoto" HEAD 2>/dev/null; then situacao=${T[ver_em_dia]}
+      else nova=1; fi
+    fi
+  else
+    v=${T[ver_sem_git]}
+    if tmp=$(mktemp "${TMPDIR:-/tmp}/grabit.XXXXXX"); then
+      if curl -fsSL -m 10 "$URL_SCRIPT" -o "$tmp" 2>/dev/null; then
+        if cmp -s "$tmp" "$GRABIT_SCRIPT"; then situacao=${T[ver_em_dia]}; else nova=1; fi
+      fi
+      rm -f -- "$tmp"
+    fi
+  fi
+  (( nova )) && situacao=${T[ver_nova]}
+  printf '\n'
+  kv "GrabIt" "$v"
+  kv "${T[kv_situacao]}" "$situacao"
+  if (( nova )); then comando_grabit "${T[cmd_atualizar]}"; t av_ytdlp2 "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"; fi
+  mostra_versoes
 }
 
 atualizar() {
@@ -2971,7 +3140,7 @@ atualizar() {
   printf '\n  %s%s%s\n' "$NEG" "${T[atu_titulo]}" "$R"
 
   # 1) o GrabIt: clone do Git → git pull; arquivo solto → baixa, confere e troca
-  if git -C "$GRABIT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if eh_clone_grabit; then
     antes=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
     if passo "${T[atu_git]}" git -C "$GRABIT_DIR" pull --ff-only --quiet; then
       depois=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
@@ -3083,7 +3252,8 @@ verifica_colecao() {
   pasta=${pasta%/}
   if [[ ! -d $pasta ]]; then t vc_sem_pasta "$pasta"; erro "$TXT"; return 1; fi
   if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-    t dep_faltando ffmpeg; erro "$TXT"; t dep_instalador "${CIANO}${T[cmd_instalar]}${R}"; printf '%s\n\n' "$TXT"
+    t dep_faltando ffmpeg; erro "$TXT"
+    comando_grabit "${T[cmd_instalar]}"; t dep_instalador "${CIANO}${FMT}${R}"; printf '%s\n\n' "$TXT"
     return 1
   fi
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || return 1
@@ -3091,7 +3261,8 @@ verifica_colecao() {
   trap 'CANCELADO=1' INT TERM                 # o ffmpeg recebe o mesmo Ctrl+C e para; o resumo sai
   atualiza_largura
   mapfile -d '' arqs < <(find "$pasta" \( -name .parciais -o -path "$pasta/logs" \) -prune -o -type f \
-    \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.m4a' \
+    \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.m4v' -o -iname '*.avi' \
+       -o -iname '*.ts' -o -iname '*.mka' -o -iname '*.m4a' -o -iname '*.aac' \
        -o -iname '*.opus' -o -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.wav' \) \
     ! -name "*${T[sufixo_ruim]}.*" -print0 2>/dev/null | sort -z)
   n=${#arqs[@]}
@@ -3339,6 +3510,7 @@ case $COMANDO in
   atualizar) atualizar; exit $? ;;
   verificar) verifica_colecao; exit $? ;;
   baixados)  gerencia_baixados; exit $? ;;
+  versao)    mostra_versao; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM
@@ -3357,6 +3529,7 @@ ler_links
 mkdir -p "$PASTA_SAIDA" || { t pasta_falhou "$PASTA_SAIDA"; erro "$TXT"; exit 1; }
 printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
 prepara_parciais
+(( UPGRADE )) && recupera_antigos
 
 J=$DOWNLOADS_SIMULTANEOS
 (( ! FILA_VIVA && J > TOTAL )) && J=$TOTAL
@@ -3446,15 +3619,20 @@ fi
 idade_ytdlp
 if (( NUM >= 3 )) || (( ! TEM_JS_RUNTIMES )); then
   t av_ytdlp "${YTDLP_VER:-?}"; aviso "$TXT"
-  t av_ytdlp2 "${CIANO}${T[cmd_atualizar]}${R}"; printf '%s\n' "$TXT"
+  comando_grabit "${T[cmd_atualizar]}"; t av_ytdlp2 "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
 fi
 if [[ -z $IMPERSONATE ]]; then
   aviso "${T[av_curl]}"
   t av_curl2 "${CIANO}pipx inject yt-dlp curl-cffi${R}"; printf '%s\n' "$TXT"
 fi
 if [[ -z $JS_RUNTIME ]]; then
-  aviso "${T[av_js]}"
-  printf '%s\n' "${T[av_js2]}"
+  if [[ -n $JS_RECUSADO ]]; then t av_js_velho "$JS_RECUSADO"; aviso "$TXT"; else aviso "${T[av_js]}"; fi
+  comando_grabit "${T[cmd_instalar]}"; t av_js2 "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
+fi
+# Pouco espaço na pasta de destino (menos de 2 GiB)? Melhor saber antes de começar.
+livre=$(df -Pk -- "$PASTA_SAIDA" 2>/dev/null | awk 'NR==2 {print $4}')
+if [[ $livre =~ ^[0-9]+$ ]] && (( livre < 2097152 )); then
+  fmt_bytes $(( livre * 1024 )); t av_disco "$FMT" "$PASTA_SAIDA"; aviso "$TXT"
 fi
 # Teclas: o terminal para de ecoar e entrega cada tecla na hora (sem esperar o Enter)
 if (( INTERATIVO )) && { exec 3</dev/tty; } 2>/dev/null; then

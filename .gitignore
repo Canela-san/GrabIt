@@ -3,6 +3,11 @@ links.txt
 links_falhos.txt
 Downloads/
 
+# Cópias e temporários das listas (--baixados limpar, editar e a seção BAIXADOS)
+*.txt.bak
+*.grabit-tmp
+*.grabit-editar.txt
+
 # Restos de downloads interrompidos
 *.part
 *.ytdl

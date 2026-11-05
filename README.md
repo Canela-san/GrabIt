@@ -43,12 +43,18 @@ cd GrabIt
 bash grabit.sh --instalar
 ```
 
-O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer coisa: instala o FFmpeg e o yt-dlp (com o `curl-cffi`, para imitar um navegador quando um site bloqueia downloads automáticos) pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, um runtime JavaScript se não houver nenhum (o YouTube exige um para liberar as melhores resoluções) e cria o comando `grabit` em `~/.local/bin`. Uma confirmação só, e nada acontece se você responder não.
+O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer coisa: instala o FFmpeg e o yt-dlp (com o `curl-cffi`, para imitar um navegador quando um site bloqueia downloads automáticos) pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, um runtime JavaScript se não houver nenhum que o yt-dlp aceite (o YouTube exige um para liberar as melhores resoluções) e cria o comando `grabit` em `~/.local/bin`. Uma confirmação só, e nada acontece se você responder não.
 
 Para atualizar o GrabIt e o yt-dlp de uma vez:
 
 ```bash
 grabit --atualizar
+```
+
+Para ver a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript):
+
+```bash
+grabit --versao
 ```
 
 <details>
@@ -122,6 +128,7 @@ Mais exemplos:
 
 ```bash
 grabit https://youtu.be/XXXXXXXXXXX          # links direto no comando
+grabit https://youtu.be/XXXXXXXXXXX -x       # as opções valem antes ou depois dos links
 grabit -l cursos.txt -o ~/Vídeos/Cursos      # outra lista, outra pasta
 grabit -j 4 -c 8                             # 4 vídeos por vez, 8 conexões cada
 grabit -b firefox                            # usa o login do navegador (vídeos restritos)
@@ -255,13 +262,14 @@ Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_C
 | ⚠ | o vídeo está completo, mas algum detalhe falhou (ex.: converter a capa) |
 | ▾ | baixado, mas a melhor versão que o site oferecia estava abaixo de `RESOLUCAO_ALERTA` (às vezes, com login, `-b`, há mais) |
 
-Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o comando para tentar só eles de novo. Se todos derem certo na nova rodada, o arquivo é apagado sozinho.
+Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o comando para tentar só eles de novo. O arquivo acumula: uma rodada com outros links não apaga as falhas de antes, e cada link sai dele quando dá certo. Se todos derem certo, o arquivo é apagado sozinho.
 
 ## Como funciona
 
 - **Formato:** `bv*+ba/b` do yt-dlp (melhor vídeo + melhor áudio) com saída em **MKV**, que aceita qualquer codec. Nada é recodificado.
 - **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um download que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de rede) **recomeça do zero** na próxima vez, em vez de retomar os pedaços: a retomada pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam vão para `links_falhos.txt`.
 - **Novas tentativas:** erros passageiros (rede, 403, 429) voltam para o fim da fila, imitando um navegador quando o `curl-cffi` está instalado. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
+- **Disco cheio:** o cabeçalho avisa quando a pasta de destino tem menos de 2 GiB livres. Se o disco encher no meio, nenhum download novo começa (os próximos também não caberiam) e os links que faltavam vão para `links_falhos.txt`.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
 - **Fila viva (`-f`):** depois de terminar a lista, o GrabIt continua aberto e confere o arquivo de links a cada 2 segundos: o que você acrescentar (em cima ou no fim do arquivo) entra na fila e começa a baixar. Quando a fila esvazia, os baixados vão para a seção `BAIXADOS` e, se o lote demorou, chega o aviso de término. Sai com <kbd>q</kbd> ou <kbd>Ctrl</kbd>+<kbd>C</kbd>. Só acontece com a opção: sem `-f`, o GrabIt sempre fecha ao terminar.
 - **Conferir a coleção (`grabit --verificar [PASTA]`):** decodifica, do começo ao fim, cada vídeo e áudio que já está na pasta de downloads (ou na pasta indicada) e compara a duração com a registrada no `info.json` que o GrabIt embute nos MKV — assim acha arquivos com defeito e downloads incompletos, inclusive os antigos. No fim, oferece baixar de novo os que tiverem problema: o arquivo atual fica guardado com `.com-erros` no nome, o vídeo sai do histórico e o link (guardado no mesmo `info.json`) é baixado de novo, na mesma organização de pastas (`-d` ou `-m`).
@@ -277,6 +285,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 ## Dicas
 
 - **Mantenha o yt-dlp atualizado** (`grabit --atualizar`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
+- **Aviso sobre o runtime JavaScript?** O yt-dlp só aceita versões recentes: um Node.js antigo é recusado, e o Bun pode ser novo demais. `grabit --versao` mostra o que está em uso, e o mais garantido é o Deno, que o `grabit --instalar` instala quando nenhum outro é aceito.
 - **Vídeo pede login ou confirmação de idade?** Use `-b firefox` (ou o navegador em que você está logado).
 - **Deixou baixando e saiu?** Com `NTFY_TOPICO=um-nome-dificil` no `grabit.config` e o app do [ntfy](https://ntfy.sh) assinando o mesmo tópico, o celular avisa quando o lote acabar. Só vai o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
 - **Retomar o que falhou:** `grabit -l links_falhos.txt`.
@@ -286,7 +295,7 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 
 ```bash
 bash testes/rodar.sh            # todos: sobe um servidor local e baixa vídeos gerados pelo ffmpeg
-bash testes/rodar.sh --rapido   # só opções, configuração e traduções (sem yt-dlp nem ffmpeg)
+bash testes/rodar.sh --rapido   # sem baixar nada: opções, configuração, traduções e o fluxo com um yt-dlp de mentira
 ```
 
 Nada sai da sua máquina: os vídeos de teste são criados na hora e servidos em `127.0.0.1`. A cada envio, o GitHub Actions roda os testes completos no Ubuntu, os rápidos no Bash 4.4, 5.0, 5.1 e 5.2 e no macOS, e o ShellCheck.

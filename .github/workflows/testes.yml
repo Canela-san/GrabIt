@@ -4,10 +4,14 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   completos:
     name: Testes completos (Ubuntu)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Dependências
@@ -23,6 +27,7 @@ jobs:
   versoes-do-bash:
     name: Bash ${{ matrix.bash }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -35,6 +40,7 @@ jobs:
   macos:
     name: macOS
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - name: O Bash 3.2 do sistema é recusado com uma mensagem clara

@@ -126,6 +126,162 @@ if { : </dev/tty; } 2>/dev/null; then          # editar precisa de um terminal (
   espera "editar aplica o que foi mudado no editor" test "$(grep -c 'a.exemplo/2' "$L")" -eq 0
 fi
 
+secao "Opções em qualquer posição"
+roda "$TMP/pos1" -L pt --config https://a.invalid/1 -j 7 https://a.invalid/2 -x
+espera "-j depois do link vale" grep -qE 'DOWNLOADS_SIMULTANEOS +7 +opção do comando' "$TMP/pos1"
+espera "…e -x entre os links também" grep -qE 'SO_AUDIO +1 +opção do comando' "$TMP/pos1"
+roda "$TMP/pos2" https://a.invalid/1 -L en -h
+espera "-L depois do link" contem "$TMP/pos2" "Usage:  grabit"
+roda "$TMP/pos3" -L pt --config -- https://a.invalid/1 -j 7
+espera "depois de -- nada é opção" grep -qE 'DOWNLOADS_SIMULTANEOS +2 ' "$TMP/pos3"
+
+secao "Til no grabit.config"
+mkdir -p "$TMP/casa"
+printf 'PASTA_SAIDA=~/Videos\nARQUIVO_FALHAS=~/falhas.txt\n' > "$TMP/cfg/til.config"
+GRABIT_CONFIG="$TMP/cfg/til.config" HOME="$TMP/casa" roda "$TMP/til" -L pt --config
+espera "~ vira a pasta pessoal, em vez de uma pasta chamada ~" contem "$TMP/til" "$TMP/casa/Videos"
+espera "…também em ARQUIVO_FALHAS" contem "$TMP/til" "$TMP/casa/falhas.txt"
+
+# ───── yt-dlp de mentira: sem rede nem ffmpeg, mas passando pelo GrabIt inteiro ───────────
+unset WAYLAND_DISPLAY DISPLAY
+STUB="$TMP/stub"; mkdir -p "$STUB" "$TMP/sem" "$TMP/com"
+export STUB_LOG="$TMP/stub.log" CLIP_ARQ="$TMP/clip" CLIP_LIDO="$TMP/clip.lido"
+cat > "$STUB/yt-dlp" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$STUB_LOG"
+case " $* " in
+  *" --version "*) echo "${STUB_VER:-2099.01.01}"; exit 0 ;;
+  *" --list-impersonate-targets "*) exit 0 ;;
+  *" -v "*) echo "[debug] JS runtimes: ${STUB_JS:-none}"; exit 2 ;;
+  *" -U "*) echo "yt-dlp is up to date"; exit 0 ;;
+esac
+[ -n "${STUB_AVISO:-}" ] && echo "WARNING: $STUB_AVISO"
+[ -z "${STUB_ERRO:-}" ] && exit 0
+echo "ERROR: $STUB_ERRO"; exit 1
+EOF
+printf '#!/bin/sh\necho "ffmpeg version 9.9"\n' > "$STUB/ffmpeg"
+printf '#!/bin/sh\nexit 1\n' > "$STUB/ffprobe"
+printf '#!/bin/sh\nexit 1\n' > "$STUB/curl"
+printf '#!/bin/sh\nexit 1\n' > "$STUB/pipx"
+printf '#!/bin/sh\nexit 0\n' > "$STUB/node"
+printf '#!/bin/sh\necho "fs 1K used free %%"\necho "x 1 1 ${STUB_DF:-99999999} 1%% /"\n' > "$STUB/df"
+printf '#!/bin/sh\ncat "$CLIP_ARQ"\ntouch "$CLIP_LIDO"\n' > "$STUB/pbpaste"
+printf '#!/bin/sh\n' > "$TMP/sem/grabit"
+chmod +x "$STUB"/* "$TMP/sem/grabit"
+printf 'sem permissão de execução\n' > "$STUB/bun"
+ln -s "$G" "$TMP/com/grabit"
+falso() { HOME="$TMP/casa" PATH="$STUB:$TMP/sem:$PATH" roda "$@"; }
+ate() { local i; for (( i = 0; i < 150; i++ )); do "$@" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
+sem_runtime() { ! grep -F -- "$1" "$STUB_LOG" | grep -qF -- '--js-runtimes'; }
+com_runtime() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "--js-runtimes $2"; }
+
+secao "Runtime JavaScript"
+D="$TMP/js"; mkdir -p "$D"; cd "$D" || exit 1
+: > "$STUB_LOG"
+STUB_JS="node-18.19.1 (unsupported)" falso s1 -L pt http://a.invalid/velho
+espera "runtime velho não aparece como bom" contem s1 "js: nenhum"
+espera "…ganha um aviso com a versão" contem s1 "O yt-dlp não aceita o node-18.19.1"
+espera "…e não é passado ao yt-dlp" sem_runtime a.invalid/velho
+espera "programa sem permissão de execução não é candidato" nao_contem "$STUB_LOG" "bun:$STUB/bun"
+STUB_JS="node-22.1.0" falso s2 -L pt http://a.invalid/novo
+espera "runtime aceito aparece no cabeçalho" contem s2 "js: node"
+espera "…sem aviso" nao_contem s2 "não aceita"
+espera "…e é passado ao yt-dlp" com_runtime a.invalid/novo "node:$STUB/node"
+STUB_JS="none" falso s3 -L en http://a.invalid/nada
+espera "sem runtime nenhum, o aviso de sempre" contem s3 "No JavaScript runtime"
+STUB_JS="bun-1.4.2" STUB_AVISO="[youtube] [jsc:bun] bun version 1.4.2 is not supported! 1.3.14 is the last supported bun version. DO NOT open a bug report" \
+  falso s4 -L pt http://a.invalid/bun
+espera "aviso de runtime sem suporte chega ao resumo" contem s4 "bun version 1.4.2 is not supported! 1.3.14 is the last supported bun version."
+espera "…sem o resto do sermão" nao_contem s4 "DO NOT"
+espera "…e com a dica do Deno" contem s4 "https://deno.com"
+falso s5 -L pt http://a.invalid/sem-aviso
+espera "sem aviso do yt-dlp, nada no resumo" nao_contem s5 "deno.com"
+
+secao "Dicas com o comando que funciona"
+HOME="$TMP/casa" PATH="$STUB:$TMP/sem:$PATH" STUB_VER=2020.01.01 roda d1 -L pt http://a.invalid/d1
+espera "sem o comando instalado, a dica traz o caminho" grep -qE 'bash .*grabit\.sh --atualizar' d1
+HOME="$TMP/casa" PATH="$STUB:$TMP/com:$PATH" STUB_VER=2020.01.01 roda d2 -L pt http://a.invalid/d2
+espera "com o comando instalado, basta o nome" grep -qE ': +grabit --atualizar' d2
+
+secao "Pouco espaço e disco cheio"
+D="$TMP/disco"; mkdir -p "$D"; cd "$D" || exit 1
+STUB_DF=1024 falso e1 -L pt http://a.invalid/e1
+espera "pouco espaço livre vira aviso" contem e1 "1.0 MiB livres"
+falso e2 -L pt http://a.invalid/e2
+espera "com espaço, nenhum aviso" nao_contem e2 "livres em"
+printf '%s\n' http://b.invalid/1 http://b.invalid/2 http://b.invalid/3 > links.txt
+rm -f links_falhos.txt; : > "$STUB_LOG"
+STUB_ERRO="unable to write data: [Errno 28] No space left on device" DOWNLOADS_SIMULTANEOS=1 falso e3 -L pt
+espera "disco cheio é explicado" contem e3 "disco cheio"
+espera "…e nenhum download novo começa" test "$(grep -c 'b.invalid/' "$STUB_LOG")" -eq 1
+espera "…os que faltam vão para a lista de falhas" test "$(grep -c 'b.invalid/' links_falhos.txt)" -eq 3
+espera "…e sai com código 1" codigo "$RC" 1
+
+secao "links_falhos.txt entre execuções"
+D="$TMP/falhas"; mkdir -p "$D"; cd "$D" || exit 1
+STUB_ERRO="HTTP Error 404" falso f1 -L pt http://c.invalid/1 http://c.invalid/2
+STUB_ERRO="HTTP Error 404" falso f2 -L pt http://c.invalid/3
+espera "falhas novas não apagam as de antes" test "$(grep -c 'c.invalid/' links_falhos.txt)" -eq 3
+espera "…e o resumo diz isso" contem f2 "(mais 2 de execuções anteriores)"
+falso f3 -L pt http://c.invalid/1
+espera "o que deu certo sai da lista" nao_contem links_falhos.txt "c.invalid/1"
+espera "…e o resto continua lá" test "$(grep -c 'c.invalid/' links_falhos.txt)" -eq 2
+falso f4 -L pt http://c.invalid/outro
+espera "um link sem relação não mexe nela" test "$(grep -c 'c.invalid/' links_falhos.txt)" -eq 2
+falso f5 -L pt -l links_falhos.txt
+espera "todos certos: o arquivo some" test ! -e links_falhos.txt
+
+secao "Upgrade interrompido"
+D="$TMP/antigos"; mkdir -p "$D/Downloads"; cd "$D" || exit 1
+echo antigo > "Downloads/a [a].mkv.grabit-antigo"
+echo novo > "Downloads/b [b].mkv"; echo antigo > "Downloads/b [b].mkv.grabit-antigo"
+falso u1 -L pt -U http://a.invalid/u1
+espera "-U devolve o arquivo que ficou de lado" test -f "Downloads/a [a].mkv"
+espera "…e descarta o antigo se o novo chegou" contem "Downloads/b [b].mkv" novo
+espera "…sem deixar sobras" test -z "$(find Downloads -name '*.grabit-antigo')"
+
+secao "Fila viva e captura"
+D="$TMP/fila"; mkdir -p "$D"; cd "$D" || exit 1
+printf '%s\n' http://f.invalid/1 > links.txt
+HOME="$TMP/casa" PATH="$STUB:$PATH" bash "$G" -L pt -f > saida 2>&1 & P=$!
+ate grep -qF "f.invalid/1  # ✔" links.txt
+echo http://f.invalid/2 >> links.txt
+espera "-f: o link acrescentado ao arquivo é baixado" ate grep -qF "f.invalid/2  # ✔" links.txt
+kill -TERM "$P" 2>/dev/null; wait "$P" 2>/dev/null
+D="$TMP/captura"; mkdir -p "$D"; cd "$D" || exit 1
+echo "https://g.invalid/ja-copiado" > "$CLIP_ARQ"
+HOME="$TMP/casa" PATH="$STUB:$PATH" bash "$G" -L pt -C > saida 2>&1 & P=$!
+ate test -e "$CLIP_LIDO"
+echo "veja http://g.invalid/1 aqui" > "$CLIP_ARQ"
+espera "-C: o link copiado é anotado e baixado" ate grep -qF "g.invalid/1  # ✔" links.txt
+espera "…e o que já estava copiado não conta" nao_contem links.txt "ja-copiado"
+kill -TERM "$P" 2>/dev/null; wait "$P" 2>/dev/null
+
+secao "--versao e --atualizar"
+D="$TMP/repos"; mkdir -p "$D/solto"; cd "$D" || exit 1
+cp "$G" solto/grabit.sh
+G="$D/solto/grabit.sh" falso v0 -L pt --versao
+espera "cópia sem Git é reconhecida" contem v0 "cópia sem Git"
+espera "…e diz quando não dá para conferir" contem v0 "não deu para conferir"
+if command -v git >/dev/null 2>&1; then
+  gitq() { git -c user.name=t -c user.email=t@t.invalid -c commit.gpgsign=false "$@"; }
+  mkdir -p up alheio/bin
+  cp "$G" up/grabit.sh; gitq init -q up; gitq -C up add grabit.sh; gitq -C up commit -qm um
+  git clone -q up clone
+  G="$D/clone/grabit.sh" falso v1 -L pt --versao
+  espera "--versao mostra o commit" contem v1 "$(git -C up rev-parse --short HEAD)"
+  espera "…e que está em dia" contem v1 "em dia com o repositório"
+  espera "…e o runtime em uso" grep -qE 'JavaScript +nenhum' v1
+  echo '# novo' >> up/grabit.sh; gitq -C up commit -qam dois
+  G="$D/clone/grabit.sh" falso v2 -L pt --versao
+  espera "--versao avisa da versão mais nova" contem v2 "há uma versão mais nova"
+  G="$D/clone/grabit.sh" falso a1 -L pt --atualizar
+  espera "--atualizar puxa a versão nova" contem clone/grabit.sh "# novo"
+  cp "$G" alheio/bin/grabit.sh; gitq init -q alheio; gitq -C alheio add bin; gitq -C alheio commit -qm um
+  G="$D/alheio/bin/grabit.sh" falso a2 -L pt --atualizar
+  espera "--atualizar não dá git pull em outro repositório" nao_contem a2 "git pull"
+fi
+
 if (( RAPIDO )); then
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
   (( ${#FALHAS[@]} == 0 ))
@@ -136,6 +292,9 @@ fi
 for p in yt-dlp ffmpeg ffprobe python3; do
   command -v "$p" >/dev/null 2>&1 || { printf '\nFalta %s para os testes completos (use --rapido).\n' "$p"; exit 1; }
 done
+
+secao "Contrato com o yt-dlp"
+espera "o yt-dlp informa os runtimes no formato esperado" sh -c "yt-dlp -v --ignore-config 2>&1 | grep -qE '^\[debug\] JS runtimes: '"
 
 secao "Preparando os vídeos de teste"
 W="$TMP/www"; mkdir -p "$W/res" "$W/pagina"
@@ -237,6 +396,8 @@ roda saida4 -L pt -v -o ./Verif "$B/curto.mp4" "$B/ruim.mp4"
 espera "-v aprova o vídeo bom" test -f "Verif/curto [curto].mkv"
 espera "-v reprova o estragado e o guarda à parte" test -n "$(find Verif -name '*.com-erros.*')"
 espera "…sem pô-lo no histórico" nao_contem Verif/.grabit-historico.txt "generic ruim"
+roda saida5 -L pt "$B/curto.mp4" -d -o ./Sub
+espera "-d separa por site (e vale depois do link)" test -n "$(find Sub -path '*127.0.0.1*' -name '*.mkv')"
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
@@ -253,12 +414,14 @@ ffmpeg -v quiet -y -dump_attachment:m:filename:info.json info.json -i "$F" 2>/de
 python3 -c "import json; d = json.load(open('info.json')); d['duration'] = 60; json.dump(d, open('info.json', 'w'))"
 ffmpeg -v error -y -i "$F" -map 0 -map -0:t -c copy -attach info.json \
   -metadata:s:t:0 mimetype=application/json -metadata:s:t:0 filename=info.json Col/novo.mkv && mv Col/novo.mkv "$F"
+cp "Col/mestre [mestre].mkv" Col/outro.m4v
 roda saida2 -L pt --verificar Col
 espera "com problemas, sai com código 1" codigo "$RC" 1
 espera "acha o vídeo com defeito" grep -qE "longo .*com defeito" saida2
 espera "acha o vídeo incompleto" grep -qE "curto .*incompleto" saida2
 espera "…e diz quanto falta" contem saida2 "tem 00:02 de 01:00"
 espera "o vídeo bom passa" grep -qE "✔ .*mestre" saida2
+espera "outros formatos também são conferidos" grep -qE "✔ .*outro" saida2
 espera "sem terminal, não baixa nada sozinho" test ! -e "Col/longo [longo].com-erros.mkv"
 roda saida3 -L pt --verificar ./nao-existe
 espera "pasta inexistente sai com código 1" codigo "$RC" 1
