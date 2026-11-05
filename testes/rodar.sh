@@ -20,6 +20,7 @@ SRV=0
 trap '(( SRV )) && kill "$SRV" 2>/dev/null; rm -rf -- "$TMP"' EXIT
 export GRABIT_CONFIG="$TMP/sem-config/grabit.config"   # pasta inexistente: nenhum config criado
 export NO_COLOR=1 NOTIFICAR=0 USAR_NAVEGADOR=0   # nenhum teste abre uma janela sem pedir
+export XDG_DATA_HOME="$TMP/dados"                # nem mexe na memória de métodos de verdade
 unset IDIOMA DOWNLOADS_SIMULTANEOS RESOLUCAO_MAXIMA LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS NTFY_TOPICO
 
 N_OK=0; FALHAS=()
@@ -66,7 +67,7 @@ secao "Configuração"
 mkdir -p "$TMP/cfg"
 GRABIT_CONFIG="$TMP/cfg/grabit.config" roda "$TMP/cfg1" -L pt --config
 espera "o grabit.config é criado na primeira execução" test -f "$TMP/cfg/grabit.config"
-espera "…com os padrões comentados" contem "$TMP/cfg/grabit.config" "#DOWNLOADS_SIMULTANEOS=2"
+espera "…com os padrões comentados" contem "$TMP/cfg/grabit.config" "#DOWNLOADS_SIMULTANEOS=4"
 printf 'DOWNLOADS_SIMULTANEOS=3\nRESOLUCAO_MAXIMA=4k\nCHAVE_ERRADA=1\n' >> "$TMP/cfg/grabit.config"
 GRABIT_CONFIG="$TMP/cfg/grabit.config" roda "$TMP/cfg2" -L pt --config
 espera "valor do arquivo é lido" grep -qE 'DOWNLOADS_SIMULTANEOS +3 +grabit.config' "$TMP/cfg2"
@@ -133,7 +134,7 @@ espera "…e -x entre os links também" grep -qE 'SO_AUDIO +1 +opção do comand
 roda "$TMP/pos2" https://a.invalid/1 -L en -h
 espera "-L depois do link" contem "$TMP/pos2" "Usage:  grabit"
 roda "$TMP/pos3" -L pt --config -- https://a.invalid/1 -j 7
-espera "depois de -- nada é opção" grep -qE 'DOWNLOADS_SIMULTANEOS +2 ' "$TMP/pos3"
+espera "depois de -- nada é opção" grep -qE 'DOWNLOADS_SIMULTANEOS +4 ' "$TMP/pos3"
 
 secao "Til no grabit.config"
 mkdir -p "$TMP/casa"
@@ -156,7 +157,10 @@ case " $* " in
   *" -U "*) echo "yt-dlp is up to date"; exit 0 ;;
 esac
 [ -n "${STUB_AVISO:-}" ] && echo "WARNING: $STUB_AVISO"
-case " $* " in *" -N 1 "*) [ -z "${STUB_ERRO2:-}" ] || STUB_ERRO=$STUB_ERRO2 ;; esac   # a nova tentativa
+case " $* " in *" --referer "*)                                                       # o 2º degrau da cascata
+  [ -z "${STUB_ERRO2:-}" ] || STUB_ERRO=$STUB_ERRO2
+  [ -z "${STUB_SO_SEM_REFERER:-}" ] || STUB_ERRO="" ;;
+esac
 case " $* " in *" -- https://video.n.invalid/"*) STUB_ERRO="" ;; esac                 # o vídeo achado pelo navegador
 [ -z "${STUB_ERRO:-}" ] && exit 0
 echo "ERROR: $STUB_ERRO"; exit 1
@@ -387,7 +391,7 @@ formas() {                                    # formas TEXTO PALAVRA... [-- ARGS
 }
 formas "grabit.config" config
 formas "Uso:  grabit" ajuda help
-formas "instalação das dependências" instalar install
+formas "instalação das dependências" instalar install -- -y
 formas "GrabIt · atualização" atualizar update
 formas "não existe" verificar check -- "$TMP/nao-existe"
 formas "seção BAIXADOS" baixados downloaded -- -l "$L"
@@ -412,8 +416,10 @@ STUB_ERRO="[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge;
   STUB_ERRO2="[generic] x: Unable to download webpage: HTTP Error 403: Forbidden" falso t1 -L pt http://t.invalid/cf
 espera "verificação anti-robô é explicada, mesmo com a 2ª tentativa dizendo só 403" contem t1 "verificação anti-robô"
 espera "…e diz como baixar pelo navegador" contem t1 "Copiar como cURL"
-espera "a nova tentativa usa uma conexão por vez" tentou t.invalid/cf "-N 1"
-espera "…e manda o Referer" tentou t.invalid/cf "--referer http://t.invalid/cf"
+espera "a nova tentativa manda o Referer" tentou t.invalid/cf "--referer http://t.invalid/cf"
+espera "…sem perder o paralelismo à toa" nao_contem "$STUB_LOG" "-N 1 "
+STUB_ERRO="unable to download fragment 3" falso t0 -L pt http://t.invalid/frag
+espera "pedaço que não veio: a nova tentativa usa uma conexão por vez" tentou t.invalid/frag "-N 1"
 STUB_ERRO="Unsupported URL: http://t.invalid/js" falso t2 -L pt http://t.invalid/js
 espera "página sem vídeo reconhecido é explicada" contem t2 "nenhum vídeo reconhecido"
 espera "…sem repetir à toa" test "$(vezes t.invalid/js)" -eq 1
@@ -555,15 +561,23 @@ espera "…com o nome da página" tentou video.n.invalid "n.invalid - player tem
 espera "o log do navegador, que tem cookies, é apagado" test -z "$(find "$TMP/navdados" -name 'http*')"
 espera "o link vai para a seção BAIXADOS" grep -qE '^n\.invalid/player.*# ✔' links.txt
 espera "e sai com código 0" codigo "$RC" 0
+espera "o método que funcionou fica lembrado" grep -q '^n\.invalid 2 ' "$TMP/navdados/grabit/metodos.txt"
 : > "$STUB_LOG"
-STUB_ERRO="Unsupported URL: https://n.invalid/js" nav n2 -L pt https://n.invalid/js
-espera "player em JavaScript: vai direto ao navegador" test "$(grep -c -- '-- https://n.invalid/js' "$STUB_LOG")" -eq 1
+nav n7 -L pt https://n.invalid/outro
+espera "o próximo link do site vai direto ao navegador" nao_contem "$STUB_LOG" "-- https://n.invalid/outro"
 espera "…e baixa" tentou video.n.invalid "--no-download-archive"
 : > "$STUB_LOG"
-STUB_ERRO="HTTP Error 404: Not Found" nav n3 -L pt https://n.invalid/404
+STUB_FF_FECHA=1 nav n8 -L pt https://n.invalid/outra
+espera "o método lembrado que falha é esquecido" nao_contem "$TMP/navdados/grabit/metodos.txt" "n.invalid"
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://j.invalid/js" nav n2 -L pt https://j.invalid/js
+espera "player em JavaScript: vai direto ao navegador" test "$(grep -c -- '-- https://j.invalid/js' "$STUB_LOG")" -eq 1
+espera "…e baixa" tentou video.n.invalid "--no-download-archive"
+: > "$STUB_LOG"
+STUB_ERRO="HTTP Error 404: Not Found" nav n3 -L pt https://o.invalid/404
 espera "erro que um navegador não resolve não abre janela" nao_contem "$STUB_LOG" "firefox "
 : > "$STUB_LOG"
-STUB_ERRO="Unsupported URL: https://n.invalid/x" STUB_FF_FECHA=1 nav n4 -L pt https://n.invalid/x
+STUB_ERRO="Unsupported URL: https://p.invalid/x" STUB_FF_FECHA=1 nav n4 -L pt https://p.invalid/x
 espera "janela fechada sem vídeo: explica" contem n4 "nenhum vídeo apareceu no navegador"
 espera "…sem insistir" test "$(grep -c '^firefox --no-remote' "$STUB_LOG")" -eq 1
 espera "…e sai com código 1" codigo "$RC" 1
@@ -573,6 +587,86 @@ espera "USAR_NAVEGADOR=0: não abre" nao_contem "$STUB_LOG" "firefox "
 : > "$STUB_LOG"
 STUB_ERRO="Unsupported URL: https://n.invalid/z" USAR_NAVEGADOR=1 PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" HOME="$TMP/casa" roda n6 -L pt https://n.invalid/z
 espera "sem terminal nem tela, ninguém veria a janela: não abre" nao_contem "$STUB_LOG" "firefox "
+
+if command -v python3 >/dev/null 2>&1; then
+  secao "Vídeo achado pelo navegador (Chrome de mentira)"
+  FF2="$TMP/ff2"; mkdir -p "$FF2"
+  cat > "$FF2/google-chrome" <<'EOF'
+#!/bin/sh
+printf 'chrome %s\n' "$*" >> "$STUB_LOG"
+for a in "$@"; do case "$a" in --log-net-log=*) f=${a#--log-net-log=} ;; esac; done
+trap 'echo "chrome fechado" >> "$STUB_LOG"; exit 0' TERM
+cat > "$f" <<'LOG'
+{"constants":{"logEventTypes":{"URL_REQUEST_START_JOB":10,"HTTP_TRANSACTION_SEND_REQUEST_HEADERS":20,"HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS":21,"HTTP_TRANSACTION_TUNNEL_SEND_REQUEST_HEADERS":23}},
+"events": [
+{"params":{"method":"GET","url":"https://k.invalid/style.css"},"phase":1,"source":{"id":1,"type":1},"time":"1","type":10},
+{"params":{"headers":["Host: k.invalid","User-Agent: Chrome/140"],"line":"GET /style.css HTTP/1.1\r\n"},"phase":0,"source":{"id":1,"type":1},"time":"2","type":20},
+{"params":{"method":"GET","url":"https://video.n.invalid/hls/master.m3u8?t=2"},"phase":1,"source":{"id":2,"type":1},"time":"3","type":10},
+{"params":{"headers":[":method: GET",":authority: video.n.invalid",":scheme: https",":path: /hls/master.m3u8?t=2","user-agent: Chrome/140 \"x\"","referer: https://k.invalid/","origin: https://k.invalid","cookie: cf_clearance=abc; a=1","range: bytes=0-"]},"phase":0,"source":{"id":2,"type":1},"time":"4","type":21},
+{"params":{"headers":["pela me
+LOG
+while :; do sleep 1 & wait $!; done
+EOF
+  chmod +x "$FF2/google-chrome"
+  : > "$STUB_LOG"
+  PROGRAMA_NAVEGADOR="$FF2/google-chrome" STUB_ERRO="Unsupported URL: https://k.invalid/player" nav k1 -L pt 'https://k.invalid/player?ep=1'
+  espera "abre o navegador que estiver instalado" contem k1 "vou abrir o Chrome"
+  espera "…num perfil só do GrabIt" contem "$STUB_LOG" "--user-data-dir=$TMP/navdados/grabit/google-chrome/perfil"
+  espera "…pedindo o log com os cabeçalhos" contem "$STUB_LOG" "--net-log-capture-mode=IncludeSensitive"
+  espera "…e fecha a janela quando acha o vídeo" contem "$STUB_LOG" "chrome fechado"
+  espera "baixa o vídeo que o navegador pediu, em HTTP/2" tentou "-- https://video.n.invalid/hls/master.m3u8?t=2" "--no-download-archive"
+  espera "…com os cabeçalhos dele" tentou video.n.invalid '--add-header user-agent:Chrome/140 "x" --add-header referer:https://k.invalid/'
+  espera "…sem o Range daquele pedido nem os pseudo-cabeçalhos" nao_contem "$STUB_LOG" "range:"
+  espera "…com os cookies em arquivo" tentou video.n.invalid "--cookies "
+  espera "…e nunca na linha de comando" nao_contem "$STUB_LOG" "cf_clearance"
+  espera "…com o nome da página" tentou video.n.invalid "k.invalid - player ep 1 ["
+  espera "o log do navegador, que tem cookies, é apagado" test -z "$(find "$TMP/navdados" -name 'http*')"
+fi
+
+secao "A cascata lembra o que funcionou em cada site"
+D="$TMP/memoria"; mkdir -p "$D"; cd "$D" || exit 1
+M="$TMP/mem/grabit/metodos.txt"; export STUB_403="HTTP Error 403: Forbidden"
+: > "$STUB_LOG"
+XDG_DATA_HOME="$TMP/mem" STUB_ERRO=$STUB_403 STUB_SO_SEM_REFERER=1 falso m1 -L pt http://m.invalid/1
+espera "só no 2º degrau deu certo: duas tentativas" test "$(vezes m.invalid/1)" -eq 2
+espera "…e o site fica lembrado" grep -q '^m\.invalid 1 ' "$M"
+XDG_DATA_HOME="$TMP/mem" STUB_ERRO=$STUB_403 STUB_SO_SEM_REFERER=1 falso m2 -L pt http://m.invalid/2
+espera "o próximo link do site já começa no degrau certo" test "$(vezes m.invalid/2)" -eq 1
+espera "…com o que ele precisa" tentou m.invalid/2 "--referer http://m.invalid/2"
+XDG_DATA_HOME="$TMP/mem" falso m3 -L pt http://outro.invalid/1
+espera "outro site continua pelo caminho direto" nao_contem "$STUB_LOG" "--referer http://outro.invalid/1"
+printf 'velho.invalid 1 1000\n' > "$M"
+XDG_DATA_HOME="$TMP/mem" falso m4 -L pt http://velho.invalid/1
+espera "a memória vence: depois de 30 dias, volta ao caminho direto" nao_contem "$STUB_LOG" "--referer http://velho.invalid/1"
+printf -v AGORA '%(%s)T' -1
+printf 'falha.invalid 1 %s\nsumiu.invalid 1 %s\n' "$AGORA" "$AGORA" > "$M"
+XDG_DATA_HOME="$TMP/mem" STUB_ERRO=$STUB_403 falso m5 -L pt http://falha.invalid/1
+espera "o método lembrado que para de funcionar é esquecido" nao_contem "$M" "falha.invalid"
+XDG_DATA_HOME="$TMP/mem" STUB_ERRO="HTTP Error 404: Not Found" falso m6 -L pt http://sumiu.invalid/1
+espera "um link que sumiu (404) não apaga a memória do site" contem "$M" "sumiu.invalid"
+
+secao "Paralelismo e freio"
+D="$TMP/freio"; mkdir -p "$D"; cd "$D" || exit 1
+falso z0 -L pt http://y.invalid/1 http://y.invalid/2 http://y.invalid/3 http://y.invalid/4 http://y.invalid/5
+espera "4 downloads ao mesmo tempo por padrão" contem z0 "4 vídeo(s)"
+STUB_ERRO="HTTP Error 429: Too Many Requests" falso z1 -L pt http://z.invalid/1 http://z.invalid/2 http://z.invalid/3 http://z.invalid/4
+espera "429: o site ganha um freio" contem z1 "z.invalid pediu para ir mais devagar"
+
+secao "Instalador: o opcional é perguntado"
+D="$TMP/instalador"; mkdir -p "$D"; cd "$D" || exit 1
+: > "$STUB_LOG"
+STUB_JS="none" falso i1 -L pt install -y
+espera "install -y não pergunta e instala o recomendado" contem "$STUB_LOG" "brew install deno"
+espera "…e não chega a pedir confirmação" nao_contem i1 "[S/n]"
+: > "$STUB_LOG"
+PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" falso i2 -L pt --install --yes
+espera "-y nunca instala um navegador" nao_contem "$STUB_LOG" "firefox"
+espera "…mas conta o que fica faltando" contem i2 "Nenhum navegador compatível"
+: > "$STUB_LOG"
+PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" G="$TMP/repos/solto/grabit.sh" falso i3 -L pt update
+espera "update também não instala navegador" nao_contem "$STUB_LOG" "firefox"
+HOME="$TMP/casa" PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda i4 -L pt install -y
+espera "com um navegador instalado, nem o menciona" nao_contem i4 "Nenhum navegador"
 
 if (( RAPIDO )); then
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
@@ -616,7 +710,7 @@ for off in range(t // 3, t // 3 + 60000, 3000):   # estraga pedaços do meio, se
 EOF
 hls p360 640x360; hls p720 1280x720
 printf '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\np360.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1280x720\np720.m3u8\n' > "$W/res/mestre.m3u8"
-cp -R "$W/res" "$W/protegido"; mkdir -p "$W/app"
+cp -R "$W/res" "$W/protegido"; cp -R "$W/res" "$W/bloq"; mkdir -p "$W/app"
 cat > "$W/app/index.html" <<'EOF'
 <!doctype html><html><head><title>App</title></head><body><div id="player"></div>
 <script>fetch("/protegido/" + "mestre" + ".m3u8");</script></body></html>
@@ -638,6 +732,8 @@ class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam 
                 and c.get("Referer", "").endswith("/player?ep=2")
         return True
     def do_GET(self):
+        if self.path.startswith("/bloq/") and self.path.endswith(".ts"):
+            return self.send_error(403)                  # a playlist abre, mas os pedaços são recusados
         super().do_GET() if self.permitido() else self.send_error(403)
     def do_HEAD(self):
         super().do_HEAD() if self.permitido() else self.send_error(403)
@@ -729,13 +825,19 @@ printf "curl '%s' --compressed -H 'User-Agent: Navegador/1.0' -H 'Referer: %s' -
   "$B/sessao/curto.mp4" "$B/player?ep=2" > copiado.txt
 roda saida3 -L pt curl copiado.txt -o ./Ses
 espera "…e baixa com o cURL copiado do navegador" test -n "$(find Ses -name '*player ep 2*.mkv')"
-if command -v firefox >/dev/null 2>&1; then
-  USAR_NAVEGADOR=1 GRABIT_NAVEGADOR_OPCOES=--headless GRABIT_NAVEGADOR_ESPERA=90 XDG_DATA_HOME="$TMP/navreal" \
-    roda saida4 -L pt -o ./App "$B/app/index.html"
-  espera "página em JavaScript com vídeo protegido: o Firefox de verdade acha e o GrabIt baixa" \
-    test -n "$(find App -name '*app index html*.mkv')"
-  espera "…na melhor resolução" codigo "$(altura "$(find App -name '*.mkv' | head -n 1)")" 720
-fi
+INICIO=$SECONDS
+XDG_DATA_HOME="$TMP/bloqueio" roda saida5 -L pt -o ./Bloq "$B/bloq/p360.m3u8"
+espera "pedaços recusados: desiste em menos de 1 minuto" test $(( SECONDS - INICIO )) -lt 60
+espera "…e explica" contem saida5 "403"
+for par in "firefox|--headless" "google-chrome|--headless=new --no-sandbox" "chromium|--headless=new --no-sandbox"; do
+  prog=${par%%|*}
+  command -v "$prog" >/dev/null 2>&1 || continue
+  USAR_NAVEGADOR=1 PROGRAMA_NAVEGADOR=$prog GRABIT_NAVEGADOR_OPCOES=${par#*|} GRABIT_NAVEGADOR_ESPERA=90 XDG_DATA_HOME="$TMP/navreal-$prog" \
+    roda "saida-$prog" -L pt -o "./App-$prog" "$B/app/index.html"
+  espera "página em JavaScript com vídeo protegido: o $prog de verdade acha e o GrabIt baixa" \
+    test -n "$(find "App-$prog" -name '*app index html*.mkv')"
+  espera "…na melhor resolução" codigo "$(altura "$(find "App-$prog" -name '*.mkv' | head -n 1)")" 720
+done
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1

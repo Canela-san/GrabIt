@@ -43,7 +43,16 @@ cd GrabIt
 bash grabit.sh --install
 ```
 
-`--install` checks what's missing and shows the plan before doing anything: it installs FFmpeg and yt-dlp (with `curl-cffi`, to impersonate a browser when a site blocks automated downloads) through your system's package manager (apt, dnf, pacman, zypper, apk or Homebrew) and `pipx`, a JavaScript runtime if there's none that yt-dlp accepts (YouTube requires one to unlock the best resolutions), and creates the `grabit` command in `~/.local/bin`. A single confirmation, and nothing happens if you answer no.
+`--install` checks what's missing and shows the plan before doing anything. What's essential is FFmpeg and yt-dlp, through your system's package manager (apt, dnf, pacman, zypper, apk or Homebrew) and `pipx`, and the `grabit` command in `~/.local/bin`. What only improves what GrabIt can do is asked about, one by one:
+
+| Optional | What for | If you just press Enter |
+|---|---|---|
+| Deno | YouTube requires a JavaScript runtime to unlock the best resolutions (only offered if there's none that yt-dlp accepts) | installs |
+| `curl-cffi` | impersonate a browser when a site blocks automated downloads | installs |
+| `wl-clipboard` or `xclip` | capture copied links (`-C`) and read the copied cURL | installs |
+| Firefox | sites that only work in a browser (only offered if you have no compatible one) | **doesn't install** |
+
+To install without questions, use `grabit install -y` (or `--yes`): it accepts everything except the browser, which is a big program and never goes in without a "yes" from you.
 
 To put everything on the newest version in one go:
 
@@ -51,7 +60,7 @@ To put everything on the newest version in one go:
 grabit update
 ```
 
-It updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter through your system's package manager, asking for the password only if there's a new version) and installs whatever is missing, without asking.
+It updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter through your system's package manager, asking for the password only if there's a new version) and installs whatever is missing, without asking. It just doesn't install a browser.
 
 All commands work in English and Portuguese, with or without the dashes: `grabit update`, `grabit atualizar`, `grabit --update` and `grabit --atualizar` are the same thing. The same goes for `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `downloaded`/`baixados` and `help`/`ajuda`. Only a link file named like a command needs `./` in front of it (`grabit ./update`).
 
@@ -157,7 +166,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 |---|---|---|
 | `-l FILE` | file with the links (`-` = standard input) | `links.txt` |
 | `-o FOLDER` | folder where videos are saved | `./Downloads` |
-| `-j N` | simultaneous downloads | `2` |
+| `-j N` | simultaneous downloads | `4` |
 | `-c N` | connections (fragments) per video | `4` |
 | `-r HEIGHT` | maximum resolution (`720`, `1080`, `2160` or `4k`…) | no limit |
 | `-F` | force: ignore the `grabit.config` limits for this run | — |
@@ -188,7 +197,7 @@ grabit 'site.com/player?season=7&episode=1'
 
 > If the link has `&` or `?`, put it in quotes (the terminal reads those symbols differently) or use `links.txt`.
 
-**GrabIt opens Firefox by itself.** When a page only works in a browser, a Firefox window opens on it, GrabIt reads the video's request from the browser's own log, closes the window and downloads. If a check shows up, it's yours to do in the window: it's kept in a profile just for GrabIt (your regular Firefox doesn't change), so the next links tend to go straight through while it lasts. If the video doesn't start by itself, press play. With `USAR_NAVEGADOR=0`, the window never opens. For now this only works with Firefox; without it, you still have the two paths below.
+**GrabIt opens the browser by itself.** When a page only works in a browser, a window opens on it, GrabIt reads the video's request from the browser's own log, closes the window and downloads. If a check shows up, it's yours to do in the window: it's kept in a profile just for GrabIt (your regular browser doesn't change), so the next links tend to go straight through while it lasts. If the video doesn't start by itself, press play. Whatever is already installed works (Firefox, Chrome, Chromium, Brave, Edge, Vivaldi or Opera; to choose, use `PROGRAMA_NAVEGADOR`). With `USAR_NAVEGADOR=0`, the window never opens. Without any browser, you still have the two paths below.
 
 **Use the browser's session.** Open the page, pass the check and run:
 
@@ -242,7 +251,7 @@ COOKIES_NAVEGADOR=firefox
 | `SO_AUDIO` | `1` downloads only the audio (same as `-x`) | `0` |
 | `FORMATO_AUDIO` | `original` (no re-encoding) or `mp3`, `m4a`, `aac`, `opus`, `flac`, `wav`, `alac`, `vorbis` | `original` |
 | `RESOLUCAO_ALERTA` | warn when the best version available is below this; `0` = never | `720` |
-| `DOWNLOADS_SIMULTANEOS` | videos at the same time | `2` |
+| `DOWNLOADS_SIMULTANEOS` | videos at the same time | `4` |
 | `CONEXOES_POR_VIDEO` | connections per video | `4` |
 | `TENTATIVAS` | attempts per link (`1` = don't retry) | `2` |
 | `LIMITE_POR_SITE` | downloads at once from the same site (`0` = no limit) | `0` |
@@ -257,7 +266,8 @@ COOKIES_NAVEGADOR=firefox
 | `COOKIES_NAVEGADOR` | browser whose login will be used | — |
 | `USER_AGENT` | that browser's User-Agent (see [Difficult sites](#difficult-sites)) | — |
 | `OPCOES_YTDLP` | extra options for yt-dlp, separated by spaces (e.g. `--force-ipv4`) | — |
-| `USAR_NAVEGADOR` | `1` opens Firefox when a page only works in a browser; `0` never opens it | `1` |
+| `USAR_NAVEGADOR` | `1` opens a browser when a page only works in one; `0` never opens it | `1` |
+| `PROGRAMA_NAVEGADOR` | which browser to open (e.g. `google-chrome`); empty = the first one found | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
 | `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
 | `NOTIFICAR` | bell and desktop notification at the end of batches of 1 min or more (`0` = silence) | `1` |
@@ -322,7 +332,9 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 
 - **Format:** yt-dlp's `bv*+ba/b` (best video + best audio) with **MKV** output, which accepts any codec. Nothing is re-encoded.
 - **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A download that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, network drop) **starts over from scratch** next time instead of resuming the pieces: resuming can leave holes in the video, and here quality comes before speed. The links that were still pending go to `links_falhos.txt`.
-- **Retries:** temporary errors (network, 403, 429) go back to the end of the queue and try another way: one connection at a time, with the `Referer`, impersonating a browser when `curl-cffi` is installed and with the adjustment for the error (IPv4 on network failures, slower on 429). Permanent errors (private, removed video, 404) aren't retried.
+- **Cascade of attempts:** each link starts with the fastest way and only climbs if it has to: **1)** direct; **2)** with the `Referer`, impersonating a browser when `curl-cffi` is installed and with the adjustment for the error (IPv4 on network failures, one connection at a time on refused pieces, slower on 429); **3)** through the browser, if the page only works in one. Errors nothing can fix (private, removed video, 404) stop right away.
+- **The cascade remembers:** the step that worked on each site is kept (in `~/.local/share/grabit/metodos.txt`), and the site's next links start right there. On a long list, this avoids repeating on every link a path already known to fail. The memory expires in 30 days and drops if the method stops working.
+- **Speed:** 4 videos at a time by default; if a site answers 429, it gets a brake for this run and the others carry on as usual. Pieces refused several times in a row (401, 403, 404, 410) end the attempt in seconds, instead of holding the slot for minutes. While the browser window is busy, links from other sites go ahead. Permanent errors (private, removed video, 404) aren't retried.
 - **Disk full:** the header warns you when the destination folder has less than 2 GiB free. If the disk fills up midway, no new download starts (the next ones wouldn't fit either) and the links still pending go to `links_falhos.txt`.
 - **History:** every downloaded video is recorded in `Downloads/.grabit-historico.txt` (site + video ID). Next time it's skipped before anything else: on most sites GrabIt doesn't even need to open the page. Without the history, yt-dlp would open the page again, download the cover and rewrite the whole file just to conclude it already exists. Videos downloaded before the history existed go through that check only once and are added to it.
 - **Live queue (`-f`):** after finishing the list, GrabIt stays open and checks the link file every 2 seconds: whatever you add (at the top or at the end of the file) joins the queue and starts downloading. When the queue empties, the downloaded links go to the `DOWNLOADED` section and, if the batch took a while, the completion notice arrives. Quit with <kbd>q</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>. It only happens with the option: without `-f`, GrabIt always closes when done.
