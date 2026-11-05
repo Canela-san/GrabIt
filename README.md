@@ -180,7 +180,15 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 
 ### Sites difíceis
 
-Se o vídeo toca no seu navegador, dá para baixá-lo, mesmo em sites com verificação anti-robô (como a do Cloudflare) ou com player em JavaScript, onde o yt-dlp sozinho não acha o vídeo. Quem passa pela verificação é você, no navegador; o GrabIt só usa a sessão que você abriu. Quando um link falha por um desses motivos, o próprio resumo sugere estes caminhos.
+Se o vídeo toca no navegador, dá para baixá-lo, mesmo em sites com verificação anti-robô (como a do Cloudflare) ou com player em JavaScript, onde o yt-dlp sozinho não acha o vídeo. Você continua rodando só `grabit LINK`:
+
+```bash
+grabit 'site.com/player?temporada=7&episodio=1'
+```
+
+> Se o link tiver `&` ou `?`, ponha entre aspas (o terminal entende esses símbolos de outro jeito) ou use o `links.txt`.
+
+**O GrabIt abre o Firefox sozinho.** Quando a página só funciona num navegador, uma janela do Firefox abre nela, o GrabIt lê no log do próprio navegador o pedido do vídeo, fecha a janela e baixa. Se aparecer uma verificação, é você quem a faz na janela: ela fica guardada num perfil só do GrabIt (o seu Firefox de sempre não muda), então os próximos links costumam passar direto enquanto ela valer. Se o vídeo não começar sozinho, dê play. Com `USAR_NAVEGADOR=0`, a janela nunca abre. Hoje isso funciona só com o Firefox; sem ele, restam os dois caminhos abaixo.
 
 **Usar a sessão do navegador.** Abra a página, passe pela verificação e rode:
 
@@ -248,6 +256,7 @@ COOKIES_NAVEGADOR=firefox
 | `COOKIES_NAVEGADOR` | navegador cujo login será usado | — |
 | `USER_AGENT` | User-Agent desse navegador (veja [Sites difíceis](#sites-difíceis)) | — |
 | `OPCOES_YTDLP` | opções a mais para o yt-dlp, separadas por espaços (ex.: `--force-ipv4`) | — |
+| `USAR_NAVEGADOR` | `1` abre o Firefox quando a página só funciona num navegador; `0` nunca abre | `1` |
 | `USAR_HISTORICO` | `0` desliga o histórico de baixados | `1` |
 | `ARQUIVO_FALHAS` | onde salvar os links que falharam | `links_falhos.txt` |
 | `NOTIFICAR` | sino e notificação na área de trabalho no fim de lotes de 1 min ou mais (`0` = silêncio) | `1` |

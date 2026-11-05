@@ -180,7 +180,15 @@ cat list.txt | grabit -l -                   # read links from standard input
 
 ### Difficult sites
 
-If the video plays in your browser, you can download it, even on sites with an anti-bot check (like Cloudflare's) or a JavaScript player, where yt-dlp alone can't find the video. You're the one who passes the check, in the browser; GrabIt only uses the session you opened. When a link fails for one of these reasons, the summary itself suggests these paths.
+If the video plays in a browser, you can download it, even on sites with an anti-bot check (like Cloudflare's) or a JavaScript player, where yt-dlp alone can't find the video. You still just run `grabit LINK`:
+
+```bash
+grabit 'site.com/player?season=7&episode=1'
+```
+
+> If the link has `&` or `?`, put it in quotes (the terminal reads those symbols differently) or use `links.txt`.
+
+**GrabIt opens Firefox by itself.** When a page only works in a browser, a Firefox window opens on it, GrabIt reads the video's request from the browser's own log, closes the window and downloads. If a check shows up, it's yours to do in the window: it's kept in a profile just for GrabIt (your regular Firefox doesn't change), so the next links tend to go straight through while it lasts. If the video doesn't start by itself, press play. With `USAR_NAVEGADOR=0`, the window never opens. For now this only works with Firefox; without it, you still have the two paths below.
 
 **Use the browser's session.** Open the page, pass the check and run:
 
@@ -249,6 +257,7 @@ COOKIES_NAVEGADOR=firefox
 | `COOKIES_NAVEGADOR` | browser whose login will be used | — |
 | `USER_AGENT` | that browser's User-Agent (see [Difficult sites](#difficult-sites)) | — |
 | `OPCOES_YTDLP` | extra options for yt-dlp, separated by spaces (e.g. `--force-ipv4`) | — |
+| `USAR_NAVEGADOR` | `1` opens Firefox when a page only works in a browser; `0` never opens it | `1` |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
 | `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
 | `NOTIFICAR` | bell and desktop notification at the end of batches of 1 min or more (`0` = silence) | `1` |

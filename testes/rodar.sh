@@ -19,7 +19,7 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit-testes.XXXXXX") || exit 1
 SRV=0
 trap '(( SRV )) && kill "$SRV" 2>/dev/null; rm -rf -- "$TMP"' EXIT
 export GRABIT_CONFIG="$TMP/sem-config/grabit.config"   # pasta inexistente: nenhum config criado
-export NO_COLOR=1 NOTIFICAR=0
+export NO_COLOR=1 NOTIFICAR=0 USAR_NAVEGADOR=0   # nenhum teste abre uma janela sem pedir
 unset IDIOMA DOWNLOADS_SIMULTANEOS RESOLUCAO_MAXIMA LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS NTFY_TOPICO
 
 N_OK=0; FALHAS=()
@@ -157,6 +157,7 @@ case " $* " in
 esac
 [ -n "${STUB_AVISO:-}" ] && echo "WARNING: $STUB_AVISO"
 case " $* " in *" -N 1 "*) [ -z "${STUB_ERRO2:-}" ] || STUB_ERRO=$STUB_ERRO2 ;; esac   # a nova tentativa
+case " $* " in *" -- https://video.n.invalid/"*) STUB_ERRO="" ;; esac                 # o vídeo achado pelo navegador
 [ -z "${STUB_ERRO:-}" ] && exit 0
 echo "ERROR: $STUB_ERRO"; exit 1
 EOF
@@ -498,6 +499,81 @@ EOF
   fi
 fi
 
+secao "Link sem https://"
+D="$TMP/sem-esquema"; mkdir -p "$D"; cd "$D" || exit 1
+: > "$STUB_LOG"
+falso s1 -L pt 'site.invalid/player?temporada=7&episodio=1'
+espera "site.com/caminho vira um link" contem "$STUB_LOG" "-- https://site.invalid/player?temporada=7&episodio=1"
+falso s2 -L pt lista.txt
+espera "lista.txt, sem caminho, não é um link" contem s2 "Nenhum link válido"
+falso s3 -L pt pasta/arquivo.txt
+espera "pasta/arquivo.txt também não" contem s3 "Nenhum link válido"
+
+secao "Vídeo achado pelo navegador (Firefox de mentira)"
+D="$TMP/navegador"; FF="$TMP/ff"; mkdir -p "$D" "$FF"; cd "$D" || exit 1
+cat > "$FF/firefox" <<'EOF'
+#!/bin/sh
+printf 'firefox %s\n' "$*" >> "$STUB_LOG"
+[ -z "${STUB_FF_FECHA:-}" ] || exit 0
+trap 'echo "firefox fechado" >> "$STUB_LOG"; exit 0' TERM
+cat > "$MOZ_LOG_FILE.moz_log" <<'LOG'
+[Parent 1: Main Thread]: E/nsHttp uri=https://n.invalid/style.css
+[Parent 1: Main Thread]: E/nsHttp   GET /style.css HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: n.invalid
+[Parent 1: Main Thread]: E/nsHttp ]
+[Parent 1: Main Thread]: E/nsHttp uri=https://video.n.invalid/pt-BR/701/master.m3u8?t=1
+[Parent 1: Main Thread]: E/nsHttp http request [
+[Parent 1: Main Thread]: E/nsHttp   GET /pt-BR/701/master.m3u8?t=1 HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: video.n.invalid
+[Parent 1: Socket Thread]: E/nsHttp outra coisa no meio
+[Parent 1: Main Thread]: E/nsHttp   User-Agent: Firefox/159.0 (X11; Linux)
+[Parent 1: Main Thread]: E/nsHttp   Referer: https://n.invalid/
+[Parent 1: Main Thread]: E/nsHttp   Origin: https://n.invalid
+[Parent 1: Main Thread]: E/nsHttp   Cookie: cf_clearance=abc; a=1
+[Parent 1: Main Thread]: E/nsHttp   Range: bytes=0-
+[Parent 1: Main Thread]: E/nsHttp ]
+LOG
+while :; do sleep 1 & wait $!; done
+EOF
+chmod +x "$FF/firefox"
+nav() { HOME="$TMP/casa" XDG_DATA_HOME="$TMP/navdados" USAR_NAVEGADOR=1 GRABIT_NAVEGADOR_OPCOES=--headless GRABIT_NAVEGADOR_ESPERA=15 PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
+printf '%s\n' 'n.invalid/player?temporada=7&episodio=1' > links.txt
+: > "$STUB_LOG"
+STUB_ERRO="[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again" \
+  STUB_ERRO2="[generic] x: Unable to download webpage: HTTP Error 403: Forbidden" nav n1 -L pt
+espera "verificação anti-robô: abre o navegador, com o aviso" contem n1 "vou abrir o Firefox"
+espera "…uma vez só" test "$(grep -c '^firefox --no-remote' "$STUB_LOG")" -eq 1
+espera "…num perfil só do GrabIt" contem "$STUB_LOG" "--no-remote --profile $TMP/navdados/grabit/firefox/perfil"
+espera "…na página do link" contem "$STUB_LOG" "https://n.invalid/player?temporada=7&episodio=1"
+espera "…e fecha a janela quando acha o vídeo" contem "$STUB_LOG" "firefox fechado"
+espera "baixa o vídeo que o navegador pediu" tentou "-- https://video.n.invalid/pt-BR/701/master.m3u8?t=1" "--no-download-archive"
+espera "…com o Referer e o User-Agent dele" tentou video.n.invalid "--add-header User-Agent:Firefox/159.0 (X11; Linux) --add-header Referer:https://n.invalid/"
+espera "…sem o Range daquele pedido" nao_contem "$STUB_LOG" "Range:"
+espera "…com os cookies em arquivo" tentou video.n.invalid "--cookies "
+espera "…e nunca na linha de comando" nao_contem "$STUB_LOG" "cf_clearance"
+espera "…com o nome da página" tentou video.n.invalid "n.invalid - player temporada 7 episodio 1 ["
+espera "o log do navegador, que tem cookies, é apagado" test -z "$(find "$TMP/navdados" -name 'http*')"
+espera "o link vai para a seção BAIXADOS" grep -qE '^n\.invalid/player.*# ✔' links.txt
+espera "e sai com código 0" codigo "$RC" 0
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://n.invalid/js" nav n2 -L pt https://n.invalid/js
+espera "player em JavaScript: vai direto ao navegador" test "$(grep -c -- '-- https://n.invalid/js' "$STUB_LOG")" -eq 1
+espera "…e baixa" tentou video.n.invalid "--no-download-archive"
+: > "$STUB_LOG"
+STUB_ERRO="HTTP Error 404: Not Found" nav n3 -L pt https://n.invalid/404
+espera "erro que um navegador não resolve não abre janela" nao_contem "$STUB_LOG" "firefox "
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://n.invalid/x" STUB_FF_FECHA=1 nav n4 -L pt https://n.invalid/x
+espera "janela fechada sem vídeo: explica" contem n4 "nenhum vídeo apareceu no navegador"
+espera "…sem insistir" test "$(grep -c '^firefox --no-remote' "$STUB_LOG")" -eq 1
+espera "…e sai com código 1" codigo "$RC" 1
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://n.invalid/y" USAR_NAVEGADOR=0 GRABIT_NAVEGADOR_OPCOES=--headless PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" HOME="$TMP/casa" roda n5 -L pt https://n.invalid/y
+espera "USAR_NAVEGADOR=0: não abre" nao_contem "$STUB_LOG" "firefox "
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://n.invalid/z" USAR_NAVEGADOR=1 PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" HOME="$TMP/casa" roda n6 -L pt https://n.invalid/z
+espera "sem terminal nem tela, ninguém veria a janela: não abre" nao_contem "$STUB_LOG" "firefox "
+
 if (( RAPIDO )); then
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
   (( ${#FALHAS[@]} == 0 ))
@@ -540,6 +616,11 @@ for off in range(t // 3, t // 3 + 60000, 3000):   # estraga pedaços do meio, se
 EOF
 hls p360 640x360; hls p720 1280x720
 printf '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\np360.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1280x720\np720.m3u8\n' > "$W/res/mestre.m3u8"
+cp -R "$W/res" "$W/protegido"; mkdir -p "$W/app"
+cat > "$W/app/index.html" <<'EOF'
+<!doctype html><html><head><title>App</title></head><body><div id="player"></div>
+<script>fetch("/protegido/" + "mestre" + ".m3u8");</script></body></html>
+EOF
 cat > "$W/pagina/index.html" <<'EOF'
 <!doctype html><html><head><title>Pagina de teste</title></head><body>
 <video src="previa.mp4"></video><video src="principal.mp4"></video></body></html>
@@ -550,7 +631,7 @@ import functools, http.server, sys
 class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam os vídeos protegidos
     def permitido(self):
         c = self.headers
-        if self.path.startswith("/referer/"):
+        if self.path.startswith(("/referer/", "/protegido/")):
             return bool(c.get("Referer"))
         if self.path.startswith("/sessao/"):
             return "segredo=1" in c.get("Cookie", "") and c.get("User-Agent") == "Navegador/1.0" \
@@ -648,6 +729,13 @@ printf "curl '%s' --compressed -H 'User-Agent: Navegador/1.0' -H 'Referer: %s' -
   "$B/sessao/curto.mp4" "$B/player?ep=2" > copiado.txt
 roda saida3 -L pt curl copiado.txt -o ./Ses
 espera "…e baixa com o cURL copiado do navegador" test -n "$(find Ses -name '*player ep 2*.mkv')"
+if command -v firefox >/dev/null 2>&1; then
+  USAR_NAVEGADOR=1 GRABIT_NAVEGADOR_OPCOES=--headless GRABIT_NAVEGADOR_ESPERA=90 XDG_DATA_HOME="$TMP/navreal" \
+    roda saida4 -L pt -o ./App "$B/app/index.html"
+  espera "página em JavaScript com vídeo protegido: o Firefox de verdade acha e o GrabIt baixa" \
+    test -n "$(find App -name '*app index html*.mkv')"
+  espera "…na melhor resolução" codigo "$(altura "$(find App -name '*.mkv' | head -n 1)")" 720
+fi
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1

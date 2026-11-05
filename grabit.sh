@@ -128,7 +128,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP USAR_NAVEGADOR USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -154,6 +154,7 @@ VERIFICAR=0                                   # 1 = decodifica cada vídeo intei
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
+USAR_NAVEGADOR=1                              # 0 = nunca abrir o Firefox para achar o vídeo
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
 NOTIFICAR=1                                   # sino + notificação no fim (lotes de 1 min ou mais)
@@ -509,6 +510,10 @@ idioma_pt() {
     [curl_invalido]="Isso não é um comando cURL com um link. Na aba Rede do navegador (F12), clique com o direito no pedido do vídeo e escolha Copiar como cURL."
     [curl_colar]="     Também dá para colar o comando depois de grabit:  grabit curl 'https://…' -H …"
     [clip_wayland]="No Wayland, ler a área de transferência precisa do wl-clipboard. Para instalar:  %s"
+    [et_navegador]="no navegador · faça a verificação ou dê play, se precisar"
+    [nav_abrindo]="Este site precisa de um navegador: vou abrir o Firefox. Se aparecer uma verificação, é só fazê-la na janela."
+    [nav_sem_video]="nenhum vídeo apareceu no navegador (a janela fechou ou o tempo acabou)"
+    [nav_sem_firefox]="     Com o Firefox instalado, o GrabIt faz isso sozinho."
     [curl_sem_clip]="Não consegui ler a área de transferência. Guarde o comando num arquivo e rode:  %s"
     [curl_sem_arquivo]="O arquivo '%s' não foi encontrado."
     [kv_curl]="cURL do navegador · %d cabeçalho(s), %d cookie(s) · arquivo: %s"
@@ -705,6 +710,11 @@ EOF
 
 # Opções a mais para o yt-dlp, separadas por espaços. Ex.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
+
+# Quando a página só funciona num navegador (player em JavaScript, verificação anti-robô), abrir
+# o Firefox, num perfil só do GrabIt, para achar o vídeo. Uma verificação, se aparecer, é você
+# quem faz na janela. 0 = nunca abrir.
+#USAR_NAVEGADOR=1
 
 # Pular na hora os vídeos já baixados antes (0 = conferir sempre; o mesmo que -i)
 #USAR_HISTORICO=1
@@ -987,6 +997,10 @@ idioma_en() {
     [curl_invalido]="That isn't a cURL command with a link. In the browser's Network tab (F12), right-click the video request and choose Copy as cURL."
     [curl_colar]="     You can also paste the command after grabit:  grabit curl 'https://…' -H …"
     [clip_wayland]="On Wayland, reading the clipboard needs wl-clipboard. To install it:  %s"
+    [et_navegador]="in the browser · do the check or press play, if needed"
+    [nav_abrindo]="This site needs a browser: I'll open Firefox. If a check shows up, just do it in the window."
+    [nav_sem_video]="no video showed up in the browser (the window closed or time ran out)"
+    [nav_sem_firefox]="     With Firefox installed, GrabIt does this by itself."
     [curl_sem_clip]="I couldn't read the clipboard. Save the command to a file and run:  %s"
     [curl_sem_arquivo]="The file '%s' wasn't found."
     [kv_curl]="browser cURL · %d header(s), %d cookie(s) · file: %s"
@@ -1188,6 +1202,11 @@ EOF
 # Extra options for yt-dlp, separated by spaces. E.g.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
 
+# When a page only works in a browser (JavaScript player, anti-bot check), open Firefox, in a
+# profile just for GrabIt, to find the video. A check, if one shows up, is yours to do in the
+# window. 0 = never open it.
+#USAR_NAVEGADOR=1
+
 # Skip videos already downloaded before (0 = always check; same as -i)
 #USAR_HISTORICO=1
 
@@ -1338,7 +1357,7 @@ for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
     exit 2
   fi
 done
-for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_HISTORICO NOTIFICAR; do
+for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_NAVEGADOR USAR_HISTORICO NOTIFICAR; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
     origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
@@ -1419,6 +1438,7 @@ ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; JS_RECUSADO=""; JS_CAND
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0
 AJUSTE=""; AJUSTES=(); DICA_NAVEGADOR=0; MODO_CURL=0; EXTRA_YTDLP=(); N_CAB_CURL=0; N_COOK_CURL=0; ROTULO_CURL=""
+VIA_NAV=(); NAV_AVISADO=0; FIREFOX=""; PASTA_NAV=""; CAB_ARGS=(); CAB_REFERER=""; SAIDA_PAGINA=""
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
@@ -1663,6 +1683,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     *"aren't any"*|*"are no "*|*"Not remuxing"*|"Deleting original"*|WARNING:*) ;;   # "nada a fazer"
     @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
     "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
+    "[grabit] navegador"*)                                         ETAPA=${T[et_navegador]} ;;
     "[Exec]"*"--nfo "*)                                            ETAPA=${T[et_nfo]} ;;
     "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
     "[download] Sleeping "*)
@@ -2068,7 +2089,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   if (( rc != 0 )); then
     classifica_erro "$MOTIVO"
     # a última tentativa pode ter dito só "403": o motivo de verdade veio na primeira
-    if cat "${logs[@]}" 2>/dev/null | grep -aqF 'anti-bot challenge'; then DICA=${T[d_antirobo]}; DICA_NAVEGADOR=1; fi
+    if grep -aqF 'anti-bot challenge' "${logs[@]}" 2>/dev/null; then DICA=${T[d_antirobo]}; DICA_NAVEGADOR=1; fi
     MOTIVO=$(sed -E 's/^ERROR: //; s/^\[[^]]+\] //; s/^[^ :]+: //; s/ \(caused by .*$//; s/; please report this issue.*$//' <<<"$MOTIVO")
     if (( n_done > 0 || n_hist > 0 )); then
       linha_resultado "⚠" "$AMARELO" "$idxs" "${TITULO[$idx]:-$url}" "${T[r_parcial]}"
@@ -2126,7 +2147,11 @@ lanca_job() {                                 # lanca_job IDX
   # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
   # histórico e continuam sendo pulados.
   (( ${REBAIXAR[$i]:-0} )) && extra+=(--force-overwrites)
-  baixa_link "$url" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
+  if [[ -n ${VIA_NAV[$i]:-} ]]; then
+    baixa_pelo_navegador "$url" "$i" </dev/null >"$TMP/$i.log" 2>&1 &
+  else
+    baixa_link "$url" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
+  fi
   ULTIMO_PID=$!
   INICIO_JOB[$i]=$SECONDS; ETA_JOB[$i]=0
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
@@ -2427,11 +2452,14 @@ captura_clip() {
 # guarda o log desta tentativa e põe o link no fim da fila.
 vale_repetir() {
   local idx=$1 tent=${TENTATIVA[$1]:-1}
-  (( tent < TENTATIVAS )) || return 1
   analisa_log "$TMP/$idx.log"
   (( N_FATAIS == 0 && N_COSMETICOS > 0 )) && return 1   # o vídeo saiu inteiro: repetir não muda nada
   classifica_erro "$MOTIVO"
-  (( REPETE )) || return 1
+  # Sem mais o que tentar por aqui: se a página só funciona num navegador, é a vez dele
+  if (( ! REPETE || tent >= TENTATIVAS )); then
+    vai_ao_navegador "$idx" || return 1
+    VIA_NAV[$idx]=1
+  fi
   (( ARQUIVO_RUIM )) && REBAIXAR[$idx]=1
   AJUSTES[$idx]=$AJUSTE
   mv -f "$TMP/$idx.log" "$TMP/$idx.t$tent.log"
@@ -2565,6 +2593,7 @@ resumo() {
     printf '\n  %s\n' "${T[s_nav_tit]}"
     comando_grabit "-b ${COOKIES_NAVEGADOR:-firefox} LINK"; t s_nav_b "${CIANO}${FMT}${R}"; printf '%s\n%s\n' "$TXT" "${T[s_nav_b2]}"
     comando_grabit curl; t s_nav_c "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
+    acha_firefox || printf '%s\n' "${T[nav_sem_firefox]}"
   fi
   printf '\n'
 }
@@ -2811,14 +2840,15 @@ eh_fim_baixados() {
 }
 
 # links_da_linha LINHA → PALAVRAS_LINK: os links da linha, sem o comentário do fim
-# ("www." vira "https://www.")
+# ("www." e "site.com/caminho" viram "https://…"; só o domínio, sem caminho, não conta:
+# "lista.txt" ou "e.g." numa anotação não são links)
 links_da_linha() {
   local palavras=() p
   PALAVRAS_LINK=()
   IFS=$' \t\r' read -ra palavras <<<"${1#$'﻿'}"
   for p in "${palavras[@]}"; do
     [[ $p == \#* ]] && break
-    [[ $p == www.* ]] && p="https://$p"
+    [[ $p == www.* || $p =~ ^([[:alnum:]-]+\.)+[[:alpha:]]{2,}/ ]] && p="https://$p"
     [[ $p =~ ^https?:// ]] && PALAVRAS_LINK+=("$p")
   done
   return 0
@@ -3059,8 +3089,7 @@ monta_args_ytdlp() {
 # ela. O comando copiado é só lido, nunca executado. Os cookies vão num arquivo temporário,
 # e não na linha de comando, onde qualquer usuário da máquina os veria.
 le_curl() {
-  local origem=${ARGS_LINKS[0]:-} txt campos=() url h nome valor pagina="" cookies="" par pares=() arq
-  local caminho site resto palavras=() ck
+  local origem=${ARGS_LINKS[0]:-} txt campos=() url
   if ! command -v python3 >/dev/null 2>&1; then erro "${T[curl_sem_py]}"; exit 1; fi
   if (( ${#CURL_ARGS[@]} )); then txt=""
   elif [[ $origem == - ]]; then txt=$(cat)
@@ -3114,36 +3143,51 @@ sys.stdout.write("\0".join([url] + cab) + "\0")' "${CURL_ARGS[@]}" <<<"$txt" 2>/
     exit 2
   fi
 
-  # Vão os cabeçalhos que dizem quem pede; os que descrevem aquele pedido (Range…) ficam
-  for h in "${campos[@]:1}"; do
+  cabecalhos_ytdlp "$url" "$TMP/cookies-curl.txt" "${campos[@]:1}"
+  nome_pela_pagina "${CAB_REFERER:-$url}" "$url"
+  EXTRA_YTDLP+=("${CAB_ARGS[@]}" --parse-metadata "$ROTULO_CURL:%(title)s")
+  TEMPLATE_SAIDA=$SAIDA_PAGINA
+  MODO_CURL=1; USAR_HISTORICO=0; FILA_VIVA=0; CAPTURA=0; UPGRADE=0; LISTA_EXPLICITA=0
+  ARGS_LINKS=("$url")
+}
+
+# cabecalhos_ytdlp URL ARQ_COOKIES LINHA… → CAB_ARGS (as opções do yt-dlp), CAB_REFERER,
+# N_CAB_CURL e N_COOK_CURL. Vão os cabeçalhos que dizem quem pede; os que descrevem aquele
+# pedido (Range…) ficam. Os cookies vão no arquivo, e só para o site do vídeo.
+cabecalhos_ytdlp() {
+  local url=$1 arq=$2 h nome valor cookies="" par pares=() site
+  shift 2
+  CAB_ARGS=(); CAB_REFERER=""; N_CAB_CURL=0; N_COOK_CURL=0
+  for h in "$@"; do
     [[ $h == *:* ]] || continue
     nome=${h%%:*}; valor=${h#*:}; valor=${valor# }
     [[ -n $nome ]] || continue
     case ${nome,,} in
       host|accept-encoding|connection|content-length|range|if-*|priority|te|upgrade-insecure-requests|pragma|cache-control) continue ;;
       cookie) cookies=$valor; continue ;;
-      referer) pagina=$valor ;;
+      referer) CAB_REFERER=$valor ;;
     esac
-    EXTRA_YTDLP+=(--add-header "$nome:$valor"); N_CAB_CURL=$(( N_CAB_CURL + 1 ))
+    CAB_ARGS+=(--add-header "$nome:$valor"); N_CAB_CURL=$(( N_CAB_CURL + 1 ))
   done
-  if [[ -n $cookies ]]; then
-    arq="$TMP/cookies-curl.txt"
-    site=${url#*://}; site=${site%%[/?#]*}; site=${site##*@}; site=${site%%:*}
-    printf '# Netscape HTTP Cookie File\n' > "$arq"
-    IFS=';' read -ra pares <<<"$cookies"
-    for par in "${pares[@]}"; do
-      par=${par# }
-      [[ $par == *=* ]] || continue
-      printf '%s\tFALSE\t/\tFALSE\t0\t%s\t%s\n' "$site" "${par%%=*}" "${par#*=}" >> "$arq"
-      N_COOK_CURL=$(( N_COOK_CURL + 1 ))
-    done
-    EXTRA_YTDLP+=(--cookies "$arq")
-  fi
+  [[ -n $cookies ]] || return 0
+  site=${url#*://}; site=${site%%[/?#]*}; site=${site##*@}; site=${site%%:*}
+  printf '# Netscape HTTP Cookie File\n' > "$arq"
+  IFS=';' read -ra pares <<<"$cookies"
+  for par in "${pares[@]}"; do
+    par=${par# }
+    [[ $par == *=* ]] || continue
+    printf '%s\tFALSE\t/\tFALSE\t0\t%s\t%s\n' "$site" "${par%%=*}" "${par#*=}" >> "$arq"
+    N_COOK_CURL=$(( N_COOK_CURL + 1 ))
+  done
+  CAB_ARGS+=(--cookies "$arq")
+}
 
-  # O link do vídeo costuma se chamar só "master.m3u8": o nome vem da página, e o [número] a
-  # separa das outras. Sem histórico, ou o próximo "master" pareceria já baixado. Vindo de
-  # outro domínio, o Referer costuma trazer só "https://site/": aí vale o caminho do vídeo.
-  pagina=${pagina:-$url}
+# nome_pela_pagina PÁGINA URL_DO_VÍDEO → ROTULO_CURL e SAIDA_PAGINA (o modelo do nome). O link
+# do vídeo costuma se chamar só "master.m3u8": o nome vem da página, e o [número] a separa das
+# outras. Vindo de outro domínio, o Referer costuma trazer só "https://site/": aí vale o
+# caminho do vídeo.
+nome_pela_pagina() {
+  local pagina=$1 url=$2 caminho site resto h palavras=() ck
   caminho=${pagina#*://}; caminho=${caminho%%#*}
   site=${caminho%%[/?]*}; resto=${caminho#"$site"}
   site=${site##*@}; site=${site%%:*}; site=${site#www.}
@@ -3156,14 +3200,128 @@ sys.stdout.write("\0".join([url] + cab) + "\0")' "${CURL_ARGS[@]}" <<<"$txt" 2>/
       *) resto=${resto%/*}/$h ;;
     esac
   fi
-  read -ra palavras <<<"${resto//[\/?&=_+%.]/ }"
+  read -ra palavras <<<"${resto//[\/?&=_+%.:]/ }"
   ROTULO_CURL="$site${palavras[*]:+ - ${palavras[*]}}"; ROTULO_CURL=${ROTULO_CURL:0:150}
   ck=$(printf '%s %s' "$pagina" "${url%%\?*}" | cksum); ck=${ck%% *}
-  nome=${ROTULO_CURL//%/%%}
-  TEMPLATE_SAIDA=${TEMPLATE_SAIDA/'%(title).180B [%(id)s]'/"$nome [$ck]"}
-  TEMPLATE_SAIDA=${TEMPLATE_SAIDA/'%(title).150B [%(id)s]'/"$nome [$ck]"}
-  MODO_CURL=1; USAR_HISTORICO=0; FILA_VIVA=0; CAPTURA=0; UPGRADE=0; LISTA_EXPLICITA=0
-  ARGS_LINKS=("$url")
+  SAIDA_PAGINA=${TEMPLATE_SAIDA/'%(title).180B [%(id)s]'/"$ROTULO_CURL [$ck]"}
+  SAIDA_PAGINA=${SAIDA_PAGINA/'%(title).150B [%(id)s]'/"$ROTULO_CURL [$ck]"}
+}
+
+# ───────────────────────────── Vídeo achado pelo navegador ────────────────────
+# Há páginas que só um navegador resolve: o player é um programa em JavaScript que monta o link
+# do vídeo, ou o site pede uma verificação anti-robô. Aí o GrabIt abre o Firefox de verdade,
+# visível, num perfil só dele, e lê no log oficial do navegador (MOZ_LOG) o pedido do vídeo.
+# Nada controla o navegador nem disfarça o que ele é: uma verificação, se aparecer, é a pessoa
+# quem faz na janela, e o perfil a guarda para os próximos links.
+acha_firefox() {                              # → FIREFOX
+  FIREFOX=$(command -v firefox 2>/dev/null) && return 0
+  [[ -x /Applications/Firefox.app/Contents/MacOS/firefox ]] || return 1
+  FIREFOX=/Applications/Firefox.app/Contents/MacOS/firefox
+}
+
+pode_navegador() {
+  (( USAR_NAVEGADOR && ! MODO_CURL && ! UPGRADE )) || return 1
+  acha_firefox || return 1
+  [[ -n ${GRABIT_NAVEGADOR_OPCOES:-} ]] && return 0  # (os testes: Firefox sem janela)
+  (( INTERATIVO )) || return 1                       # com a saída redirecionada, ninguém veria a janela
+  [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} || $OSTYPE == darwin* ]]
+}
+
+# vai_ao_navegador IDX: o erro deste link é dos que um navegador resolve? E há um à mão?
+vai_ao_navegador() {
+  local idx=$1 f achou=0
+  [[ -z ${VIA_NAV[$idx]:-} ]] && pode_navegador || return 1
+  for f in "$TMP/$idx".t*.log "$TMP/$idx.log"; do
+    [[ -f $f ]] && grep -aqE 'anti-bot challenge|Unsupported URL: ' "$f" && achou=1
+  done
+  (( achou )) || return 1
+  if (( ! NAV_AVISADO )); then NAV_AVISADO=1; PERM+=("  ${CIANO}↗${R} ${T[nav_abrindo]}"); fi
+}
+
+pasta_navegador() {                           # → PASTA_NAV: o Firefox do snap só escreve na pasta dele
+  if [[ $(readlink -f -- "$FIREFOX" 2>/dev/null) == /snap/* ]] || head -c 300 -- "$FIREFOX" 2>/dev/null | grep -aq '/snap/'; then
+    PASTA_NAV="$HOME/snap/firefox/common/grabit"
+  else
+    PASTA_NAV="${XDG_DATA_HOME:-$HOME/.local/share}/grabit/firefox"
+  fi
+  mkdir -p "$PASTA_NAV/perfil" && chmod 700 "$PASTA_NAV" || return 1
+  [[ -e $PASTA_NAV/perfil/user.js ]] || cat > "$PASTA_NAV/perfil/user.js" <<'EOF'
+// Perfil do GrabIt: sem telas de boas-vindas e com o vídeo começando sozinho, sem precisar de play.
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("toolkit.startup.max_resumed_crashes", -1);
+user_pref("media.autoplay.default", 0);
+user_pref("media.autoplay.blocking_policy", 0);
+EOF
+}
+
+# O log → a 1ª linha é "2 LINK" (playlist) ou "1 LINK" (arquivo de vídeo); depois, os cabeçalhos
+AWK_PEDIDO_VIDEO='
+/E\/nsHttp uri=/ {
+  u = $0; sub(/^.*E\/nsHttp uri=/, "", u); p = u; sub(/^[a-z]+:\/\/[^\/]*/, "", p); uri[p] = u
+  next
+}
+/E\/nsHttp   GET / {
+  l = $0; sub(/^.*E\/nsHttp   GET /, "", l); sub(/ HTTP\/[0-9.]+.*$/, "", l)
+  b = l; sub(/[?#].*$/, "", b)
+  t = (b ~ /\.(m3u8|mpd)$/) ? 2 : ((b ~ /\.(mp4|webm|m4v|mkv|mov)$/) ? 1 : 0)
+  if (t == 2 || (t == 1 && salvo == "")) {
+    em = 1; tipo = t; cam = l; cab = ""; host = ""; pre = $0; sub(/E\/nsHttp.*$/, "", pre)
+  } else em = 0
+  next
+}
+em {
+  q = $0; sub(/E\/nsHttp.*$/, "", q)
+  if (q != pre) next                          # outra thread escreveu no meio
+  if ($0 ~ /E\/nsHttp   [A-Za-z0-9-]+: /) {
+    h = $0; sub(/^.*E\/nsHttp   /, "", h); cab = cab h "\n"
+    if (tolower(h) ~ /^host: /) { host = h; sub(/^[^:]*: */, "", host) }
+    next
+  }
+  em = 0
+  link = (cam in uri) ? uri[cam] : "https://" host cam
+  if (tipo == 2) { printf "2 %s\n%s", link, cab; saiu = 1; exit }
+  salvo = "1 " link "\n" cab
+}
+END { if (!saiu && salvo != "") printf "%s", salvo }'
+
+baixa_pelo_navegador() {
+  local url=$1 idx=$2 log pid pedido=() opcoes=() inicio primeiro=0 media
+  printf '[grabit] navegador\n'
+  until mkdir "$TMP/navegador.trava" 2>/dev/null; do sleep 0.5; done   # um por vez: o perfil é um só
+  pasta_navegador
+  log="$PASTA_NAV/http"                       # tem os cookies: só vive enquanto a janela está aberta
+  rm -f -- "$log"*
+  read -ra opcoes <<<"${GRABIT_NAVEGADOR_OPCOES:-}"
+  MOZ_LOG=nsHttp:1 MOZ_LOG_FILE=$log "$FIREFOX" --no-remote --profile "$PASTA_NAV/perfil" "${opcoes[@]}" "$url" >/dev/null 2>&1 &
+  pid=$!
+  trap 'mata_arvore "$pid"; rm -f -- "$log"*; exit 143' TERM INT HUP
+  inicio=$SECONDS
+  while (( SECONDS - inicio < ${GRABIT_NAVEGADOR_ESPERA:-300} )); do
+    mapfile -t pedido < <(cat "$log"* 2>/dev/null | awk "$AWK_PEDIDO_VIDEO")
+    [[ ${pedido[0]:-} == 2\ * ]] && break
+    if [[ ${pedido[0]:-} == 1\ * ]]; then      # só um arquivo: uma playlist, se vier, é o vídeo de verdade
+      (( primeiro )) || primeiro=$SECONDS
+      (( SECONDS - primeiro >= 8 )) && break
+    fi
+    kill -0 "$pid" 2>/dev/null || break        # a pessoa fechou a janela
+    sleep 1
+  done
+  mata_arvore "$pid"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.3; done
+  kill -KILL "$pid" 2>/dev/null
+  trap - TERM INT HUP
+  rm -f -- "$log"*
+  rmdir "$TMP/navegador.trava" 2>/dev/null
+  if [[ ${pedido[0]:-} != [12]\ * ]]; then printf 'ERROR: [grabit] %s\n' "${T[nav_sem_video]}"; exit 1; fi
+  media=${pedido[0]#* }
+  cabecalhos_ytdlp "$media" "$TMP/cookies-$idx.txt" "${pedido[@]:1}"
+  nome_pela_pagina "$url" "$media"
+  # Sem o histórico: o vídeo costuma se chamar "master", e o próximo "master" pareceria já baixado
+  exec yt-dlp "${YTDLP_ARGS[@]}" "${CAB_ARGS[@]}" --no-download-archive \
+    --parse-metadata "$ROTULO_CURL:%(title)s" -o "$SAIDA_PAGINA" -- "$media"
 }
 
 # notifica: avisa que o lote acabou — sino e notificação na área de trabalho (se levou 1 min
