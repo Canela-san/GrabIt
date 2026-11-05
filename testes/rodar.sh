@@ -156,6 +156,7 @@ case " $* " in
   *" -U "*) echo "yt-dlp is up to date"; exit 0 ;;
 esac
 [ -n "${STUB_AVISO:-}" ] && echo "WARNING: $STUB_AVISO"
+case " $* " in *" -N 1 "*) [ -z "${STUB_ERRO2:-}" ] || STUB_ERRO=$STUB_ERRO2 ;; esac   # a nova tentativa
 [ -z "${STUB_ERRO:-}" ] && exit 0
 echo "ERROR: $STUB_ERRO"; exit 1
 EOF
@@ -401,6 +402,77 @@ echo http://a.invalid/w4 > update
 falso w4 -L pt ./update
 espera "arquivo com nome de comando vale com ./" contem "$STUB_LOG" "a.invalid/w4"
 
+secao "Novas tentativas por outro caminho"
+D="$TMP/tentativas"; mkdir -p "$D"; cd "$D" || exit 1
+tentou() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "$2"; }
+vezes() { grep -cF -- "$1" "$STUB_LOG"; }
+: > "$STUB_LOG"
+STUB_ERRO="[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again" \
+  STUB_ERRO2="[generic] x: Unable to download webpage: HTTP Error 403: Forbidden" falso t1 -L pt http://t.invalid/cf
+espera "verificação anti-robô é explicada, mesmo com a 2ª tentativa dizendo só 403" contem t1 "verificação anti-robô"
+espera "…e diz como baixar pelo navegador" contem t1 "Copiar como cURL"
+espera "a nova tentativa usa uma conexão por vez" tentou t.invalid/cf "-N 1"
+espera "…e manda o Referer" tentou t.invalid/cf "--referer http://t.invalid/cf"
+STUB_ERRO="Unsupported URL: http://t.invalid/js" falso t2 -L pt http://t.invalid/js
+espera "página sem vídeo reconhecido é explicada" contem t2 "nenhum vídeo reconhecido"
+espera "…sem repetir à toa" test "$(vezes t.invalid/js)" -eq 1
+espera "…e diz como baixar pelo navegador" contem t2 "Copiar como cURL"
+STUB_ERRO="HTTP Error 429: Too Many Requests" falso t3 -L pt http://t.invalid/429
+espera "429: a nova tentativa vai mais devagar" tentou t.invalid/429 "--sleep-requests 2"
+STUB_ERRO="Connection reset by peer" falso t4 -L pt http://t.invalid/rede
+espera "falha de rede: a nova tentativa usa IPv4" tentou t.invalid/rede "--force-ipv4"
+STUB_ERRO="[SSL: UNSAFE_LEGACY_RENEGOTIATION_DISABLED] unsafe legacy renegotiation disabled" falso t5 -L pt http://t.invalid/ssl
+espera "servidor antigo: a nova tentativa aceita a conexão dele" tentou t.invalid/ssl "--legacy-server-connect"
+STUB_ERRO="This video is only available for registered users" falso t6 -L pt http://t.invalid/login
+espera "login é explicado" contem t6 "precisa de login"
+espera "…sem repetir à toa" test "$(vezes t.invalid/login)" -eq 1
+STUB_ERRO="This video is DRM protected" falso t7 -L pt http://t.invalid/drm
+espera "DRM é explicado" contem t7 "protegido por DRM"
+espera "…sem sugerir outro caminho" nao_contem t7 "Copiar como cURL"
+falso t8 -L pt http://t.invalid/ua -A "Navegador/1.0 (X11)"
+espera "-A vira o User-Agent, em qualquer posição" tentou t.invalid/ua "--user-agent Navegador/1.0 (X11)"
+OPCOES_YTDLP="--force-ipv4 --geo-bypass" falso t9 -L pt http://t.invalid/opcoes
+espera "OPCOES_YTDLP chega ao yt-dlp" tentou t.invalid/opcoes "--force-ipv4 --geo-bypass"
+
+if command -v python3 >/dev/null 2>&1; then
+  secao "grabit curl"
+  D="$TMP/curl"; mkdir -p "$D"; cd "$D" || exit 1
+  cat > copiado.txt <<'EOF'
+curl 'http://c.invalid/hls/master.m3u8?token=abc&x=1' --compressed \
+  -H 'User-Agent: Navegador/1.0 (X11; Linux)' \
+  -H 'Referer: http://c.invalid/player?temporada=7&episodio=1' \
+  -H 'Range: bytes=0-' \
+  -H 'Cookie: cf_clearance=abc; sessao=1'
+EOF
+  : > "$STUB_LOG"
+  falso c1 -L pt curl copiado.txt
+  espera "baixa o link do comando copiado" tentou "http://c.invalid/hls/master.m3u8?token=abc&x=1" "--add-header"
+  espera "…com o User-Agent do navegador" contem "$STUB_LOG" "--add-header User-Agent:Navegador/1.0 (X11; Linux)"
+  espera "…e o Referer" contem "$STUB_LOG" "--add-header Referer:http://c.invalid/player?temporada=7&episodio=1"
+  espera "…sem o Range daquele pedido" nao_contem "$STUB_LOG" "Range:"
+  espera "os cookies vão em arquivo" tentou c.invalid/hls "--cookies "
+  espera "…e nunca na linha de comando" nao_contem "$STUB_LOG" "cf_clearance"
+  espera "o nome do arquivo vem da página" contem "$STUB_LOG" "c.invalid - player temporada 7 episodio 1 ["
+  espera "sem histórico, para o próximo master não parecer já baixado" nao_contem "$STUB_LOG" "--download-archive"
+  espera "o cabeçalho conta o que veio" contem c1 "2 cabeçalho(s), 2 cookie(s)"
+  falso c2 -L pt --curl - < copiado.txt
+  espera "lê da entrada padrão" contem c2 "cURL do navegador"
+  cp copiado.txt "$CLIP_ARQ"
+  falso c3 -L pt curl
+  espera "lê da área de transferência" contem c3 "cURL do navegador"
+  echo "isto não é curl" > ruim.txt
+  falso c4 -L pt curl ruim.txt
+  espera "texto que não é cURL é recusado" codigo "$RC" 2
+  espera "…com a explicação" contem c4 "não é um comando cURL"
+  printf '%s\n' "curl 'file:///etc/passwd'" > ruim.txt
+  falso c5 -L pt curl ruim.txt
+  espera "só aceita http e https" codigo "$RC" 2
+  rm -f links_falhos.txt
+  STUB_ERRO="HTTP Error 404" falso c6 -L pt curl copiado.txt
+  espera "link copiado que falha não vai para a lista de falhas" test ! -e links_falhos.txt
+  espera "…e avisa que ele costuma expirar" contem c6 "costuma expirar"
+fi
+
 if (( RAPIDO )); then
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
   (( ${#FALHAS[@]} == 0 ))
@@ -434,6 +506,7 @@ video "$W/curto.mp4" 640x360 2
 video "$W/longo.mp4" 640x360 4
 cp "$W/curto.mp4" "$W/pagina/previa.mp4"; cp "$W/longo.mp4" "$W/pagina/principal.mp4"
 cp "$W/curto.mp4" "$W/ruim.mp4"
+mkdir -p "$W/referer" "$W/sessao"; cp "$W/curto.mp4" "$W/referer/"; cp "$W/curto.mp4" "$W/sessao/"
 python3 - "$W/ruim.mp4" <<'EOF'
 import random, sys
 f = open(sys.argv[1], 'r+b'); t = f.seek(0, 2); r = random.Random(42)
@@ -447,7 +520,26 @@ cat > "$W/pagina/index.html" <<'EOF'
 <video src="previa.mp4"></video><video src="principal.mp4"></video></body></html>
 EOF
 PORTA=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-python3 -m http.server --bind 127.0.0.1 --directory "$W" "$PORTA" >/dev/null 2>&1 & SRV=$!
+cat > "$TMP/servidor.py" <<'EOF'
+import functools, http.server, sys
+class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam os vídeos protegidos
+    def permitido(self):
+        c = self.headers
+        if self.path.startswith("/referer/"):
+            return bool(c.get("Referer"))
+        if self.path.startswith("/sessao/"):
+            return "segredo=1" in c.get("Cookie", "") and c.get("User-Agent") == "Navegador/1.0" \
+                and c.get("Referer", "").endswith("/player?ep=2")
+        return True
+    def do_GET(self):
+        super().do_GET() if self.permitido() else self.send_error(403)
+    def do_HEAD(self):
+        super().do_HEAD() if self.permitido() else self.send_error(403)
+    def log_message(self, *a):
+        pass
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), functools.partial(H, directory=sys.argv[2])).serve_forever()
+EOF
+python3 "$TMP/servidor.py" "$PORTA" "$W" >/dev/null 2>&1 & SRV=$!
 B="http://127.0.0.1:$PORTA"
 for _ in 1 2 3 4 5 6 7 8 9 10; do python3 -c "import urllib.request; urllib.request.urlopen('$B/curto.mp4')" 2>/dev/null && break; sleep 0.3; done
 export NO_PROXY="127.0.0.1,${NO_PROXY:-}" no_proxy="127.0.0.1,${no_proxy:-}"
@@ -520,6 +612,17 @@ espera "-v reprova o estragado e o guarda à parte" test -n "$(find Verif -name 
 espera "…sem pô-lo no histórico" nao_contem Verif/.grabit-historico.txt "generic ruim"
 roda saida5 -L pt "$B/curto.mp4" -d -o ./Sub
 espera "-d separa por site (e vale depois do link)" test -n "$(find Sub -path '*127.0.0.1*' -name '*.mkv')"
+
+secao "Vídeos protegidos"
+D="$TMP/d6"; mkdir -p "$D"; cd "$D" || exit 1
+roda saida1 -L pt -o ./Ref "$B/referer/curto.mp4"
+espera "vídeo que exige Referer baixa na nova tentativa" test -f "Ref/curto [curto].mkv"
+roda saida2 -L pt -o ./Ses "$B/sessao/curto.mp4"
+espera "vídeo que exige a sessão falha sem ela" codigo "$RC" 1
+printf "curl '%s' --compressed -H 'User-Agent: Navegador/1.0' -H 'Referer: %s' -H 'Cookie: a=b; segredo=1' -H 'Range: bytes=0-'\n" \
+  "$B/sessao/curto.mp4" "$B/player?ep=2" > copiado.txt
+roda saida3 -L pt curl copiado.txt -o ./Ses
+espera "…e baixa com o cURL copiado do navegador" test -n "$(find Ses -name '*player ep 2*.mkv')"
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1

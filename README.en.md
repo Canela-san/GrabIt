@@ -162,6 +162,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-r HEIGHT` | maximum resolution (`720`, `1080`, `2160` or `4k`…) | no limit |
 | `-F` | force: ignore the `grabit.config` limits for this run | — |
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
+| `-A AGENT` | use the browser's User-Agent, along with `-b`, on sites with a check | — |
 | `-p` | if the link is a video inside a playlist, download just the video | — |
 | `-x` | audio only: the best track, in its original format, no re-encoding | — |
 | `-d` | sort into subfolders by site and channel: `Downloads/youtube.com/Channel/` | — |
@@ -176,6 +177,35 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-v` | full check: decode every video end to end looking for defects | — |
 | `-L pt\|en` | language of the messages: Portuguese or English | the system's |
 | `-h` | show the help (`grabit -L en -h` shows it in English) | — |
+
+### Difficult sites
+
+If the video plays in your browser, you can download it, even on sites with an anti-bot check (like Cloudflare's) or a JavaScript player, where yt-dlp alone can't find the video. You're the one who passes the check, in the browser; GrabIt only uses the session you opened. When a link fails for one of these reasons, the summary itself suggests these paths.
+
+**Use the browser's session.** Open the page, pass the check and run:
+
+```bash
+grabit -b firefox LINK
+```
+
+Sites with a check tend to accept the cookies only along with the User-Agent of the browser where you passed it (in Firefox, it's shown in `about:support`). Keep both in `grabit.config`, as `COOKIES_NAVEGADOR` and `USER_AGENT`, so you don't have to repeat them:
+
+```bash
+grabit -b firefox -A "Mozilla/5.0 (…)" LINK
+```
+
+**Copy the video's request.** It also works when yt-dlp doesn't recognize the page:
+
+1. Open the page and press play.
+2. Hit <kbd>F12</kbd>, go to the **Network** tab and filter by `m3u8` (or `mp4`).
+3. Right-click the request and choose **Copy as cURL**.
+4. Run the command below, which reads the clipboard (or `grabit curl FILE`, or `grabit curl -` to paste):
+
+```bash
+grabit curl
+```
+
+The copied command is only read, never executed. The file is named after the page the video came from. These links tend to expire: if it fails, copy it again. DRM-protected videos aren't downloaded.
 
 ## Configuration
 
@@ -211,6 +241,8 @@ COOKIES_NAVEGADOR=firefox
 | `VERIFICAR` | `1` runs the full check on every download (same as `-v`) | `0` |
 | `SO_PRINCIPAL` | `1` downloads only the main video of pages with several videos (same as `-u`) | `0` |
 | `COOKIES_NAVEGADOR` | browser whose login will be used | — |
+| `USER_AGENT` | that browser's User-Agent (see [Difficult sites](#difficult-sites)) | — |
+| `OPCOES_YTDLP` | extra options for yt-dlp, separated by spaces (e.g. `--force-ipv4`) | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
 | `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
 | `NOTIFICAR` | bell and desktop notification at the end of batches of 1 min or more (`0` = silence) | `1` |
@@ -275,7 +307,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 
 - **Format:** yt-dlp's `bv*+ba/b` (best video + best audio) with **MKV** output, which accepts any codec. Nothing is re-encoded.
 - **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A download that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, network drop) **starts over from scratch** next time instead of resuming the pieces: resuming can leave holes in the video, and here quality comes before speed. The links that were still pending go to `links_falhos.txt`.
-- **Retries:** temporary errors (network, 403, 429) go back to the end of the queue, impersonating a browser when `curl-cffi` is installed. Permanent errors (private, removed video, 404) aren't retried.
+- **Retries:** temporary errors (network, 403, 429) go back to the end of the queue and try another way: one connection at a time, with the `Referer`, impersonating a browser when `curl-cffi` is installed and with the adjustment for the error (IPv4 on network failures, slower on 429). Permanent errors (private, removed video, 404) aren't retried.
 - **Disk full:** the header warns you when the destination folder has less than 2 GiB free. If the disk fills up midway, no new download starts (the next ones wouldn't fit either) and the links still pending go to `links_falhos.txt`.
 - **History:** every downloaded video is recorded in `Downloads/.grabit-historico.txt` (site + video ID). Next time it's skipped before anything else: on most sites GrabIt doesn't even need to open the page. Without the history, yt-dlp would open the page again, download the cover and rewrite the whole file just to conclude it already exists. Videos downloaded before the history existed go through that check only once and are added to it.
 - **Live queue (`-f`):** after finishing the list, GrabIt stays open and checks the link file every 2 seconds: whatever you add (at the top or at the end of the file) joins the queue and starts downloading. When the queue empties, the downloaded links go to the `DOWNLOADED` section and, if the batch took a while, the completion notice arrives. Quit with <kbd>q</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>. It only happens with the option: without `-f`, GrabIt always closes when done.

@@ -128,7 +128,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -152,6 +152,8 @@ SEM_PLAYLIST=0                                # 1 = link vídeo+playlist baixa s
 SO_PRINCIPAL=0                                # 1 = página com vários vídeos baixa só o principal
 VERIFICAR=0                                   # 1 = decodifica cada vídeo inteiro para achar defeitos
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
+USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
+OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
 NOTIFICAR=1                                   # sino + notificação no fim (lotes de 1 min ou mais)
@@ -201,7 +203,7 @@ for (( i = 1; i <= $#; i++ )); do
     case ${a:c:1} in
       L)         j=$(( i + 1 )); IDIOMA=${a:c+1}; [[ -z $IDIOMA ]] && { IDIOMA=${!j:-}; i=$j; }
                  ORIGEM[IDIOMA]=opção; break ;;
-      [lojcbr])  [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
+      [lojcbrA]) [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
     esac
   done
 done
@@ -481,7 +483,22 @@ idioma_pt() {
     [d_membros]="exclusivo para membros"
     [d_regiao]="bloqueado na sua região"
     [d_removido]="vídeo indisponível ou removido"
-    [d_url]="link não suportado"
+    [d_url]="nenhum vídeo reconhecido nesta página"
+    [d_url_invalida]="link não suportado"
+    [d_antirobo]="o site pede a verificação anti-robô"
+    [d_login]="precisa de login — use -b NAVEGADOR"
+    [d_drm]="protegido por DRM: o GrabIt não baixa"
+    [d_ssl]="certificado do site inválido"
+    [s_nav_tit]="Se o vídeo toca no seu navegador, dá para baixá-lo:"
+    [s_nav_b]="     · Passe pela verificação no navegador e use a sessão dele:  %s"
+    [s_nav_b2]="       (se ainda recusar, acrescente -A com o User Agent do navegador)"
+    [s_nav_c]="     · Ou dê play, aperte F12, aba Rede, filtre por m3u8 ou mp4, clique com o direito no pedido, Copiar como cURL, e rode:  %s"
+    [curl_sem_py]="grabit curl precisa do python3 para ler o comando copiado."
+    [curl_invalido]="Isso não é um comando cURL com um link. Na aba Rede do navegador (F12), clique com o direito no pedido do vídeo e escolha Copiar como cURL."
+    [curl_sem_clip]="Não consegui ler a área de transferência. Guarde o comando num arquivo e rode:  %s"
+    [curl_sem_arquivo]="O arquivo '%s' não foi encontrado."
+    [kv_curl]="cURL do navegador · %d cabeçalho(s), %d cookie(s) · arquivo: %s"
+    [curl_falhou]="O link copiado costuma expirar: se falhou por isso, copie o cURL de novo."
     [d_live]="a live/estreia ainda não começou"
     [d_404]="não encontrado (404)"
     [d_disco]="disco cheio"
@@ -536,6 +553,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -r ALTURA     resolução máxima: 720, 1080, 2160, 4k…       (padrão: sem limite)
   -F            força: ignora os limites do grabit.config (resolução, sites, pausa…)
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
+  -A AGENTE     usa o User-Agent do navegador, junto com -b, em sites com verificação
   -p            só o vídeo, se o link tiver vídeo + playlist
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
   -x            só o áudio (a melhor faixa, sem recomprimir)
@@ -562,6 +580,8 @@ que grabit --atualizar):
   atualizar, update  deixa tudo na versão mais nova (GrabIt, yt-dlp, Deno e FFmpeg)
                      e instala o que faltar
   versao, version    mostra a versão instalada, se há outra mais nova e o que o GrabIt usa
+  curl [ARQUIVO]     baixa o que toca no navegador, pelo "Copiar como cURL" da aba Rede (F12):
+                     lê a área de transferência, um arquivo ou, com -, a entrada padrão
   verificar, check [PASTA]
                      confere os vídeos já baixados (defeitos e incompletos)
                      e oferece baixar de novo os que tiverem problema
@@ -663,6 +683,13 @@ EOF
 
 # Usar os cookies (login) de um navegador: firefox, chrome, brave… (-b)
 #COOKIES_NAVEGADOR=
+
+# O User-Agent desse navegador (-A). Sites com verificação anti-robô só aceitam os cookies
+# junto com ele. No Firefox, ele aparece em about:support.
+#USER_AGENT=
+
+# Opções a mais para o yt-dlp, separadas por espaços. Ex.: --force-ipv4 --no-check-certificates
+#OPCOES_YTDLP=
 
 # Pular na hora os vídeos já baixados antes (0 = conferir sempre; o mesmo que -i)
 #USAR_HISTORICO=1
@@ -931,7 +958,22 @@ idioma_en() {
     [d_membros]="members only"
     [d_regiao]="blocked in your region"
     [d_removido]="video unavailable or removed"
-    [d_url]="unsupported link"
+    [d_url]="no video recognized on this page"
+    [d_url_invalida]="unsupported link"
+    [d_antirobo]="the site asks for its anti-bot check"
+    [d_login]="needs a login — use -b BROWSER"
+    [d_drm]="DRM protected: GrabIt doesn't download it"
+    [d_ssl]="the site's certificate is invalid"
+    [s_nav_tit]="If the video plays in your browser, you can download it:"
+    [s_nav_b]="     · Pass the check in the browser and use its session:  %s"
+    [s_nav_b2]="       (if it still refuses, add -A with the browser's User Agent)"
+    [s_nav_c]="     · Or press play, hit F12, Network tab, filter by m3u8 or mp4, right-click the request, Copy as cURL, and run:  %s"
+    [curl_sem_py]="grabit curl needs python3 to read the copied command."
+    [curl_invalido]="That isn't a cURL command with a link. In the browser's Network tab (F12), right-click the video request and choose Copy as cURL."
+    [curl_sem_clip]="I couldn't read the clipboard. Save the command to a file and run:  %s"
+    [curl_sem_arquivo]="The file '%s' wasn't found."
+    [kv_curl]="browser cURL · %d header(s), %d cookie(s) · file: %s"
+    [curl_falhou]="Copied links tend to expire: if that's why it failed, copy the cURL again."
     [d_live]="the live stream/premiere hasn't started yet"
     [d_404]="not found (404)"
     [d_disco]="disk full"
@@ -986,6 +1028,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -r HEIGHT     maximum resolution: 720, 1080, 4k…   (default: no limit)
   -F            force: ignore the grabit.config limits (resolution, sites, pause…)
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
+  -A AGENT      use the browser's User-Agent, along with -b, on sites with a check
   -p            only the video, when the link is video + playlist
   -u            only the main video (the longest) of pages with several videos
   -x            audio only (the best track, no re-encoding)
@@ -1012,6 +1055,8 @@ the same as grabit --atualizar):
   update, atualizar  put everything on the newest version (GrabIt, yt-dlp, Deno and FFmpeg)
                      and install what's missing
   version, versao    show the installed version, whether there's a newer one and what GrabIt uses
+  curl [FILE]        download what plays in the browser, from "Copy as cURL" in the Network tab
+                     (F12): reads the clipboard, a file or, with -, standard input
   check, verificar [FOLDER]
                      check the videos already downloaded (defects and incomplete files)
                      and offer to download the problem ones again
@@ -1118,6 +1163,13 @@ EOF
 # Use a browser's cookies (login): firefox, chrome, brave… (-b)
 #COOKIES_NAVEGADOR=
 
+# That browser's User-Agent (-A). Sites with an anti-bot check only accept the cookies
+# along with it. In Firefox, it's shown in about:support.
+#USER_AGENT=
+
+# Extra options for yt-dlp, separated by spaces. E.g.: --force-ipv4 --no-check-certificates
+#OPCOES_YTDLP=
+
 # Skip videos already downloaded before (0 = always check; same as -i)
 #USAR_HISTORICO=1
 
@@ -1170,6 +1222,7 @@ palavra_comando() {
     verificar|check)                  COMANDO=verificar ;;
     baixados|downloaded)              COMANDO=baixados ;;
     versao|versão|version)            COMANDO=versao ;;
+    curl)                             COMANDO=curl ;;
     *) return 1 ;;
   esac
 }
@@ -1191,13 +1244,14 @@ OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTU
 # O getopts para no primeiro link; aqui ele o guarda e continua. Depois de "--", só há links.
 while (( $# )); do
   OPTIND=1
-  while getopts ":l:o:j:c:b:r:L:pausivxdmfCUFh" op; do
+  while getopts ":l:o:j:c:b:r:L:A:pausivxdmfCUFh" op; do
     case $op in
       l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
       o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
       j) DOWNLOADS_SIMULTANEOS=$OPTARG;  ORIGEM[DOWNLOADS_SIMULTANEOS]=opção ;;
       c) CONEXOES_POR_VIDEO=$OPTARG;     ORIGEM[CONEXOES_POR_VIDEO]=opção ;;
       b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
+      A) USER_AGENT=$OPTARG;             ORIGEM[USER_AGENT]=opção ;;
       r) RESOLUCAO_MAXIMA=$OPTARG;       ORIGEM[RESOLUCAO_MAXIMA]=opção ;;
       F) FORCAR=1 ;;
       L) ;;                              # já tratado acima, antes de carregar os textos
@@ -1346,6 +1400,7 @@ VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; 
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; JS_RECUSADO=""; JS_CANDIDATOS=(); AVISO_JSC=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0
+AJUSTE=""; AJUSTES=(); DICA_NAVEGADOR=0; MODO_CURL=0; EXTRA_YTDLP=(); N_CAB_CURL=0; N_COOK_CURL=0; ROTULO_CURL=""
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
@@ -1539,10 +1594,11 @@ analisa_log() {
 }
 
 # classifica_erro TEXTO → DICA (explicação curta), REPETE (0 = não adianta tentar de
-# novo), ARQUIVO_RUIM (1 = o arquivo baixado está corrompido: refazer do zero) e
-# DISCO_CHEIO (1 = os próximos downloads também não vão caber)
+# novo), ARQUIVO_RUIM (1 = o arquivo baixado está corrompido: refazer do zero),
+# DISCO_CHEIO (1 = os próximos downloads também não vão caber), AJUSTE (opções do yt-dlp que
+# podem resolver esse erro na nova tentativa) e DICA_NAVEGADOR (1 = no navegador daria certo)
 classifica_erro() {
-  DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0
+  DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0; AJUSTE=""
   case ${1,,} in
     *"[verify]"*)                                           t d_verificacao "${T[sufixo_ruim]}"; DICA=$TXT ;;
     *"private video"*)                                      DICA=${T[d_privado]}; REPETE=0 ;;
@@ -1550,11 +1606,19 @@ classifica_erro() {
                                                             DICA=${T[d_idade]}; REPETE=0 ;;
     *"not a bot"*)                                          DICA=${T[d_bot]}; REPETE=0 ;;
     *"members-only"*|*"join this channel"*)                 DICA=${T[d_membros]}; REPETE=0 ;;
+    *"drm protected"*)                                      DICA=${T[d_drm]}; REPETE=0 ;;
+    *"anti-bot"*)                                           DICA=${T[d_antirobo]}; DICA_NAVEGADOR=1 ;;
+    *"--cookies"*|*"log in"*|*"login required"*|*"sign in"*|*"registered users"*|*"requires authentication"*)
+                                                            DICA=${T[d_login]}; REPETE=0 ;;
+    *"certificate verify failed"*)                          DICA=${T[d_ssl]}; REPETE=0 ;;
+    *"unsafe legacy renegotiation"*|*"unsafe_legacy_renegotiation"*)
+                                                            AJUSTE="--legacy-server-connect" ;;
     *"not available in your country"*|*"geo restrict"*|*"geo-restrict"*)
                                                             DICA=${T[d_regiao]}; REPETE=0 ;;
     *"video unavailable"*|*"has been removed"*|*"no longer available"*)
                                                             DICA=${T[d_removido]}; REPETE=0 ;;
-    *"unsupported url"*|*"is not a valid url"*)             DICA=${T[d_url]}; REPETE=0 ;;
+    *"unsupported url"*)                                    DICA=${T[d_url]}; REPETE=0; DICA_NAVEGADOR=1 ;;
+    *"is not a valid url"*)                                 DICA=${T[d_url_invalida]}; REPETE=0 ;;
     *"live event will begin"*|*"premieres in"*)             DICA=${T[d_live]}; REPETE=0 ;;
     *"http error 404"*|*"http error 410"*)                  DICA=${T[d_404]}; REPETE=0 ;;
     *"no space left"*)                                      DICA=${T[d_disco]}; REPETE=0; DISCO_CHEIO=1 ;;
@@ -1568,9 +1632,9 @@ classifica_erro() {
                                                             DICA=${T[d_invalido]}; ARQUIVO_RUIM=1 ;;
     *"fragment"*"not found"*|*"unable to download fragment"*) DICA=${T[d_fragmento]} ;;
     *"http error 403"*)                                     DICA=${T[d_403]} ;;
-    *"http error 429"*|*"too many requests"*)               DICA=${T[d_429]} ;;
+    *"http error 429"*|*"too many requests"*)               DICA=${T[d_429]}; AJUSTE="--sleep-requests 2 --sleep-interval 5" ;;
     *"timed out"*|*"connection reset"*|*"name resolution"*|*"name or service not known"*|*"network is unreachable"*)
-                                                            DICA=${T[d_rede]} ;;
+                                                            DICA=${T[d_rede]}; AJUSTE="--force-ipv4" ;;
   esac
 }
 
@@ -1985,6 +2049,8 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
 
   if (( rc != 0 )); then
     classifica_erro "$MOTIVO"
+    # a última tentativa pode ter dito só "403": o motivo de verdade veio na primeira
+    if cat "${logs[@]}" 2>/dev/null | grep -aqF 'anti-bot challenge'; then DICA=${T[d_antirobo]}; DICA_NAVEGADOR=1; fi
     MOTIVO=$(sed -E 's/^ERROR: //; s/^\[[^]]+\] //; s/^[^ :]+: //; s/ \(caused by .*$//; s/; please report this issue.*$//' <<<"$MOTIVO")
     if (( n_done > 0 || n_hist > 0 )); then
       linha_resultado "⚠" "$AMARELO" "$idxs" "${TITULO[$idx]:-$url}" "${T[r_parcial]}"
@@ -2026,10 +2092,18 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
 
 # ───────────────────────────── Execução dos jobs ──────────────────────────────
 lanca_job() {                                 # lanca_job IDX
-  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() idxs
-  # Só a nova tentativa força a imitação de navegador: o próprio yt-dlp avisa que
-  # forçá-la sempre pode deixar os downloads mais lentos e instáveis.
-  (( tent > 1 )) && [[ -n $IMPERSONATE ]] && extra=(--impersonate "$IMPERSONATE")
+  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs
+  # A nova tentativa vai por outro caminho. Só nela força a imitação de navegador (o próprio
+  # yt-dlp avisa que forçá-la sempre pode deixar os downloads mais lentos e instáveis); uma
+  # conexão por vez, porque há servidores que recusam pedaços em paralelo; o Referer, que os
+  # vídeos protegidos contra links de fora costumam exigir; e o ajuste para o erro que deu.
+  if (( tent > 1 )); then
+    extra=(-N 1)
+    (( MODO_CURL )) || extra+=(--referer "$url")
+    [[ -n $IMPERSONATE ]] && extra+=(--impersonate "$IMPERSONATE")
+    read -ra ajuste <<<"${AJUSTES[$i]:-}"
+    extra+=("${ajuste[@]}")
+  fi
   # O arquivo da tentativa anterior veio corrompido: sem isso o yt-dlp o reaproveitaria
   # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
   # histórico e continuam sendo pulados.
@@ -2081,6 +2155,7 @@ upgrade_link() {
   shift
   printf '[grabit] upgrade\n'
   [[ -n $COOKIES_NAVEGADOR ]] && args+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
+  [[ -n $USER_AGENT ]] && args+=(--user-agent "$USER_AGENT")
   (( TEM_JS_RUNTIMES )) && [[ -n $JS_RUNTIME ]] && args+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
   (( SEM_PLAYLIST )) && args+=(--no-playlist)
   while IFS=$SEP read -r idx id alt larg fps hdr titulo; do
@@ -2154,6 +2229,7 @@ escolhe_principal() {
   local url=$1 idx dur alt link n=0 melhor=0 melhor_dur=-1 melhor_alt=-1 args=()
   shift
   [[ -n $COOKIES_NAVEGADOR ]] && args+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
+  [[ -n $USER_AGENT ]] && args+=(--user-agent "$USER_AGENT")
   (( TEM_JS_RUNTIMES )) && [[ -n $JS_RUNTIME ]] && args+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
   (( SEM_PLAYLIST )) && args+=(--no-playlist)
   while IFS=$SEP read -r idx dur alt link; do
@@ -2332,6 +2408,7 @@ vale_repetir() {
   classifica_erro "$MOTIVO"
   (( REPETE )) || return 1
   (( ARQUIVO_RUIM )) && REBAIXAR[$idx]=1
+  AJUSTES[$idx]=$AJUSTE
   mv -f "$TMP/$idx.log" "$TMP/$idx.t$tent.log"
   (( tent == 1 )) && EM_REPETICAO=$(( EM_REPETICAO + 1 ))
   TENTATIVA[$idx]=$(( tent + 1 ))
@@ -2378,6 +2455,12 @@ comando_repetir() {                           # → FMT: o mesmo comando, só co
 salva_falhas() {                              # grava links_falhos.txt (+ o que faltava, se cancelado)
   local lista=("${FALHAS[@]}") i l n_pend=0 n_lidos=0 antigos=() o_que=${T[f_com_erro]}
   local -A desta=()
+  if (( MODO_CURL )); then                    # sem a sessão copiada, o link não serviria depois
+    if (( N_ERRO > 0 )); then
+      printf '\n  %s⚠%s  %s' "$AMARELO" "$R" "${T[curl_falhou]}"; t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"
+    fi
+    return 0
+  fi
   if (( CANCELADO || PARANDO )); then
     for (( i = 1; i <= TOTAL; i++ )); do
       [[ -n ${FEITO[$i]:-} ]] && continue
@@ -2453,6 +2536,11 @@ resumo() {
     t s_movidos "$N_MOVIDOS"; linha_resumo "✎" "$DIM" "${T[s_lista]}" "$TXT"
   fi
   salva_falhas
+  if (( DICA_NAVEGADOR && N_ERRO > 0 && ! MODO_CURL )); then
+    printf '\n  %s\n' "${T[s_nav_tit]}"
+    comando_grabit "-b ${COOKIES_NAVEGADOR:-firefox} LINK"; t s_nav_b "${CIANO}${FMT}${R}"; printf '%s\n%s\n' "$TXT" "${T[s_nav_b2]}"
+    comando_grabit curl; t s_nav_c "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
+  fi
   printf '\n'
 }
 
@@ -2861,7 +2949,7 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
 }
 
 monta_args_ytdlp() {
-  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd qualidade=()
+  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd qualidade=() opcoes=()
   FORMATO='bv*+ba/b'
   # Com limite, vale o lado menor da imagem: a altura em vídeos deitados e a largura nos
   # verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
@@ -2932,8 +3020,107 @@ monta_args_ytdlp() {
   # novo e reescreve o arquivo inteiro só para dizer que ele já existe.
   (( USAR_HISTORICO ))       && YTDLP_ARGS+=(--download-archive "$ARQUIVO_HISTORICO")
   [[ -n $COOKIES_NAVEGADOR ]] && YTDLP_ARGS+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
+  [[ -n $USER_AGENT ]]        && YTDLP_ARGS+=(--user-agent "$USER_AGENT")
   (( TEM_JS_RUNTIMES ))       && [[ -n $JS_RUNTIME ]] && YTDLP_ARGS+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  read -ra opcoes <<<"$OPCOES_YTDLP"
+  YTDLP_ARGS+=("${EXTRA_YTDLP[@]}" "${opcoes[@]}")
   return 0
+}
+
+# ───────────────────────────── Download pelo navegador ────────────────────────
+# grabit curl: há vídeos que só o navegador alcança (player em JavaScript, verificação
+# anti-robô). Quem passa por isso é a pessoa, no navegador dela; o "Copiar como cURL" da aba
+# Rede traz o link do vídeo e a sessão (cookies, Referer, User-Agent) e o yt-dlp baixa com
+# ela. O comando copiado é só lido, nunca executado. Os cookies vão num arquivo temporário,
+# e não na linha de comando, onde qualquer usuário da máquina os veria.
+le_curl() {
+  local origem=${ARGS_LINKS[0]:-} txt campos=() url h nome valor pagina="" cookies="" par pares=() arq
+  local caminho site resto palavras=() ck
+  if ! command -v python3 >/dev/null 2>&1; then erro "${T[curl_sem_py]}"; exit 1; fi
+  if [[ $origem == - ]]; then txt=$(cat)
+  elif [[ -n $origem ]]; then
+    [[ -f $origem ]] || { t curl_sem_arquivo "$origem"; erro "$TXT"; exit 1; }
+    txt=$(<"$origem")
+  elif detecta_clip; then txt=$("${CLIP_CMD[@]}" 2>/dev/null)
+  else
+    comando_grabit "curl ARQUIVO"; t curl_sem_clip "${CIANO}${FMT}${R}"; erro "$TXT"; exit 1
+  fi
+  mapfile -d '' campos < <(python3 -I -c '
+import shlex, sys
+try:
+    a = shlex.split(sys.stdin.read().replace("\\\n", " "))
+except ValueError:
+    sys.exit(1)
+if not a or a[0] != "curl":
+    sys.exit(1)
+com_valor = {"-H", "--header", "-b", "--cookie", "-A", "--user-agent", "-e", "--referer", "--url",
+             "-X", "--request", "-d", "--data", "--data-raw", "--data-binary", "--data-urlencode",
+             "-o", "--output", "-u", "--user", "-x", "--proxy", "-m", "--max-time", "--connect-timeout"}
+url, cab, i = "", [], 1
+while i < len(a):
+    o = a[i]
+    i += 1
+    if o in com_valor:
+        v = a[i] if i < len(a) else ""
+        i += 1
+        if o in ("-H", "--header"):
+            cab.append(v)
+        elif o in ("-b", "--cookie"):
+            cab.append("Cookie: " + v)
+        elif o in ("-A", "--user-agent"):
+            cab.append("User-Agent: " + v)
+        elif o in ("-e", "--referer"):
+            cab.append("Referer: " + v)
+        elif o == "--url":
+            url = v
+    elif not o.startswith("-") and not url:
+        url = o
+if not url.startswith(("http://", "https://")):
+    sys.exit(1)
+sys.stdout.write("\0".join([url] + cab) + "\0")' <<<"$txt" 2>/dev/null)
+  url=${campos[0]:-}
+  if [[ -z $url ]]; then erro "${T[curl_invalido]}"; exit 2; fi
+
+  # Vão os cabeçalhos que dizem quem pede; os que descrevem aquele pedido (Range…) ficam
+  for h in "${campos[@]:1}"; do
+    [[ $h == *:* ]] || continue
+    nome=${h%%:*}; valor=${h#*:}; valor=${valor# }
+    [[ -n $nome ]] || continue
+    case ${nome,,} in
+      host|accept-encoding|connection|content-length|range|if-*|priority|te|upgrade-insecure-requests|pragma|cache-control) continue ;;
+      cookie) cookies=$valor; continue ;;
+      referer) pagina=$valor ;;
+    esac
+    EXTRA_YTDLP+=(--add-header "$nome:$valor"); N_CAB_CURL=$(( N_CAB_CURL + 1 ))
+  done
+  if [[ -n $cookies ]]; then
+    arq="$TMP/cookies-curl.txt"
+    site=${url#*://}; site=${site%%[/?#]*}; site=${site##*@}; site=${site%%:*}
+    printf '# Netscape HTTP Cookie File\n' > "$arq"
+    IFS=';' read -ra pares <<<"$cookies"
+    for par in "${pares[@]}"; do
+      par=${par# }
+      [[ $par == *=* ]] || continue
+      printf '%s\tFALSE\t/\tFALSE\t0\t%s\t%s\n' "$site" "${par%%=*}" "${par#*=}" >> "$arq"
+      N_COOK_CURL=$(( N_COOK_CURL + 1 ))
+    done
+    EXTRA_YTDLP+=(--cookies "$arq")
+  fi
+
+  # O link do vídeo costuma se chamar só "master.m3u8": o nome vem da página, e o [número] a
+  # separa das outras. Sem histórico, ou o próximo "master" pareceria já baixado.
+  pagina=${pagina:-$url}
+  caminho=${pagina#*://}; caminho=${caminho%%#*}
+  site=${caminho%%[/?]*}; resto=${caminho#"$site"}
+  site=${site##*@}; site=${site%%:*}; site=${site#www.}
+  read -ra palavras <<<"${resto//[\/?&=_+%.]/ }"
+  ROTULO_CURL="$site${palavras[*]:+ - ${palavras[*]}}"; ROTULO_CURL=${ROTULO_CURL:0:150}
+  ck=$(printf '%s %s' "$pagina" "${url%%\?*}" | cksum); ck=${ck%% *}
+  nome=${ROTULO_CURL//%/%%}
+  TEMPLATE_SAIDA=${TEMPLATE_SAIDA/'%(title).180B [%(id)s]'/"$nome [$ck]"}
+  TEMPLATE_SAIDA=${TEMPLATE_SAIDA/'%(title).150B [%(id)s]'/"$nome [$ck]"}
+  MODO_CURL=1; USAR_HISTORICO=0; FILA_VIVA=0; CAPTURA=0; UPGRADE=0; LISTA_EXPLICITA=0
+  ARGS_LINKS=("$url")
 }
 
 # notifica: avisa que o lote acabou — sino e notificação na área de trabalho (se levou 1 min
@@ -3650,6 +3837,7 @@ atualiza_largura
 cabecalho
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || { erro "${T[tmp_falhou]}"; exit 1; }
 verifica_dependencias
+[[ $COMANDO == curl ]] && le_curl
 if (( CAPTURA )) && ! detecta_clip; then
   erro "${T[clip_sem]}"; printf '%s\n\n' "${T[clip_sem2]}"; exit 1
 fi
@@ -3698,6 +3886,7 @@ if (( MIDIA )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_midia]}"
 elif (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
 else kv "${T[kv_destino]}" "$PASTA_SAIDA"; fi
 if (( UPGRADE )); then kv "${T[kv_modo]}" "${T[kv_upgrade]}"; fi
+if (( MODO_CURL )); then t kv_curl "$N_CAB_CURL" "$N_COOK_CURL" "$ROTULO_CURL"; kv "${T[kv_modo]}" "$TXT"; fi
 if (( SO_AUDIO )); then
   if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
   else t kv_audio_conv "$FORMATO_AUDIO"; kv "${T[kv_modo]}" "$TXT"; fi
@@ -3727,7 +3916,7 @@ fi
 if (( USAR_HISTORICO )); then
   n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0
   t kv_hist_on "$n_registrados"; kv "${T[kv_historico]}" "$TXT"
-else
+elif (( ! MODO_CURL )); then
   t kv_hist_off "$AMARELO" "$R"; kv "${T[kv_historico]}" "$TXT"
 fi
 t kv_paralelo_v "$J" "$CONEXOES_POR_VIDEO"; txt_paralelo=$TXT
