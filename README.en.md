@@ -52,7 +52,7 @@ bash grabit.sh --install
 | `wl-clipboard` or `xclip` | capture copied links (`-C`) and read the copied cURL | installs |
 | Firefox | sites that only work in a browser (only offered if you have no compatible one) | **doesn't install** |
 
-To install without questions, use `grabit install -y` (or `--yes`): it accepts everything except the browser, which is a big program and never goes in without a "yes" from you.
+To install without questions, use `grabit install -y` (or `--yes`): it installs everything. A browser only goes in if the computer has no compatible one, and then only Firefox. Any other browser, only on request: `grabit install chrome` (or `chromium`, `brave`, `edge`, `firefox`).
 
 To put everything on the newest version in one go:
 

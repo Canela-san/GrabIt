@@ -518,7 +518,10 @@ idioma_pt() {
     [ins_q_deno]="Instalar o Deno? O YouTube exige um runtime JavaScript para liberar as melhores resoluções. [S/n]"
     [ins_q_clip]="Instalar o %s? Serve para capturar links copiados (-C) e ler o cURL copiado. [S/n]"
     [ins_q_nav]="Instalar o Firefox? Só é útil em sites que funcionam apenas num navegador, e você não tem nenhum que o GrabIt use. [s/N]"
-    [ins_nav_nota]="Nenhum navegador compatível: sites que só funcionam num navegador não serão baixados. Se instalar o Firefox, o Chrome, o Chromium, o Brave ou o Edge, o GrabIt os encontra sozinho."
+    [ins_nav_nota]="Nenhum navegador compatível: sites que só funcionam num navegador não serão baixados. Para instalar um: grabit install firefox (ou chromium, chrome, brave, edge)."
+    [ins_nav_desconhecido]="Navegador desconhecido: '%s'. Dá para pedir firefox, chromium, chrome, brave ou edge."
+    [ins_nav_ja]="O %s já está instalado."
+    [ins_nav_site]="O %s não está no gerenciador de pacotes deste sistema. Baixe em: %s"
     [nav_sem_video]="nenhum vídeo apareceu no navegador (a janela fechou ou o tempo acabou)"
     [nav_sem_navegador]="     Com o Firefox ou o Chrome instalado, o GrabIt faz isso sozinho."
     [curl_sem_clip]="Não consegui ler a área de transferência. Guarde o comando num arquivo e rode:  %s"
@@ -603,7 +606,9 @@ que grabit --atualizar):
 
   config             mostra o grabit.config e os valores em uso
   instalar, install  instala o que falta (ffmpeg, yt-dlp…) e o comando grabit, e pergunta
-                     sobre o que é opcional; com -y, aceita tudo sem perguntar, menos navegador
+                     sobre o que é opcional; com -y, instala tudo sem perguntar (navegador, só
+                     se não houver nenhum compatível, e aí só o Firefox)
+  instalar NAVEGADOR instala um navegador a pedido: firefox, chromium, chrome, brave ou edge
   atualizar, update  deixa tudo na versão mais nova (GrabIt, yt-dlp, Deno e FFmpeg)
                      e instala o que faltar
   versao, version    mostra a versão instalada, se há outra mais nova e o que o GrabIt usa
@@ -1014,7 +1019,10 @@ idioma_en() {
     [ins_q_deno]="Install Deno? YouTube requires a JavaScript runtime to unlock the best resolutions. [Y/n]"
     [ins_q_clip]="Install %s? It's for capturing copied links (-C) and reading the copied cURL. [Y/n]"
     [ins_q_nav]="Install Firefox? It's only useful on sites that just work in a browser, and you have none that GrabIt can use. [y/N]"
-    [ins_nav_nota]="No compatible browser: sites that only work in a browser won't be downloaded. If you install Firefox, Chrome, Chromium, Brave or Edge, GrabIt finds them by itself."
+    [ins_nav_nota]="No compatible browser: sites that only work in a browser won't be downloaded. To install one: grabit install firefox (or chromium, chrome, brave, edge)."
+    [ins_nav_desconhecido]="Unknown browser: '%s'. You can ask for firefox, chromium, chrome, brave or edge."
+    [ins_nav_ja]="%s is already installed."
+    [ins_nav_site]="%s isn't in this system's package manager. Download it from: %s"
     [nav_sem_video]="no video showed up in the browser (the window closed or time ran out)"
     [nav_sem_navegador]="     With Firefox or Chrome installed, GrabIt does this by itself."
     [curl_sem_clip]="I couldn't read the clipboard. Save the command to a file and run:  %s"
@@ -1099,7 +1107,9 @@ the same as grabit --atualizar):
 
   config             show grabit.config and the values in use
   install, instalar  install what's missing (ffmpeg, yt-dlp…) and the grabit command, and ask
-                     about what's optional; with -y, accept it all without asking, except a browser
+                     about what's optional; with -y, install it all without asking (a browser,
+                     only if there's no compatible one, and then only Firefox)
+  install BROWSER    install a browser on request: firefox, chromium, chrome, brave or edge
   update, atualizar  put everything on the newest version (GrabIt, yt-dlp, Deno and FFmpeg)
                      and install what's missing
   version, versao    show the installed version, whether there's a newer one and what GrabIt uses
@@ -1284,7 +1294,7 @@ palavra_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0
 for a in "$@"; do
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
   case $a in
@@ -3587,6 +3597,21 @@ pacote() {                                    # pacote NOME → PKG: o nome do p
     pacman:pipx)          PKG=python-pipx ;;
     zypper:pipx)          PKG=python3-pipx ;;
     apk:pipx)             PKG=pipx ;;
+    zypper:firefox)       PKG=MozillaFirefox ;;
+  esac
+}
+
+# pacote_disponivel PACOTE: o gerenciador do sistema tem esse pacote? (o Chrome, o Brave e o
+# Edge só estão lá se o repositório deles tiver sido acrescentado)
+pacote_disponivel() {
+  case $GER in
+    brew)   brew info "$1" >/dev/null 2>&1 ;;
+    apt)    apt-cache policy "$1" 2>/dev/null | grep -q 'Candidate: [^(]' ;;
+    dnf)    dnf -q info "$1" >/dev/null 2>&1 ;;
+    pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
+    zypper) zypper -q info "$1" 2>/dev/null | grep -qi "^name *: *$1" ;;
+    apk)    apk search -e "$1" 2>/dev/null | grep -q . ;;
+    *)      return 1 ;;
   esac
 }
 
@@ -3692,8 +3717,10 @@ monta_plano() {
   descreve_plano
 }
 
-# decide_opcionais: com -y (e no --atualizar), aceita tudo, menos o navegador: é um programa
-# grande, que a pessoa pode nem precisar, e só entra com um "sim" dela.
+# decide_opcionais: com -y, aceita tudo sem perguntar. O navegador é um programa grande, que a
+# pessoa pode nem precisar: só entra quando não há nenhum compatível, e aí só o Firefox, que o
+# GrabIt lê sem precisar de mais nada. Outros, só a pedido: grabit install chrome. O --atualizar
+# nunca instala um navegador.
 decide_opcionais() {
   local o pkg
   for o in "${OPCIONAIS[@]}"; do
@@ -3711,11 +3738,39 @@ decide_opcionais() {
         pkg=${o#clip:}; t ins_q_clip "$pkg"
         if (( ASSUME_SIM )) || pergunta_sim "$TXT"; then SISTEMA+=("$pkg"); fi ;;
       navegador)
-        if (( ! ASSUME_SIM )) && pergunta_sim "${T[ins_q_nav]}" n; then SISTEMA+=(firefox)
+        if (( ATUALIZANDO )); then continue; fi
+        if (( ASSUME_SIM )) || pergunta_sim "${T[ins_q_nav]}" n; then pacote firefox; SISTEMA+=("$PKG")
         else NOTA_NAV=1; fi ;;
     esac
   done
   descreve_plano
+}
+
+# grabit install NAVEGADOR: o pedido explícito, para instalar um navegador em especial
+instalar_navegador() {
+  local pedido=${1,,} pacotes=() programas=() site="" p
+  case $pedido in
+    firefox)              pacote firefox; pacotes=("$PKG"); programas=(firefox); site=https://www.mozilla.org/firefox/ ;;
+    chromium)             pacotes=(chromium chromium-browser); programas=(chromium chromium-browser); site=https://www.chromium.org/getting-involved/download-chromium/ ;;
+    chrome|google-chrome) pacotes=(google-chrome-stable google-chrome); programas=(google-chrome google-chrome-stable); site=https://www.google.com/chrome/ ;;
+    brave)                pacotes=(brave-browser); programas=(brave-browser brave); site=https://brave.com/download/ ;;
+    edge|microsoft-edge)  pacotes=(microsoft-edge-stable microsoft-edge); programas=(microsoft-edge microsoft-edge-stable); site=https://www.microsoft.com/edge ;;
+    *) t ins_nav_desconhecido "$1"; erro "$TXT"; printf '\n'; return 2 ;;
+  esac
+  for p in "${programas[@]}"; do
+    if command -v "$p" >/dev/null 2>&1; then
+      t ins_nav_ja "$pedido"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
+      return 0
+    fi
+  done
+  for p in "${pacotes[@]}"; do
+    pacote_disponivel "$p" || continue
+    t ins_p_sistema "$GER" "$p"; passo "$TXT" instala_pacotes "$p" || { printf '\n'; return 1; }
+    printf '\n'
+    return 0
+  done
+  t ins_nav_site "$pedido" "$site"; aviso "$TXT"; printf '\n'
+  return 1
 }
 
 descreve_plano() {                            # → PLANO: a descrição do que vai ser instalado
@@ -3777,6 +3832,7 @@ instalar() {
   export PATH="$HOME/.local/bin:$HOME/.deno/bin:$PATH"     # onde pipx e deno instalam
   printf '\n  %s%s%s\n' "$NEG" "${T[ins_titulo]}" "$R"
   [[ -z $GER ]] && aviso "${T[ins_sem_ger]}"
+  if (( ${#ARGS_LINKS[@]} )); then instalar_navegador "${ARGS_LINKS[0]}"; return; fi
   monta_plano
   if (( ${#PLANO[@]} == 0 && ${#SISTEMA[@]} == 0 && ${#OPCIONAIS[@]} == 0 )); then
     printf '\n  %s✔%s %s\n' "$VERDE" "$R" "${T[ins_nada]}"
@@ -3941,7 +3997,7 @@ atualizar() {
   atualiza_ytdlp
 
   # 3) o que estiver faltando (sem perguntar: é para isso que foi chamado; navegador, só se pedir)
-  ASSUME_SIM=1
+  ASSUME_SIM=1; ATUALIZANDO=1
   monta_plano
   decide_opcionais
   if [[ -z $GER && ${#SISTEMA[@]} -gt 0 ]]; then t ins_manual "${SISTEMA[*]}"; aviso "$TXT"; FALHOU_PASSO=1; fi

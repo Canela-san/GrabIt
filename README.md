@@ -52,7 +52,7 @@ O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer cois
 | `wl-clipboard` ou `xclip` | capturar links copiados (`-C`) e ler o cURL copiado | instala |
 | Firefox | sites que só funcionam num navegador (só é oferecido se você não tiver nenhum compatível) | **não instala** |
 
-Para instalar sem perguntas, use `grabit install -y` (ou `--yes`): ele aceita tudo, menos o navegador, que é um programa grande e nunca entra sem um "sim" seu.
+Para instalar sem perguntas, use `grabit install -y` (ou `--yes`): ele instala tudo. O navegador só entra se não houver nenhum compatível no computador, e aí só o Firefox. Outro navegador, só a pedido: `grabit install chrome` (ou `chromium`, `brave`, `edge`, `firefox`).
 
 Para deixar tudo na versão mais nova de uma vez:
 
