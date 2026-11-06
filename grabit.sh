@@ -7215,6 +7215,7 @@ gerencia_canais() {
       if (( ! ${#CN_URL[@]} )); then printf '\n  %s\n\n%s\n\n' "${T[cn_vazio]}" "${T[cn_ajuda]}"; exit 0; fi
       if (( ! USAR_HISTORICO )); then aviso "${T[cn_sem_hist]}"; fi
       ARGS_LINKS=("${CN_URL[@]}"); LISTA_EXPLICITA=0; CAPTURA=0; FILA_VIVA=0; UPGRADE=0; CANAIS_BAIXAR=1
+      PROCURAR_ARQUIVO=0                      # a página de um canal fala de vários vídeos, não de um
       for i in "${!CN_URL[@]}"; do
         [[ ${CN_DESDE[$i]} == 0 ]] || EXTRA_LINK[${CN_URL[$i]}]="--break-match-filters upload_date>=?${CN_DESDE[$i]}"
       done ;;

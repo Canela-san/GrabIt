@@ -881,6 +881,7 @@ espera "lista os canais" grep -qE '1 +https://c.invalid/@um/videos +desde' n8
 STUB_D='[download] x: has already been recorded in the archive' cn n9 -L pt canais baixar -o ./Pasta
 espera "baixar: todos os canais" test "$(grep -c -- '-- https://c.invalid/' "$STUB_LOG")" -eq 4
 espera "…parando no primeiro que já está no histórico" contem "$STUB_LOG" "--break-on-existing"
+espera "…sem procurar arquivo direto: a página fala de vários vídeos" nao_contem "$STUB_LOG" "--procura-direto"
 espera "…ou no mais velho que a data do canal" sh -c "grep -F -- '-- https://c.invalid/@dois' '$STUB_LOG' | grep -qF 'upload_date>=?20260131'"
 espera "…sem data no canal que quer tudo" sh -c "! grep -F -- '-- https://c.invalid/@quatro' '$STUB_LOG' | grep -qF 'upload_date'"
 espera "…e sem nada novo, diz isso" contem n9 "nada de novo"
