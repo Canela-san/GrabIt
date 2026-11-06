@@ -525,7 +525,12 @@ converte() {
     fi
   fi
 
-  # Do mais completo ao mais simples. O áudio só é refeito se a pessoa pediu para recomprimir.
+  # Do mais completo ao mais simples. O áudio só é refeito se a pessoa pediu para recomprimir. Se nada
+  # deu certo com o tempo exato, tudo de novo sem ele: é um extra, que depende da versão do ffmpeg, e o
+  # que a pessoa pediu foi trocar o formato.
+  local rodada
+  for rodada in exato simples; do
+  [[ $rodada == simples ]] && exato=()
   for modo in copia ${cod:+refaz}; do
     audio=(-c:a copy)
     if [[ $modo == refaz ]]; then
@@ -573,6 +578,9 @@ converte() {
       # Formato que não aceita é recusado na hora. Depois de um tempo, ou no Ctrl+C, é outra coisa.
       (( rc == 255 || SECONDS - t0 > 60 )) && break 2
     done
+  done
+  (( feito || ! usa_exato || rc == 255 || SECONDS - t0 > 60 )) && break
+  usa_exato=0
   done
   rm -f -- "$pasta/erros" "$pasta/capa.jpg" "$pasta/capa.png"
   rmdir -- "$pasta" 2>/dev/null

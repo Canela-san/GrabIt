@@ -914,7 +914,7 @@ roda b3 -L pt completar zsh
 espera "zsh: começa como o zsh espera" test "$(head -n 1 b3)" = "#compdef grabit"
 if command -v fish >/dev/null 2>&1; then espera "fish: a sintaxe é válida" fish --no-execute b2; fi
 if command -v zsh >/dev/null 2>&1; then espera "zsh: a sintaxe é válida" zsh -n b3; fi
-espera "toda opção do getopts está na tabela" sh -c "for o in \$(sed -n 's/.*getopts \":\\([^\"]*\\)\" op.*/\\1/p' '$G' | tr -d ':' | sed 's/./& /g'); do grep -qE \"^(TABELA_OPCOES='|)\$o\\|\" '$G' || { echo \$o; exit 1; }; done"
+espera "toda opção do getopts está na tabela" sh -c "for o in \$(sed -n 's/.*getopts \":\\([^\"]*\\)\" op.*/\\1/p' '$G' | tr -d ':' | sed 's/./& /g'); do grep -qE \"^(TABELA_OPCOES=')?\$o\\|\" '$G' || { echo \$o; exit 1; }; done"
 mkdir -p semfish; printf '#!/bin/sh\nexit 0\n' > semfish/fish; chmod +x semfish/fish
 HOME="$D/casa" XDG_DATA_HOME="$D/casa/dados" PATH="$D/semfish:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda b4 -L pt install -y
 espera "o instalar põe o autocompletar no lugar" test -f casa/.config/fish/completions/grabit.fish -a -f casa/dados/bash-completion/completions/grabit
@@ -1413,11 +1413,11 @@ EOF
   unset STUB_PROG
   # as perguntas do instalador, respondidas no teclado
   RES_INS="$TMP/casa-ins"; mkdir -p "$RES_INS"
-  TERM=xterm-256color HOME="$RES_INS" PATH="$GBREW:$STUB:$TMP/sem:/usr/bin:/bin" python3 "$TMP/terminal.py" p8 40 'espera:[S/n]|tecla:n
+  TERM=xterm-256color HOME="$RES_INS" PATH="$GBREW:$STUB:$TMP/sem:/usr/bin:/bin" "$(command -v python3)" "$TMP/terminal.py" p8 40 'espera:[S/n]|tecla:n
 |pausa:1|tecla:n
 |pausa:1|tecla:n
 |pausa:1|tecla:n
-|fim' bash "$G" -L pt --instalar > p8.rc 2>&1
+|fim' "$BASH" "$G" -L pt --instalar > p8.rc 2>&1
   espera "o instalador pergunta no terminal" contem p8 "[S/n]"
 fi
 
@@ -1853,8 +1853,29 @@ espera "troca a extensão" test -f "v [x].mp4"
 espera "…com as mesmas imagens" test "$(imagens "v [x].mp4")" = "$REF"
 espera "…com o tempo exato de cada quadro de volta" test "$(intervalos "v [x].mp4")" = "33.3 "
 espera "…e diz que restaurou" contem c1 "tempo de cada quadro restaurado"
+if [[ $(intervalos "v [x].mp4" 2>/dev/null) != "33.3 " ]]; then   # para entender a falha, quando houver
+  ffmpeg -version | head -n 1
+  ffmpeg -v error -y -fflags +genpts -i "v [x].mkv" -map 0:V -map 0:a -c copy \
+    -bsf:v:0 "setts=time_base=1/90000:pts=(STARTPTS*TB+round((PTS-STARTPTS)*TB*30/1)*1/30)/TB_OUT:dts=(STARTPTS*TB+round((DTS-STARTPTS)*TB*30/1)*1/30)/TB_OUT:duration=1/30/TB_OUT" \
+    -video_track_timescale 90000 -f mp4 diag.mp4 2>&1 | head -n 5
+fi
 espera "…com a capa" tem_capa "v [x].mp4"
 espera "…e avisa o que o .mp4 não guarda" contem c1 ".mp4 não guarda: dados do site"
+# um ffmpeg que não saiba restaurar o tempo: a troca de formato não pode falhar por causa disso
+mkdir -p "$TMP/ff-sem-setts"
+cat > "$TMP/ff-sem-setts/ffmpeg" <<FIMFF
+#!/bin/sh
+case "\$*" in *setts=*) echo 'Error applying bitstream filter' >&2; exit 1 ;; esac
+exec "$(command -v ffmpeg)" "\$@"
+FIMFF
+chmod +x "$TMP/ff-sem-setts/ffmpeg"
+mkdir s1; cp "v [x].mkv" s1/
+cd s1 || exit 1
+PATH="$TMP/ff-sem-setts:$PATH" roda c1b -L pt converter "v [x].mkv" -e mp4
+espera "sem como restaurar o tempo, troca o formato do mesmo jeito" test -f "v [x].mp4"
+espera "…com as mesmas imagens" test "$(imagens "v [x].mp4")" = "$REF"
+espera "…e sem dizer que restaurou" nao_contem c1b "tempo de cada quadro restaurado"
+cd .. || exit 1
 espera "o original fica" test -f "v [x].mkv"
 roda c2 -L pt converter "v [x].mkv" -e mp4
 espera "não sobrescreve o que já existe" contem c2 "já existe"
