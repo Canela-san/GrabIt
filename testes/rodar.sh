@@ -808,8 +808,11 @@ espera "lista sem nenhum link: explica, com um exemplo" contem d6 "grabit https:
 secao "Títulos com emoji"
 largura() {
   (
-    # shellcheck disable=SC2034  # (usados pelo corta, que vem do script)
-    SEP=$'\x1f'; declare -A CACHE_CORTA=()
+    # (usados pelo corta, que vem do script)
+    # shellcheck disable=SC2034
+    SEP=$'\x1f'
+    # shellcheck disable=SC2034
+    declare -A CACHE_CORTA=()
     eval "$(sed -n '/^corta() {/,/^}/p' "$G")"
     corta "$1" 200; printf '%s' "$LARG"
   )
