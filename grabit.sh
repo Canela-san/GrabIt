@@ -41,8 +41,9 @@ fi
 unset utf8_teste loc
 export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
-# peso CODEC → NUM: quanto cada bit rende, em relação ao H.264 (100). É uma média: varia com o vídeo e com
-# o codificador. Medido com grabit comparar: veja "Comparar dois vídeos" no README.
+# peso CODEC → NUM: quanto cada bit rende, em relação ao H.264 (100). É uma média: varia com o vídeo e com o
+# codificador. Conferido com SSIM em dois trechos de um filme em 1080p, com x264, x265, SVT-AV1 e libvpx: para a
+# mesma SSIM de 0,99, deu AV1 cerca de 215, HEVC e VP9 cerca de 140; em qualidades menores, todos rendem mais.
 peso() {
   case ${1,,} in
     av1*|av01*) NUM=200 ;;
