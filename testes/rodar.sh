@@ -5,6 +5,9 @@
 #    bash testes/rodar.sh            todos os testes
 #    bash testes/rodar.sh --rapido   só os que não baixam nada (sem yt-dlp nem ffmpeg)
 #
+#  As seções rodam em grupos, em paralelo: cada grupo tem a sua pasta, o seu log do yt-dlp
+#  de mentira e a sua memória. GRABIT_TESTES_J limita quantos grupos rodam ao mesmo tempo.
+#
 #  Os testes completos sobem um servidor HTTP local (python3) com vídeos gerados
 #  pelo ffmpeg e rodam o GrabIt de verdade contra ele: nada sai da máquina.
 # ==============================================================================
@@ -17,11 +20,13 @@ RAPIDO=0
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit-testes.XXXXXX") || exit 1
 SRV=0
-trap '(( SRV )) && kill "$SRV" 2>/dev/null; rm -rf -- "$TMP"' EXIT
+TMP_RAIZ=$TMP
+trap '(( SRV )) && kill "$SRV" 2>/dev/null; rm -rf -- "$TMP_RAIZ"' EXIT
 export GRABIT_CONFIG="$TMP/sem-config/grabit.config"   # pasta inexistente: nenhum config criado
 export NO_COLOR=1 NOTIFICAR=0 USAR_NAVEGADOR=0   # nenhum teste abre uma janela sem pedir
 export XDG_DATA_HOME="$TMP/dados"                # nem mexe na memória de métodos de verdade
 export GRABIT_ESPERA_BASE=0                      # nem espera um site "pedir calma" de verdade
+export GRABIT_INTERVALO=0                        # nem o intervalo entre os links de um site (quem testa isso liga)
 unset IDIOMA DOWNLOADS_SIMULTANEOS RESOLUCAO_MAXIMA LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS NTFY_TOPICO
 
 N_OK=0; FALHAS=()
@@ -43,6 +48,51 @@ roda() {                                      # roda SAÍDA [ARGS...] → RC (a 
 }
 secao() { printf '\n%s\n' "$1"; }
 gitq() { git -c user.name=t -c user.email=t@t.invalid -c commit.gpgsign=false "$@"; }
+
+# ───── Grupos em paralelo. Cada um é um ( … ) &, que herda tudo o que foi preparado até ali; no fim, a saída
+# ───── de todos sai na ordem, como se tivessem rodado em fila.
+GRUPOS_PID=(); GRUPOS_NOME=(); GRUPO=""
+MAX_GRUPOS=${GRABIT_TESTES_J:-8}
+mkdir -p "$TMP/g"
+vaga() {                                      # espera até poder começar mais um grupo
+  local p n
+  while :; do
+    n=0
+    for p in "${GRUPOS_PID[@]}"; do kill -0 "$p" 2>/dev/null && n=$(( n + 1 )); done
+    (( n < MAX_GRUPOS )) && return 0
+    sleep 0.2
+  done
+}
+grupo_ini() {                                 # (dentro do grupo) pasta, log e memória próprios
+  local x d="$TMP_RAIZ/g/$1"
+  GRUPO=$1
+  mkdir -p "$d/casa"
+  for x in sem com bun terminal.py; do
+    if [[ -e $TMP_RAIZ/$x ]]; then ln -s "$TMP_RAIZ/$x" "$d/$x"; fi
+  done
+  TMP=$d
+  export XDG_DATA_HOME="$d/dados" STUB_LOG="$d/stub.log" CLIP_ARQ="$d/clip" CLIP_LIDO="$d/clip.lido"
+  N_OK=0; FALHAS=()
+  : > "$STUB_LOG"
+}
+grupo_fim() {                                 # (dentro do grupo) o resultado, para o juntar_grupos
+  { printf '%d\n' "$N_OK"; if (( ${#FALHAS[@]} )); then printf '%s\n' "${FALHAS[@]}"; fi; } > "$TMP_RAIZ/g/$GRUPO.res"
+}
+novo_grupo() { GRUPOS_NOME+=("$1"); GRUPOS_PID+=("$2"); }
+juntar_grupos() {                             # espera todos; soma os resultados e mostra a saída, na ordem
+  local i g n l
+  for i in "${!GRUPOS_PID[@]}"; do
+    wait "${GRUPOS_PID[$i]}" 2>/dev/null
+    g=${GRUPOS_NOME[$i]}
+    cat "$TMP_RAIZ/g/$g.log"
+    if [[ -s $TMP_RAIZ/g/$g.res ]]; then
+      { read -r n; N_OK=$(( N_OK + n )); while IFS= read -r l; do FALHAS+=("$l"); done; } < "$TMP_RAIZ/g/$g.res"
+    else
+      printf '  ✖ o grupo %s não chegou ao fim\n' "$g"; FALHAS+=("grupo $g")
+    fi
+  done
+  GRUPOS_PID=(); GRUPOS_NOME=()
+}
 
 # ───────────────────────────── Rápidos ─────────────────────────────────────────
 secao "Sintaxe e ajuda"
@@ -184,6 +234,7 @@ case " $* " in *" -- https://video.n.invalid/"*) STUB_ERRO="" ;; esac           
 if [ -n "${STUB_429_UMA:-}" ] && [ ! -e "$STUB_429_UMA" ]; then                       # pede calma uma vez só
   case " $* " in *" -- http://c1.invalid/"*) : > "$STUB_429_UMA"; echo "ERROR: HTTP Error 429: Too Many Requests"; exit 1 ;; esac
 fi
+[ -z "${STUB_PROG:-}" ] || . "$STUB_PROG"
 if [ -n "${STUB_DORME:-}" ]; then                                                     # um download que demora
   case "$*" in *"${STUB_DORME_SO:-}"*)
     [ -z "${STUB_PROGRESSO:-}" ] || echo "@@P@@1"
@@ -269,7 +320,113 @@ falso() { HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
 ate() { local i; for (( i = 0; i < 150; i++ )); do "$@" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
 sem_runtime() { ! grep -F -- "$1" "$STUB_LOG" | grep -qF -- '--js-runtimes'; }
 com_runtime() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "--js-runtimes $2"; }
+tentou() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "$2"; }
+vezes() { grep -cF -- "$1" "$STUB_LOG"; }
+pedido() { grep -F -- "$1" "$STUB_LOG" | tail -n 1 | grep -qF -- "$2"; }
+sem_pedido() { ! pedido "$1" "$2"; }
+FF="$TMP/ff"; mkdir -p "$FF"
+cat > "$FF/firefox" <<'EOF'
+#!/bin/sh
+printf 'firefox %s\n' "$*" >> "$STUB_LOG"
+[ -z "${STUB_FF_FECHA:-}" ] || exit 0
+trap 'echo "firefox fechado" >> "$STUB_LOG"; exit 0' TERM
+cat > "$MOZ_LOG_FILE.moz_log" <<'LOG'
+[Parent 1: Main Thread]: E/nsHttp uri=https://n.invalid/style.css
+[Parent 1: Main Thread]: E/nsHttp   GET /style.css HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: n.invalid
+[Parent 1: Main Thread]: E/nsHttp ]
+[Parent 1: Main Thread]: E/nsHttp uri=https://video.n.invalid/pt-BR/701/master.m3u8?t=1
+[Parent 1: Main Thread]: E/nsHttp http request [
+[Parent 1: Main Thread]: E/nsHttp   GET /pt-BR/701/master.m3u8?t=1 HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: video.n.invalid
+[Parent 1: Socket Thread]: E/nsHttp outra coisa no meio
+[Parent 1: Main Thread]: E/nsHttp   User-Agent: Firefox/159.0 (X11; Linux)
+[Parent 1: Main Thread]: E/nsHttp   Referer: https://n.invalid/
+[Parent 1: Main Thread]: E/nsHttp   Origin: https://n.invalid
+[Parent 1: Main Thread]: E/nsHttp   Cookie: cf_clearance=abc; a=1
+[Parent 1: Main Thread]: E/nsHttp   Range: bytes=0-
+[Parent 1: Main Thread]: E/nsHttp ]
+LOG
+while :; do sleep 1 & wait $!; done
+EOF
+chmod +x "$FF/firefox"
+if command -v python3 >/dev/null 2>&1; then
+cat > "$TMP/terminal.py" <<'EOF'
+# terminal.py SAÍDA LINHAS ROTEIRO COMANDO...: roda o comando num terminal e segue o roteiro, separado por "|":
+#   espera:TEXTO  até TEXTO aparecer na tela    tecla:X  aperta uma tecla    pausa:S  espera S segundos
+#   ctrlc  aperta Ctrl+C    fim  espera o programa terminar
+import fcntl, os, pty, select, signal, struct, sys, termios, time
+saida, linhas, roteiro, cmd = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
+pid, fd = pty.fork()
+if pid == 0:
+    signal.signal(signal.SIGINT, signal.SIG_DFL)   # (quem roda em segundo plano herda o Ctrl+C ignorado)
+    os.execvp(cmd[0], cmd)
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", linhas, 120, 0, 0))
+os.kill(pid, signal.SIGWINCH)
+tudo, lido = b"", 0
+def le(ate):
+    global tudo
+    while time.time() < ate:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try:
+                d = os.read(fd, 65536)
+            except OSError:
+                return False
+            if not d:
+                return False
+            tudo += d
+    return True
+ok = True
+for passo in roteiro.split("|"):
+    tipo, _, valor = passo.partition(":")
+    if tipo == "espera":
+        limite = time.time() + 25
+        while valor.encode() not in tudo[lido:] and time.time() < limite and le(time.time() + 0.1):
+            pass
+        achou = tudo.find(valor.encode(), lido)
+        if achou < 0:
+            ok = False
+            print("NAO APARECEU:", valor)
+            break
+        lido = achou + len(valor.encode())
+    elif tipo == "tecla":
+        try:
+            os.write(fd, valor.encode())
+        except OSError:                              # o programa já terminou
+            break
+    elif tipo == "ctrlc":
+        os.write(fd, b"\x03")
+    elif tipo == "pausa":
+        le(time.time() + float(valor))
+    elif tipo == "tamanho":                          # tamanho:COLUNASxLINHAS: a janela muda
+        c, l = map(int, valor.split("x"))
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", l, c, 0, 0))
+        os.kill(pid, signal.SIGWINCH)
+    elif tipo == "fim":
+        limite = time.time() + 30
+        while time.time() < limite and le(time.time() + 0.2):
+            pass
+fim = time.time() + 2
+while time.time() < fim:
+    p, st = os.waitpid(pid, os.WNOHANG)
+    if p:
+        rc = os.waitstatus_to_exitcode(st) if hasattr(os, "waitstatus_to_exitcode") else st >> 8
+        break
+    le(time.time() + 0.1)
+else:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    rc = 99
+with open(saida, "wb") as f:
+    f.write(tudo)
+print("rc", rc)
+sys.exit(0 if ok else 3)
+EOF
+fi
 
+vaga; (
+grupo_ini sistema
 secao "Runtime JavaScript"
 D="$TMP/js"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
@@ -518,13 +675,15 @@ espera "só a primeira palavra pode ser comando" nao_contem w3 "atualização"
 echo http://a.invalid/w4 > update
 falso w4 -L pt ./update
 espera "arquivo com nome de comando vale com ./" contem "$STUB_LOG" "a.invalid/w4"
+grupo_fim
+) > "$TMP_RAIZ/g/sistema.log" 2>&1 & novo_grupo sistema $!
 
+vaga; (
+grupo_ini conexoes
 secao "Várias conexões"
 D="$TMP/conexoes"; mkdir -p "$D" "$TMP/comaria"; cd "$D" || exit 1
 printf '#!/bin/sh\nexit 0\n' > "$TMP/comaria/aria2c"; chmod +x "$TMP/comaria/aria2c"
 comaria() { HOME="$TMP/casa" PATH="$TMP/comaria:$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
-pedido() { grep -F -- "$1" "$STUB_LOG" | tail -n 1 | grep -qF -- "$2"; }
-sem_pedido() { ! pedido "$1" "$2"; }
 : > "$STUB_LOG"
 comaria c1 -L pt http://a.invalid/c1
 espera "arquivo direto: abre 3 conexões pelo aria2c" pedido a.invalid/c1 "aria2c:-x3 -s3"
@@ -630,8 +789,6 @@ espera "…e arquivo que não existe, idem" contem f15 "Não encontrei"
 
 secao "Novas tentativas por outro caminho"
 D="$TMP/tentativas"; mkdir -p "$D"; cd "$D" || exit 1
-tentou() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "$2"; }
-vezes() { grep -cF -- "$1" "$STUB_LOG"; }
 : > "$STUB_LOG"
 STUB_ERRO="[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again" \
   STUB_ERRO2="[generic] x: Unable to download webpage: HTTP Error 403: Forbidden" falso t1 -L pt http://t.invalid/cf
@@ -735,7 +892,11 @@ falso s2 -L pt lista.txt
 espera "lista.txt, sem caminho, não é um link" contem s2 "Nenhum link válido"
 falso s3 -L pt pasta/arquivo.txt
 espera "pasta/arquivo.txt também não" contem s3 "Nenhum link válido"
+grupo_fim
+) > "$TMP_RAIZ/g/conexoes.log" 2>&1 & novo_grupo conexoes $!
 
+vaga; (
+grupo_ini comandos
 secao "Regravar a lista com segurança"
 D="$TMP/lista-segura"; mkdir -p "$D/longe"; cd "$D" || exit 1
 printf '# minha lista\nhttp://a.invalid/1\nhttp://a.invalid/2\n' > l1.txt; chmod 640 l1.txt
@@ -1092,34 +1253,13 @@ if command -v aria2c >/dev/null 2>&1; then
   PATH="$(dirname "$(command -v aria2c)"):$PATH" falso p8 -L pt --proxy socks5://proxy.invalid:1080 http://a.invalid/p8
   espera "SOCKS: nenhum download pelo aria2c" nao_contem "$STUB_LOG" "--downloader http:"
 fi
+grupo_fim
+) > "$TMP_RAIZ/g/comandos.log" 2>&1 & novo_grupo comandos $!
 
+vaga; (
+grupo_ini navegador
 secao "Vídeo achado pelo navegador (Firefox de mentira)"
-D="$TMP/navegador"; FF="$TMP/ff"; mkdir -p "$D" "$FF"; cd "$D" || exit 1
-cat > "$FF/firefox" <<'EOF'
-#!/bin/sh
-printf 'firefox %s\n' "$*" >> "$STUB_LOG"
-[ -z "${STUB_FF_FECHA:-}" ] || exit 0
-trap 'echo "firefox fechado" >> "$STUB_LOG"; exit 0' TERM
-cat > "$MOZ_LOG_FILE.moz_log" <<'LOG'
-[Parent 1: Main Thread]: E/nsHttp uri=https://n.invalid/style.css
-[Parent 1: Main Thread]: E/nsHttp   GET /style.css HTTP/1.1
-[Parent 1: Main Thread]: E/nsHttp   Host: n.invalid
-[Parent 1: Main Thread]: E/nsHttp ]
-[Parent 1: Main Thread]: E/nsHttp uri=https://video.n.invalid/pt-BR/701/master.m3u8?t=1
-[Parent 1: Main Thread]: E/nsHttp http request [
-[Parent 1: Main Thread]: E/nsHttp   GET /pt-BR/701/master.m3u8?t=1 HTTP/1.1
-[Parent 1: Main Thread]: E/nsHttp   Host: video.n.invalid
-[Parent 1: Socket Thread]: E/nsHttp outra coisa no meio
-[Parent 1: Main Thread]: E/nsHttp   User-Agent: Firefox/159.0 (X11; Linux)
-[Parent 1: Main Thread]: E/nsHttp   Referer: https://n.invalid/
-[Parent 1: Main Thread]: E/nsHttp   Origin: https://n.invalid
-[Parent 1: Main Thread]: E/nsHttp   Cookie: cf_clearance=abc; a=1
-[Parent 1: Main Thread]: E/nsHttp   Range: bytes=0-
-[Parent 1: Main Thread]: E/nsHttp ]
-LOG
-while :; do sleep 1 & wait $!; done
-EOF
-chmod +x "$FF/firefox"
+D="$TMP/navegador"; mkdir -p "$D"; cd "$D" || exit 1
 nav() { HOME="$TMP/casa" XDG_DATA_HOME="$TMP/navdados" USAR_NAVEGADOR=1 GRABIT_NAVEGADOR_OPCOES=--headless GRABIT_NAVEGADOR_ESPERA=15 PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
 printf '%s\n' 'n.invalid/player?temporada=7&episodio=1' > links.txt
 : > "$STUB_LOG"
@@ -1234,7 +1374,12 @@ XDG_DATA_HOME="$TMP/mem" STUB_ERRO=$STUB_403 falso m5 -L pt http://falha.invalid
 espera "o método lembrado que para de funcionar é esquecido" nao_contem "$M" "falha.invalid"
 XDG_DATA_HOME="$TMP/mem" STUB_ERRO="HTTP Error 404: Not Found" falso m6 -L pt http://sumiu.invalid/1
 espera "um link que sumiu (404) não apaga a memória do site" contem "$M" "sumiu.invalid"
+grupo_fim
+) > "$TMP_RAIZ/g/navegador.log" 2>&1 & novo_grupo navegador $!
 
+vaga; (
+grupo_ini ritmo
+unset GRABIT_INTERVALO
 secao "Distribuição entre os sites"
 D="$TMP/freio"; mkdir -p "$D"; cd "$D" || exit 1
 export STUB_CONC="$TMP/conc"
@@ -1318,7 +1463,11 @@ espera "o link baixado vai para a seção BAIXADOS antes de a lista terminar" at
 espera "…com o outro ainda baixando" kill -0 "$P"
 wait "$P" 2>/dev/null
 espera "…e no fim vão todos" grep -qF "w.invalid/2  # ✔" links.txt
+grupo_fim
+) > "$TMP_RAIZ/g/ritmo.log" 2>&1 & novo_grupo ritmo $!
 
+vaga; (
+grupo_ini instalador
 secao "Instalador: o opcional é perguntado"
 D="$TMP/instalador"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
@@ -1349,93 +1498,14 @@ PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" G="$TMP/repos/solto/grabit.
 espera "update também não instala navegador" nao_contem "$STUB_LOG" "firefox"
 HOME="$TMP/casa" PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda i4 -L pt install -y
 espera "com um navegador instalado, nem o menciona" nao_contem i4 "Nenhum navegador"
+grupo_fim
+) > "$TMP_RAIZ/g/instalador.log" 2>&1 & novo_grupo instalador $!
 
-if (( RAPIDO )); then
-  printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
-  (( ${#FALHAS[@]} == 0 ))
-  exit
-fi
-
-# ───────────────────────────── Completos ───────────────────────────────────────
-for p in yt-dlp ffmpeg ffprobe python3; do
-  command -v "$p" >/dev/null 2>&1 || { printf '\nFalta %s para os testes completos (use --rapido).\n' "$p"; exit 1; }
-done
-
+vaga; (
+grupo_ini painel
 # ───── O painel e as teclas só existem num terminal: aqui, um de verdade (pseudo-terminal) ─────
 if command -v python3 >/dev/null 2>&1; then
   secao "Painel e teclas, num terminal de verdade"
-  cat > "$TMP/terminal.py" <<'EOF'
-# terminal.py SAÍDA LINHAS ROTEIRO COMANDO...: roda o comando num terminal e segue o roteiro, separado por "|":
-#   espera:TEXTO  até TEXTO aparecer na tela    tecla:X  aperta uma tecla    pausa:S  espera S segundos
-#   ctrlc  aperta Ctrl+C    fim  espera o programa terminar
-import fcntl, os, pty, select, signal, struct, sys, termios, time
-saida, linhas, roteiro, cmd = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
-pid, fd = pty.fork()
-if pid == 0:
-    signal.signal(signal.SIGINT, signal.SIG_DFL)   # (quem roda em segundo plano herda o Ctrl+C ignorado)
-    os.execvp(cmd[0], cmd)
-fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", linhas, 120, 0, 0))
-os.kill(pid, signal.SIGWINCH)
-tudo, lido = b"", 0
-def le(ate):
-    global tudo
-    while time.time() < ate:
-        r, _, _ = select.select([fd], [], [], 0.05)
-        if r:
-            try:
-                d = os.read(fd, 65536)
-            except OSError:
-                return False
-            if not d:
-                return False
-            tudo += d
-    return True
-ok = True
-for passo in roteiro.split("|"):
-    tipo, _, valor = passo.partition(":")
-    if tipo == "espera":
-        limite = time.time() + 25
-        while valor.encode() not in tudo[lido:] and time.time() < limite and le(time.time() + 0.1):
-            pass
-        achou = tudo.find(valor.encode(), lido)
-        if achou < 0:
-            ok = False
-            print("NAO APARECEU:", valor)
-            break
-        lido = achou + len(valor.encode())
-    elif tipo == "tecla":
-        try:
-            os.write(fd, valor.encode())
-        except OSError:                              # o programa já terminou
-            break
-    elif tipo == "ctrlc":
-        os.write(fd, b"\x03")
-    elif tipo == "pausa":
-        le(time.time() + float(valor))
-    elif tipo == "tamanho":                          # tamanho:COLUNASxLINHAS: a janela muda
-        c, l = map(int, valor.split("x"))
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", l, c, 0, 0))
-        os.kill(pid, signal.SIGWINCH)
-    elif tipo == "fim":
-        limite = time.time() + 30
-        while time.time() < limite and le(time.time() + 0.2):
-            pass
-fim = time.time() + 2
-while time.time() < fim:
-    p, st = os.waitpid(pid, os.WNOHANG)
-    if p:
-        rc = os.waitstatus_to_exitcode(st) if hasattr(os, "waitstatus_to_exitcode") else st >> 8
-        break
-    le(time.time() + 0.1)
-else:
-    os.kill(pid, signal.SIGKILL)
-    os.waitpid(pid, 0)
-    rc = 99
-with open(saida, "wb") as f:
-    f.write(tudo)
-print("rc", rc)
-sys.exit(0 if ok else 3)
-EOF
   D="$TMP/painel"; mkdir -p "$D"; cd "$D" || exit 1
   tela() { local s=$1 r=$2; shift 2; TERM=xterm-256color HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" python3 "$TMP/terminal.py" "$s" "${LINHAS_TELA:-40}" "$r" bash "$G" "$@" > "$s.rc" 2>&1; }
   progresso='@@P@@1048576\03710485760\037524288\03718\037\037\037h264\0371080\03730\037mp4\037Filme de teste'
@@ -1446,7 +1516,6 @@ printf '$progresso\n'
 sleep \${STUB_PAINEL:-4}
 printf '@@D@@1080\03730\037SDR\037h264\037aac\03760\037Filme de teste\037abc\037Downloads/Filme.mkv\n'
 EOF
-  sed 's/^if \[ -n "\${STUB_DORME:-}" \]; then.*$/[ -z "${STUB_PROG:-}" ] || . "$STUB_PROG"\n&/' "$STUB/yt-dlp" > "$STUB/yt-dlp.novo" && mv "$STUB/yt-dlp.novo" "$STUB/yt-dlp"; chmod +x "$STUB/yt-dlp"
   export STUB_PROG="$TMP/prog.sh"
   tela p1 'espera:Filme de teste|espera:1080p|espera:⇣ |fim' -L pt -j 1 http://a.invalid/painel1
   espera "o painel mostra o título do vídeo" contem p1 "Filme de teste"
@@ -1532,6 +1601,21 @@ sys.exit(0 if antes.rfind(b"\x1b[?25h") > antes.rfind(b"\x1b[?25l") and antes.rf
   espera "o instalador pergunta no terminal" contem p8 "[S/n]"
   contem p8 "[S/n]" || { cat p8.rc; head -c 1500 p8 2>/dev/null; }
 fi
+grupo_fim
+) > "$TMP_RAIZ/g/painel.log" 2>&1 & novo_grupo painel $!
+
+juntar_grupos
+
+if (( RAPIDO )); then
+  printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
+  (( ${#FALHAS[@]} == 0 ))
+  exit
+fi
+
+# ───────────────────────────── Completos ───────────────────────────────────────
+for p in yt-dlp ffmpeg ffprobe python3; do
+  command -v "$p" >/dev/null 2>&1 || { printf '\nFalta %s para os testes completos (use --rapido).\n' "$p"; exit 1; }
+done
 
 secao "Contrato com o yt-dlp"
 espera "o yt-dlp informa os runtimes no formato esperado" sh -c "yt-dlp -v --ignore-config 2>&1 | grep -qE '^\[debug\] JS runtimes: '"
@@ -1667,7 +1751,19 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do python3 -c "import urllib.request; urllib.requ
 export NO_PROXY="127.0.0.1,${NO_PROXY:-}" no_proxy="127.0.0.1,${no_proxy:-}"
 altura() { ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 -- "$1" | cut -d, -f1; }
 um() { local f; for f in "$@"; do [[ -e $f ]] && { printf '%s' "$f"; return 0; }; done; return 1; }
+imagens() { ffmpeg -v error -i "$1" -map 0:v:0 -f framemd5 - | grep -v '^#' | awk -F, '{print $NF}' | cksum; }
+faixas_de() { ffprobe -v error -show_entries stream=codec_name:stream_disposition=attached_pic -of csv=p=0 "$1" | tr '\n' ' '; }
+so_um() { find "$1" -maxdepth 1 -type f -name "*.$2" -print -quit; }
+tem_capa() { faixas_de "$1" | grep -q 'mjpeg,1'; }
 
+# Baixar de verdade usa CPU: no máximo um grupo por núcleo
+nucleos=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+(( nucleos < 2 )) && nucleos=2
+(( nucleos > 6 )) && nucleos=6
+MAX_GRUPOS=${GRABIT_TESTES_J:-$nucleos}
+
+vaga; (
+grupo_ini baixar
 secao "Download, histórico e seção BAIXADOS"
 D="$TMP/d1"; mkdir -p "$D"; cd "$D" || exit 1
 printf '# minha lista\n%s\n%s  # anotação\n%s\nlinha sem link\n%s\n' \
@@ -1734,7 +1830,11 @@ espera "-v reprova o estragado e o guarda à parte" test -n "$(find Verif -name 
 espera "…sem pô-lo no histórico" nao_contem Verif/.grabit-historico.txt "generic ruim"
 roda saida5 -L pt "$B/curto.mp4" -d -o ./Sub
 espera "-d separa por site (e vale depois do link)" test -n "$(find Sub -path '*127.0.0.1*' -name '*.mkv')"
+grupo_fim
+) > "$TMP_RAIZ/g/baixar.log" 2>&1 & novo_grupo baixar $!
 
+vaga; (
+grupo_ini protegidos
 secao "Vídeos protegidos"
 D="$TMP/d6"; mkdir -p "$D"; cd "$D" || exit 1
 roda saida1 -L pt -o ./Ref "$B/referer/curto.mp4"
@@ -1748,20 +1848,25 @@ espera "…e baixa com o cURL copiado do navegador" test -n "$(find Ses -name '*
 INICIO=$SECONDS
 XDG_DATA_HOME="$TMP/bloqueio" roda saida5 -L pt -o ./Bloq "$B/bloq/p360.m3u8"
 espera "pedaços recusados: desiste em menos de 1 minuto" test $(( SECONDS - INICIO )) -lt 60
-espera "…e explica" contem saida5 "403"
+espera "…e explica" grep -qE '403|pedaço' saida5
 for par in "firefox|--headless" "google-chrome|--headless=new --no-sandbox" "chromium|--headless=new --no-sandbox"; do
   prog=${par%%|*}
   command -v "$prog" >/dev/null 2>&1 || continue
+  [[ $prog == chromium && -n ${ja_chrome:-} ]] && continue     # (a família do Chrome é uma só: basta um)
+  [[ $prog == google-chrome ]] && ja_chrome=1
   USAR_NAVEGADOR=1 PROGRAMA_NAVEGADOR=$prog GRABIT_NAVEGADOR_OPCOES=${par#*|} GRABIT_NAVEGADOR_ESPERA=90 XDG_DATA_HOME="$TMP/navreal-$prog" \
     roda "saida-$prog" -L pt -o "./App-$prog" "$B/app/index.html"
   espera "página em JavaScript com vídeo protegido: o $prog de verdade acha e o GrabIt baixa" \
     test -n "$(find "App-$prog" -name '*app index html*.mkv')"
   espera "…na melhor resolução" codigo "$(altura "$(find "App-$prog" -name '*.mkv' | head -n 1)")" 720
 done
+grupo_fim
+) > "$TMP_RAIZ/g/protegidos.log" 2>&1 & novo_grupo protegidos $!
 
+vaga; (
+grupo_ini direto
 secao "O vídeo chega como o site entrega"
 D="$TMP/d7"; mkdir -p "$D"; cd "$D" || exit 1
-imagens() { ffmpeg -v error -i "$1" -map 0:v:0 -f framemd5 - | grep -v '^#' | awk -F, '{print $NF}' | cksum; }
 roda saida1 -L pt -o ./V "$B/longo.mp4" "$B/res/p720.m3u8"
 espera "arquivo direto: as imagens são idênticas, quadro a quadro" test "$(imagens "V/longo [longo].mkv")" = "$(imagens "$W/longo.mp4")"
 ffmpeg -v error -y -i "$W/res/p720.m3u8" -c copy p720.ts
@@ -1906,6 +2011,52 @@ espera "bem mais curto que o site informa: avisa" contem s-curto "mais curto"
 STUB_D=$(pronto 2) PATH="$TMP/so-ytdlp:$PATH" roda s-igual -L pt -o ./igual http://curto.invalid/2
 espera "…e não avisa à toa" nao_contem s-igual "mais curto"
 
+secao "Proxy, de verdade"
+# Um nome que só o proxy conhece: quem tentasse ir direto ao site nem acharia o endereço.
+D="$TMP/d12"; mkdir -p "$D"; cd "$D" || exit 1
+PORTA_P=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+cat > "$TMP/proxy.py" <<'EOF'
+import http.server, shutil, sys, urllib.error, urllib.parse, urllib.request
+porta, destino, log = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+direto = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class P(http.server.BaseHTTPRequestHandler):
+    def repassa(self):
+        u = urllib.parse.urlsplit(self.path)
+        with open(log, "a") as f:
+            f.write(f"{self.command} {u.netloc} {u.path} {self.headers.get('User-Agent', '')}\n")
+        c = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "proxy-connection", "connection")}
+        q = urllib.request.Request(destino + u.path + ("?" + u.query if u.query else ""), headers=c, method=self.command)
+        try:
+            r = direto.open(q)
+        except urllib.error.HTTPError as e:
+            r = e
+        self.send_response(r.status)
+        for k, v in r.headers.items():
+            if k.lower() not in ("connection", "transfer-encoding", "server", "date"):
+                self.send_header(k, v)
+        self.end_headers()
+        if self.command == "GET":
+            try:
+                shutil.copyfileobj(r, self.wfile)
+            except OSError:
+                pass
+    do_GET = do_HEAD = repassa
+    def log_message(self, *a):
+        pass
+http.server.ThreadingHTTPServer(("127.0.0.1", porta), P).serve_forever()
+EOF
+python3 "$TMP/proxy.py" "$PORTA_P" "$B" "$TMP/proxy.log" >/dev/null 2>&1 & SRV_P=$!
+ate python3 -c "import socket; socket.create_connection(('127.0.0.1', $PORTA_P), 1)"
+roda x1 -L pt -o ./a --proxy "http://127.0.0.1:$PORTA_P" http://so-pelo-proxy.invalid/dir/botao.html
+espera "o vídeo vem pelo proxy" test -n "$(find a -name '*.mkv' -print -quit)"
+espera "…a página é lida por ele" grep -qE '^GET so-pelo-proxy.invalid /dir/botao.html' "$TMP/proxy.log"
+espera "…e a medição do arquivo direto também: sem ela, ficaria o stream de 360p" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
+kill "$SRV_P" 2>/dev/null
+grupo_fim
+) > "$TMP_RAIZ/g/direto.log" 2>&1 & novo_grupo direto $!
+
+vaga; (
+grupo_ini formato
 secao "Formato do arquivo, de verdade"
 D="$TMP/d9"; mkdir -p "$D" "$W/fmt"; cd "$D" || exit 1
 ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=320x180:duration=1" -frames:v 1 "$W/fmt/capa.jpg"
@@ -1915,9 +2066,6 @@ ffmpeg -loglevel error -y -i "$W/fmt/f.mp4" -c:v libvpx -deadline realtime -cpu-
 for e in mp4 mkv webm; do
   printf '<!doctype html><html><head><title>Pagina %s</title><meta property="og:image" content="%s/fmt/capa.jpg"></head><body><video src="/fmt/f.%s"></video></body></html>\n' "$e" "$B" "$e" > "$W/fmt/p_$e.html"
 done
-faixas_de() { ffprobe -v error -show_entries stream=codec_name:stream_disposition=attached_pic -of csv=p=0 "$1" | tr '\n' ' '; }
-so_um() { find "$1" -maxdepth 1 -type f -name "*.$2" -print -quit; }
-tem_capa() { faixas_de "$1" | grep -q 'mjpeg,1'; }
 roda s1 -L pt -O -o ./o1 "$B/fmt/p_mp4.html"
 A=$(so_um o1 mp4)
 espera "-O: o .mp4 continua .mp4" test -n "$A"
@@ -2070,7 +2218,11 @@ if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' zscale ' && ffmpeg -hide
   roda h2 -L pt converter hdr.mp4 -k vp9
   espera "HDR em VP9, que aguenta: continua HDR" test "$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=p=0 hdr.vp9.mp4)" = smpte2084
 fi
+grupo_fim
+) > "$TMP_RAIZ/g/formato.log" 2>&1 & novo_grupo formato $!
 
+vaga; (
+grupo_ini partes
 if command -v aria2c >/dev/null 2>&1; then
   secao "Várias conexões, de verdade"
   D="$TMP/d11"; mkdir -p "$D"; cd "$D" || exit 1
@@ -2144,48 +2296,6 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "falta de luz: o que sobrou na pasta da execução que morreu também continua" contem r4 "continuou de onde parou"
 fi
 
-secao "Proxy, de verdade"
-# Um nome que só o proxy conhece: quem tentasse ir direto ao site nem acharia o endereço.
-D="$TMP/d12"; mkdir -p "$D"; cd "$D" || exit 1
-PORTA_P=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-cat > "$TMP/proxy.py" <<'EOF'
-import http.server, shutil, sys, urllib.error, urllib.parse, urllib.request
-porta, destino, log = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-direto = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-class P(http.server.BaseHTTPRequestHandler):
-    def repassa(self):
-        u = urllib.parse.urlsplit(self.path)
-        with open(log, "a") as f:
-            f.write(f"{self.command} {u.netloc} {u.path} {self.headers.get('User-Agent', '')}\n")
-        c = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "proxy-connection", "connection")}
-        q = urllib.request.Request(destino + u.path + ("?" + u.query if u.query else ""), headers=c, method=self.command)
-        try:
-            r = direto.open(q)
-        except urllib.error.HTTPError as e:
-            r = e
-        self.send_response(r.status)
-        for k, v in r.headers.items():
-            if k.lower() not in ("connection", "transfer-encoding", "server", "date"):
-                self.send_header(k, v)
-        self.end_headers()
-        if self.command == "GET":
-            try:
-                shutil.copyfileobj(r, self.wfile)
-            except OSError:
-                pass
-    do_GET = do_HEAD = repassa
-    def log_message(self, *a):
-        pass
-http.server.ThreadingHTTPServer(("127.0.0.1", porta), P).serve_forever()
-EOF
-python3 "$TMP/proxy.py" "$PORTA_P" "$B" "$TMP/proxy.log" >/dev/null 2>&1 & SRV_P=$!
-ate python3 -c "import socket; socket.create_connection(('127.0.0.1', $PORTA_P), 1)"
-roda x1 -L pt -o ./a --proxy "http://127.0.0.1:$PORTA_P" http://so-pelo-proxy.invalid/dir/botao.html
-espera "o vídeo vem pelo proxy" test -n "$(find a -name '*.mkv' -print -quit)"
-espera "…a página é lida por ele" grep -qE '^GET so-pelo-proxy.invalid /dir/botao.html' "$TMP/proxy.log"
-espera "…e a medição do arquivo direto também: sem ela, ficaria o stream de 360p" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
-kill "$SRV_P" 2>/dev/null
-
 secao "Filtros e simulação, de verdade"
 D="$TMP/d13"; mkdir -p "$D"; cd "$D" || exit 1
 roda g1 -L pt --simular "$B/curto.mp4"
@@ -2200,7 +2310,11 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "num arquivo grande também" contem g3 "fora dos filtros"
   espera "…sem o arquivo" test -z "$(find p2 -maxdepth 1 -name '*.mp4' -print -quit)"
 fi
+grupo_fim
+) > "$TMP_RAIZ/g/partes.log" 2>&1 & novo_grupo partes $!
 
+vaga; (
+grupo_ini colecao
 secao "Canais, de verdade"
 D="$TMP/d14"; mkdir -p "$D"; cd "$D" || exit 1
 cr() { XDG_DATA_HOME="$D/dados" roda "$@"; }
@@ -2253,9 +2367,6 @@ espera "com libvmaf, usa o VMAF" grep -qE 'VMAF +96.2' z6
 unset GRABIT_TRECHOS
 
 secao "Verificação da coleção (--verificar)"
-secao "Verificação da coleção (--verificar)"
-secao "Verificação da coleção (--verificar)"
-secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
 roda saida1 -L pt -o ./Col "$B/curto.mp4" "$B/longo.mp4" "$B/res/mestre.m3u8"
 python3 - "Col/longo [longo].mkv" <<'EOF2'
@@ -2298,6 +2409,10 @@ espera "…e baixa de novo, mesmo estando no histórico" test -f "$F"
 ffmpeg -v error -y -i "$F" -map 0 -c copy -metadata grouping= ColO/novo.mp4 && mv ColO/novo.mp4 "$F"
 roda m3 -L pt --verificar ColO
 espera "sem a tag, só o comentário: o vídeo passa, por falta de com o que comparar" grep -qE "✔ .*curto" m3
+grupo_fim
+) > "$TMP_RAIZ/g/colecao.log" 2>&1 & novo_grupo colecao $!
+
+juntar_grupos
 
 # ───────────────────────────── Resultado ───────────────────────────────────────
 printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"

@@ -18,10 +18,11 @@ Para testar o caminho inteiro numa máquina descartável, como root: `bash packa
 
 ## Homebrew
 
-A fórmula fica em [`Formula/grabit.rb`](../Formula/grabit.rb), e o próprio repositório serve de tap:
+A fórmula fica em [`Formula/grabit.rb`](../Formula/grabit.rb), e o próprio repositório serve de tap. O Homebrew só aceita um tap de fora depois do `brew trust`:
 
 ```bash
 brew tap Canela-san/grabit https://github.com/Canela-san/GrabIt
+brew trust canela-san/grabit
 brew install grabit
 ```
 

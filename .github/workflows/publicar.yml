@@ -85,12 +85,4 @@ jobs:
 
   homebrew:
     needs: pacotes
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - name: Instala pelo Homebrew e confere
-        run: |
-          brew tap "${GITHUB_REPOSITORY%%/*}/grabit" "https://github.com/$GITHUB_REPOSITORY"
-          brew install grabit
-          grabit -L en -h | grep -q "Usage:"
-          brew test grabit
+    uses: ./.github/workflows/homebrew.yml

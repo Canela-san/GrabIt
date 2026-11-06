@@ -1,0 +1,24 @@
+name: Conferir o Homebrew
+
+# Instala a versão publicada pelo Homebrew, como quem usa faria. Roda depois de cada publicação e
+# dá para disparar à mão. Se falhar, a versão já está no ar: é um aviso, não impede nada.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  instalar:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Instala pelo Homebrew e confere
+        run: |
+          dono=${GITHUB_REPOSITORY%%/*}
+          brew tap "$dono/grabit" "https://github.com/$GITHUB_REPOSITORY"
+          brew trust "$dono/grabit"
+          brew install grabit
+          grabit -L en -h | grep -q "Usage:"
+          brew test grabit

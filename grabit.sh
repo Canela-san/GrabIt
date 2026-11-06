@@ -4059,7 +4059,7 @@ lanca_job() {                                 # lanca_job IDX
   elif (( FORCAR || PAUSA_ENTRE_VIDEOS > 0 )); then
     e=$SECONDS
   else
-    e=$(( SECONDS + 1 ))
+    e=$(( SECONDS + ${GRABIT_INTERVALO:-1} ))
   fi
   (( e > ${PROX_INICIO_SITE[$s]:-0} )) && PROX_INICIO_SITE[$s]=$e
   # O arquivo da tentativa anterior veio corrompido: sem isso o yt-dlp o reaproveitaria
@@ -5490,7 +5490,6 @@ monta_args_ytdlp() {
     # Velocidade e resiliência (com espera crescente entre as repetições)
     -N "$CONEXOES_POR_VIDEO"
     --retries 10 --fragment-retries 10 --extractor-retries 3
-    --retry-sleep exp=1:30 --retry-sleep fragment:exp=1:30 --retry-sleep extractor:exp=2:30
     # Qualidade garantida: nunca pula um fragmento que falhou (por padrão o yt-dlp pula
     # em silêncio e entrega o vídeo com um salto) e nunca retoma pedaços de um download
     # interrompido (a retomada pode deixar buracos); nesses casos, recomeça do zero.
@@ -5499,6 +5498,8 @@ monta_args_ytdlp() {
     # recomeça do zero, sem limite de vezes. Numa conexão lenta, seria um laço sem fim de pedidos.
     --socket-timeout 30
   )
+  # (GRABIT_ESPERA_BASE=0 é o modo dos testes: nada de esperar um site que não existe)
+  (( ESPERA_BASE > 0 )) && YTDLP_ARGS+=(--retry-sleep exp=1:30 --retry-sleep fragment:exp=1:30 --retry-sleep extractor:exp=2:30)
   # Com --write-auto-subs o yt-dlp para de pedir as legendas manuais sozinho:
   # pede as duas (a manual tem prioridade) e apaga os .vtt depois de embutir.
   (( LEGENDAS_AUTOMATICAS && ! SO_AUDIO )) && YTDLP_ARGS+=(--write-subs --write-auto-subs --compat-options no-keep-subs)

@@ -63,7 +63,7 @@ curl -fsSL https://github.com/Canela-san/GrabIt/releases/latest/download/grabit.
 bash ~/.local/share/grabit/grabit.sh --install
 ```
 
-On macOS, with Homebrew: `brew tap Canela-san/grabit https://github.com/Canela-san/GrabIt && brew install grabit`. On Arch Linux, there's a `PKGBUILD` in [`packaging/aur`](packaging/README.md).
+On macOS, with Homebrew: `brew tap Canela-san/grabit https://github.com/Canela-san/GrabIt && brew trust canela-san/grabit && brew install grabit`. On Arch Linux, there's a `PKGBUILD` in [`packaging/aur`](packaging/README.md).
 
 `--install` checks what's missing and shows the plan before doing anything. What's essential is FFmpeg and yt-dlp, through your system's package manager (apt, dnf, pacman, zypper, apk or Homebrew) and `pipx`, and the `grabit` command in `~/.local/bin`. What only improves what GrabIt can do is asked about, one by one:
 
@@ -533,7 +533,7 @@ bash testes/rodar.sh            # all of them: starts a local server and downloa
 bash testes/rodar.sh --rapido   # downloads nothing: options, configuration, translations and the flow with a fake yt-dlp
 ```
 
-Nothing leaves your machine: the test videos are created on the spot and served on `127.0.0.1`. On every push, GitHub Actions runs the full tests on Ubuntu and macOS, the quick ones on Bash 4.4, 5.0, 5.1 and 5.2, plus ShellCheck. The panel tests run in a real terminal (a pseudo-terminal), with keys actually pressed. A version is only published if all of that passes.
+Nothing leaves your machine: the test videos are created on the spot and served on `127.0.0.1`. On every push, GitHub Actions runs the full tests on Ubuntu, the quick ones on macOS and Bash 4.4, the whole `apt` path and ShellCheck. Before publishing a version, macOS runs the full tests too, and it only goes out if everything passes. Sections run in parallel, and the panel tests run in a real terminal (a pseudo-terminal), with keys actually pressed.
 
 ## Disclaimer
 
