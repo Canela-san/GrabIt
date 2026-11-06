@@ -877,7 +877,8 @@ EOF
     espera "…e fora do Wayland, não" nao_contem c11 "wl-clipboard"
     if ! command -v brew >/dev/null 2>&1; then
       : > "$STUB_LOG"
-      D="$TMP/repos" WAYLAND_DISPLAY=wayland-9 STUB_JS="deno-2.9.8" aptf ap4 -L pt --update
+      mkdir -p "$TMP/casa_c" "$TMP/solto"; cp "$G" "$TMP/solto/grabit.sh"
+      HOME="$TMP/casa_c" PATH="$STUB:$GAPT:$TMP/sem:$PATH" G="$TMP/solto/grabit.sh" WAYLAND_DISPLAY=wayland-9 STUB_JS="deno-2.9.8" roda ap4 -L pt --update
       espera "--atualizar instala o wl-clipboard no Wayland, mesmo com o xclip" contem "$STUB_LOG" "apt-get install -y wl-clipboard"
     fi
   fi
