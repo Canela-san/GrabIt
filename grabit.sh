@@ -1491,7 +1491,7 @@ NIVEL=(); NIVEL_INICIO=(); NAV_AVISADO=0; NAV_DONO=0; NAV_PROG=""; NAV_TIPO=""; 
 CAB_ARGS=(); CAB_REFERER=""; SAIDA_PAGINA=""; ARQ_METODOS=""; PROX_BLOQ=0; MUITAS_REQ=0
 declare -A METODO=() METODO_QUANDO=() ESPERA_ATE=()
 declare -A FILA_CAB=() FILA_RAB=() PEND_SITE=() ATIVOS_SITE=()
-declare -A LIM_SITE=() CREDITO_SITE=() BLOQ_SITE=() ESPERA_SITE=() PROX_INICIO_SITE=() FALHAS_SITE=() PARADO_SITE=()
+declare -A LIM_SITE=() CREDITO_SITE=() BLOQ_SITE=() ESPERA_SITE=() PROX_INICIO_SITE=() FALHAS_SITE=() PARADO_SITE=() CALMA_ATE=()
 SEG=(); SITES=(); SAUDAVEL=(); N_PENDENTES=0; N_ADIADOS=0; BLOQUEIO=0
 ESPERA_BASE=${GRABIT_ESPERA_BASE:-30}         # segundos de espera no primeiro 429 de um site
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
@@ -1501,7 +1501,8 @@ LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
 TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
-ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0; PROX_MOVER=60
+ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
+SALVA_A_CADA=${GRABIT_SALVA_A_CADA:-60}; PROX_MOVER=$SALVA_A_CADA
 CLIP_CMD=(); CLIP_ULTIMO=""; CLIP_PRIMEIRA=1; PROX_CLIP=0; ARQ_CAPTURA=""
 declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=()
 declare -A TITULO=() CACHE_CORTA=()
@@ -2435,7 +2436,8 @@ reenfileira() {
 # site_pode_comecar SITE ATIVOS: chegou a hora desse site, há vaga nele e, se o próximo link dele
 # vai pelo navegador, a janela está livre? (Enquanto ela está ocupada, os outros sites passam.)
 site_pode_comecar() {
-  local s=$1 at=$2 lim=${LIM_SITE[$s]:-1}
+  local s=$1 at=$2 lim
+  lim=${LIM_SITE[$s]:-1}
   if (( ${PARADO_SITE[$s]:-0} )); then adia_site "$s"; return 1; fi
   (( SECONDS >= ${PROX_INICIO_SITE[$s]:-0} )) || return 1
   (( FORCAR && ! ${BLOQ_SITE[$s]:-0} )) && lim=$J_ALVO
@@ -2463,7 +2465,10 @@ site_aceitou() {
 # dentro da mesma espera, conta uma vez só.
 site_pediu_calma() {
   local s=$1 e lim
-  (( SECONDS >= ${PROX_INICIO_SITE[$s]:-0} )) || return 0
+  # Os downloads que estavam abertos recebem o pedido juntos: conta uma vez só. Não dá para olhar
+  # o PROX_INICIO_SITE aqui: ele também guarda o intervalo normal entre os downloads, e um 429
+  # rápido nunca seria contado. Como o 429 não gasta tentativa, o link se repetiria para sempre.
+  (( SECONDS < ${CALMA_ATE[$s]:-0} )) && return 0
   e=${ESPERA_SITE[$s]:-0}
   if (( e == 0 )); then e=$ESPERA_BASE; else e=$(( e * 2 )); fi
   (( e > 600 )) && e=600
@@ -2472,6 +2477,7 @@ site_pediu_calma() {
   lim=$(( ${LIM_SITE[$s]:-1} / 2 )); (( lim < 1 )) && lim=1
   LIM_SITE[$s]=$lim; CREDITO_SITE[$s]=0
   PROX_INICIO_SITE[$s]=$(( SECONDS + e + RANDOM % (e / 4 + 1) ))
+  CALMA_ATE[$s]=${PROX_INICIO_SITE[$s]}
   t k_freio "$s" "$lim" "$e"; PERM+=("  ${AMARELO}⚠${R} $TXT")
   lembra_espera "$s" "$e"
   (( ${BLOQ_SITE[$s]} >= 4 )) && para_site "$s"
@@ -3945,8 +3951,8 @@ decide_opcionais() {
 
 # grabit install NAVEGADOR: o pedido explícito, para instalar um navegador em especial
 instalar_navegador() {
-  local pedido=${1,,} pacotes=() programas=() site="" p
-  case $pedido in
+  local nome=${1,,} pacotes=() programas=() site="" p
+  case $nome in
     firefox)              pacote firefox; pacotes=("$PKG"); programas=(firefox); site=https://www.mozilla.org/firefox/ ;;
     chromium)             pacotes=(chromium chromium-browser); programas=(chromium chromium-browser); site=https://www.chromium.org/getting-involved/download-chromium/ ;;
     chrome|google-chrome) pacotes=(google-chrome-stable google-chrome); programas=(google-chrome google-chrome-stable); site=https://www.google.com/chrome/ ;;
@@ -3956,7 +3962,7 @@ instalar_navegador() {
   esac
   for p in "${programas[@]}"; do
     if command -v "$p" >/dev/null 2>&1; then
-      t ins_nav_ja "$pedido"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
+      t ins_nav_ja "$nome"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
       return 0
     fi
   done
@@ -3966,7 +3972,7 @@ instalar_navegador() {
     printf '\n'
     return 0
   done
-  t ins_nav_site "$pedido" "$site"; aviso "$TXT"; printf '\n'
+  t ins_nav_site "$nome" "$site"; aviso "$TXT"; printf '\n'
   return 1
 }
 
@@ -4686,7 +4692,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   if (( SECONDS >= PROX_BLOQ )); then vigia_saude; vigia_bloqueios; PROX_BLOQ=$(( SECONDS + 1 )); fi
   # Numa lista longa, o que já foi baixado não pode depender de a execução chegar ao fim: se a
   # luz acabar, a lista recomeça de onde parou, sem abrir o yt-dlp para cada link que já foi.
-  if (( MOVER && SECONDS >= PROX_MOVER )); then move_baixados; MOVER=0; PROX_MOVER=$(( SECONDS + 60 )); fi
+  if (( MOVER && SECONDS >= PROX_MOVER )); then move_baixados; MOVER=0; PROX_MOVER=$(( SECONDS + SALVA_A_CADA )); fi
 
   # 1) recolhe quem terminou (e devolve à fila quem merece outra tentativa)
   for (( s = 0; s < J; s++ )); do

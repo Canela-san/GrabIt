@@ -21,6 +21,7 @@ trap '(( SRV )) && kill "$SRV" 2>/dev/null; rm -rf -- "$TMP"' EXIT
 export GRABIT_CONFIG="$TMP/sem-config/grabit.config"   # pasta inexistente: nenhum config criado
 export NO_COLOR=1 NOTIFICAR=0 USAR_NAVEGADOR=0   # nenhum teste abre uma janela sem pedir
 export XDG_DATA_HOME="$TMP/dados"                # nem mexe na memória de métodos de verdade
+export GRABIT_ESPERA_BASE=0                      # nem espera um site "pedir calma" de verdade
 unset IDIOMA DOWNLOADS_SIMULTANEOS RESOLUCAO_MAXIMA LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS NTFY_TOPICO
 
 N_OK=0; FALHAS=()
@@ -162,6 +163,15 @@ case " $* " in *" --referer "*)                                                 
   [ -z "${STUB_SO_SEM_REFERER:-}" ] || STUB_ERRO="" ;;
 esac
 case " $* " in *" -- https://video.n.invalid/"*) STUB_ERRO="" ;; esac                 # o vídeo achado pelo navegador
+if [ -n "${STUB_429_UMA:-}" ] && [ ! -e "$STUB_429_UMA" ]; then                       # pede calma uma vez só
+  case " $* " in *" -- http://c1.invalid/"*) : > "$STUB_429_UMA"; echo "ERROR: HTTP Error 429: Too Many Requests"; exit 1 ;; esac
+fi
+if [ -n "${STUB_DORME:-}" ]; then                                                     # um download que demora
+  case "$*" in *"${STUB_DORME_SO:-}"*)
+    [ -z "${STUB_PROGRESSO:-}" ] || echo "@@P@@1"
+    printf 'ini\n' >> "$STUB_CONC"; sleep "$STUB_DORME"; printf 'fim\n' >> "$STUB_CONC" ;;
+  esac
+fi
 [ -z "${STUB_ERRO:-}" ] && exit 0
 echo "ERROR: $STUB_ERRO"; exit 1
 EOF
@@ -198,6 +208,7 @@ printf 'brew %s\n' "$*" >> "$STUB_LOG"
 exit 0
 EOF
 printf '#!/bin/sh\nexit 0\n' > "$GAPT/apt"
+printf '#!/bin/sh\nexit 0\n' > "$GAPT/apt-cache"                 # nenhum pacote a mais nos repositórios
 cat > "$GAPT/apt-get" <<'EOF'
 #!/bin/sh
 printf 'apt-get %s\n' "$*" >> "$STUB_LOG"
@@ -645,12 +656,76 @@ espera "o método lembrado que para de funcionar é esquecido" nao_contem "$M" "
 XDG_DATA_HOME="$TMP/mem" STUB_ERRO="HTTP Error 404: Not Found" falso m6 -L pt http://sumiu.invalid/1
 espera "um link que sumiu (404) não apaga a memória do site" contem "$M" "sumiu.invalid"
 
-secao "Paralelismo e freio"
+secao "Distribuição entre os sites"
 D="$TMP/freio"; mkdir -p "$D"; cd "$D" || exit 1
+export STUB_CONC="$TMP/conc"
+primeiros() { grep -oE -- '-- http://[a-z0-9]+\.invalid/[0-9]+' "$STUB_LOG" | head -n "$1" | sed 's/^-- http:..//' | tr '\n' ' '; }
 falso z0 -L pt http://y.invalid/1 http://y.invalid/2 http://y.invalid/3 http://y.invalid/4 http://y.invalid/5
 espera "4 downloads ao mesmo tempo por padrão" contem z0 "4 vídeo(s)"
-STUB_ERRO="HTTP Error 429: Too Many Requests" falso z1 -L pt http://z.invalid/1 http://z.invalid/2 http://z.invalid/3 http://z.invalid/4
-espera "429: o site ganha um freio" contem z1 "z.invalid pediu para ir mais devagar"
+: > "$STUB_LOG"
+falso z2 -L pt -j 3 http://a.invalid/1 http://a.invalid/2 http://a.invalid/3 http://b.invalid/1 http://c.invalid/1
+espera "as vagas se espalham entre os sites, mesmo com os links juntos na lista" test "$(primeiros 3)" = "a.invalid/1 b.invalid/1 c.invalid/1 "
+espera "…sem perder a ordem dentro de cada site" test "$(primeiros 5 | tr ' ' '\n' | grep -c '^a')" -eq 3
+espera "…e o cabeçalho conta os sites" contem z2 "3 sites"
+: > "$STUB_LOG"
+falso z3 -L pt -j 2 http://k.invalid/1 http://j.invalid/1 http://j.invalid/2 http://j.invalid/3
+espera "no empate, vai primeiro o site com mais links esperando" test "$(primeiros 2)" = "j.invalid/1 k.invalid/1 "
+
+secao "Ritmo por site"
+: > "$STUB_CONC"
+STUB_DORME=2 falso k1 -L pt -j 2 http://g.invalid/1 http://g.invalid/2
+espera "site desconhecido começa com um download só" test "$(sed -n 2p "$STUB_CONC")" = fim
+: > "$STUB_CONC"
+STUB_DORME=3 STUB_PROGRESSO=1 falso k2 -L pt -j 2 http://h.invalid/1 http://h.invalid/2
+espera "basta o download começar a chegar para abrir outra vaga" test "$(sed -n 2p "$STUB_CONC")" = ini
+: > "$STUB_CONC"
+STUB_DORME=2 falso k3 -L pt -F -j 2 http://i.invalid/1 http://i.invalid/2
+espera "-F dispensa o começo devagar" test "$(sed -n 2p "$STUB_CONC")" = ini
+: > "$STUB_LOG"
+STUB_ERRO="HTTP Error 404: Not Found" falso k4 -L pt http://l.invalid/1 http://l.invalid/2 http://l.invalid/3 http://l.invalid/4 http://l.invalid/5
+espera "links que sumiram não param o site" test "$(vezes l.invalid/5)" -eq 1
+espera "…nem são repetidos" test "$(vezes l.invalid/1)" -eq 1
+
+secao "Quando o site pede calma"
+: > "$STUB_LOG"
+INICIO=$SECONDS
+GRABIT_ESPERA_BASE=2 STUB_429_UMA="$TMP/ja-pediu" falso p1 -L pt -j 2 http://c1.invalid/1 http://c2.invalid/1
+espera "429: avisa" contem p1 "c1.invalid pediu para ir mais devagar"
+espera "…espera antes de voltar ao site" test $(( SECONDS - INICIO )) -ge 2
+espera "…o link tenta de novo" test "$(vezes c1.invalid/1)" -eq 2
+espera "…e deu certo" codigo "$RC" 0
+espera "os outros sites não esperam" test "$(primeiros 2)" = "c1.invalid/1 c2.invalid/1 "
+espera "a espera fica guardada para a próxima execução" grep -qE '^c1\.invalid 0 [0-9]+ [0-9]+$' "$XDG_DATA_HOME/grabit/metodos.txt"
+: > "$STUB_LOG"
+STUB_ERRO="HTTP Error 429: Too Many Requests" falso p2 -L pt -j 1 http://q.invalid/1 http://q.invalid/2 http://q.invalid/3 http://q.invalid/4
+espera "429 seguidos: para de insistir" test "$(vezes q.invalid/1)" -eq 4
+espera "…os outros links do site nem chegam a pedir" test "$(vezes q.invalid/2)" -eq 0
+espera "…avisa e conta os adiados" grep -qE 'Adiados +3' p2
+espera "…eles ficam na lista de falhas" contem links_falhos.txt "q.invalid/4"
+espera "…e sai com código 1" codigo "$RC" 1
+: > "$STUB_LOG"
+STUB_ERRO="HTTP Error 403: Forbidden" falso p3 -L pt -j 1 http://r.invalid/1 http://r.invalid/2 http://r.invalid/3 http://r.invalid/4 http://r.invalid/5
+espera "3 links seguidos recusados: os que faltam ficam para depois" test "$(vezes r.invalid/4)" -eq 0
+espera "…avisando" contem p3 "r.invalid está recusando"
+mkdir -p "$TMP/esp/grabit"; printf -v AGORA '%(%s)T' -1
+printf 's.invalid 0 %s %s\n' "$AGORA" "$(( AGORA + 3 ))" > "$TMP/esp/grabit/metodos.txt"
+INICIO=$SECONDS
+XDG_DATA_HOME="$TMP/esp" falso p4 -L pt http://s.invalid/1
+espera "quem pediu calma há pouco continua esperando" contem p4 "s.invalid pediu calma há pouco"
+espera "…de verdade" test $(( SECONDS - INICIO )) -ge 2
+XDG_DATA_HOME="$TMP/esp" falso p5 -L pt -F http://s.invalid/2
+espera "-F não espera" nao_contem p5 "pediu calma há pouco"
+falso p6 -L pt 'http://$(touch${IFS}invadiu).invalid/1'
+espera 'um link com "$(…)" no nome do site não executa nada' test ! -e invadiu
+
+secao "Progresso salvo"
+D="$TMP/salva"; mkdir -p "$D"; cd "$D" || exit 1
+printf '%s\n' http://v.invalid/1 http://w.invalid/2 > links.txt
+HOME="$TMP/casa" PATH="$STUB:$PATH" GRABIT_SALVA_A_CADA=1 STUB_DORME=6 STUB_DORME_SO=w.invalid bash "$G" -L pt > saida 2>&1 & P=$!
+espera "o link baixado vai para a seção BAIXADOS antes de a lista terminar" ate grep -qF "v.invalid/1  # ✔" links.txt
+espera "…com o outro ainda baixando" kill -0 "$P"
+wait "$P" 2>/dev/null
+espera "…e no fim vão todos" grep -qF "w.invalid/2  # ✔" links.txt
 
 secao "Instalador: o opcional é perguntado"
 D="$TMP/instalador"; mkdir -p "$D"; cd "$D" || exit 1
@@ -660,8 +735,22 @@ espera "install -y não pergunta e instala o recomendado" contem "$STUB_LOG" "br
 espera "…e não chega a pedir confirmação" nao_contem i1 "[S/n]"
 : > "$STUB_LOG"
 PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" falso i2 -L pt --install --yes
-espera "-y nunca instala um navegador" nao_contem "$STUB_LOG" "firefox"
-espera "…mas conta o que fica faltando" contem i2 "Nenhum navegador compatível"
+espera "-y sem navegador compatível instala o Firefox" contem "$STUB_LOG" "brew install firefox"
+espera "…e nenhum outro" test "$(grep -c '^brew install' "$STUB_LOG")" -eq 1
+: > "$STUB_LOG"
+HOME="$TMP/casa" PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda i6 -L pt install -y
+espera "-y com um navegador instalado não instala outro" nao_contem "$STUB_LOG" "install firefox"
+: > "$STUB_LOG"
+falso i7 -L pt install brave
+espera "install NAVEGADOR instala a pedido" contem "$STUB_LOG" "brew install brave-browser"
+HOME="$TMP/casa" PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" roda i8 -L pt install firefox
+espera "…e diz se ele já está instalado" contem i8 "já está instalado"
+falso i9 -L pt instalar netscape
+espera "navegador desconhecido é recusado" codigo "$RC" 2
+if ! command -v brew >/dev/null 2>&1; then
+  HOME="$TMP/casa" PATH="$STUB:$GAPT:$TMP/sem:$PATH" roda i10 -L pt install brave
+  espera "fora dos repositórios, diz onde baixar" contem i10 "https://brave.com/download/"
+fi
 : > "$STUB_LOG"
 PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" G="$TMP/repos/solto/grabit.sh" falso i3 -L pt update
 espera "update também não instala navegador" nao_contem "$STUB_LOG" "firefox"
