@@ -515,7 +515,7 @@ bash testes/rodar.sh            # all of them: starts a local server and downloa
 bash testes/rodar.sh --rapido   # downloads nothing: options, configuration, translations and the flow with a fake yt-dlp
 ```
 
-Nothing leaves your machine: the test videos are created on the spot and served on `127.0.0.1`. On every push, GitHub Actions runs the full tests on Ubuntu, the quick ones on Bash 4.4, 5.0, 5.1 and 5.2 and on macOS, plus ShellCheck.
+Nothing leaves your machine: the test videos are created on the spot and served on `127.0.0.1`. On every push, GitHub Actions runs the full tests on Ubuntu and macOS, the quick ones on Bash 4.4, 5.0, 5.1 and 5.2, plus ShellCheck. The panel tests run in a real terminal (a pseudo-terminal), with keys actually pressed. A version is only published if all of that passes.
 
 ## Disclaimer
 

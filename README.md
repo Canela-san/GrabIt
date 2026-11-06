@@ -512,7 +512,7 @@ bash testes/rodar.sh            # todos: sobe um servidor local e baixa vídeos 
 bash testes/rodar.sh --rapido   # sem baixar nada: opções, configuração, traduções e o fluxo com um yt-dlp de mentira
 ```
 
-Nada sai da sua máquina: os vídeos de teste são criados na hora e servidos em `127.0.0.1`. A cada envio, o GitHub Actions roda os testes completos no Ubuntu, os rápidos no Bash 4.4, 5.0, 5.1 e 5.2 e no macOS, e o ShellCheck.
+Nada sai da sua máquina: os vídeos de teste são criados na hora e servidos em `127.0.0.1`. A cada envio, o GitHub Actions roda os testes completos no Ubuntu e no macOS, os rápidos no Bash 4.4, 5.0, 5.1 e 5.2, e o ShellCheck. Os testes do painel rodam num terminal de verdade (pseudo-terminal), com as teclas apertadas de verdade. Uma versão só é publicada se tudo isso passar.
 
 ## Aviso
 

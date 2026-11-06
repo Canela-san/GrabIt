@@ -781,7 +781,7 @@ D="$TMP/desinstala"; mkdir -p "$D/casa/.local/bin" "$D/casa/.local/share/grabit"
 cp "$G" solto/grabit.sh; ln -s "$D/solto/grabit.sh" casa/.local/bin/grabit
 printf 'x\n' > casa/.local/share/grabit/metodos.txt; printf '# GrabIt\n' > casa/.config/fish/completions/grabit.fish
 printf 'x\n' > solto/grabit.config; printf 'http://a.invalid/1\n' > solto/links.txt; printf 'v\n' > Downloads/video.mkv
-des() { HOME="$D/casa" XDG_DATA_HOME= GRABIT_CONFIG="$D/solto/grabit.config" PATH="$STUB:$PATH" bash "$D/solto/grabit.sh" "$@" > "$S" 2>&1 </dev/null; RC=$?; }
+des() { HOME="$D/casa" XDG_DATA_HOME="" GRABIT_CONFIG="$D/solto/grabit.config" PATH="$STUB:$PATH" bash "$D/solto/grabit.sh" "$@" > "$S" 2>&1 </dev/null; RC=$?; }
 S=d1 des -L pt desinstalar
 espera "sem confirmar, não apaga nada" test -f solto/grabit.sh -a -L casa/.local/bin/grabit -a -d casa/.local/share/grabit
 espera "…mas mostra o que apagaria" contem d1 "Vou apagar"
@@ -795,7 +795,7 @@ espera "…mas não seus vídeos nem suas listas" test -f Downloads/video.mkv -a
 if command -v git >/dev/null 2>&1; then
   mkdir -p casa2/.local/bin up2; cp "$G" up2/grabit.sh; gitq init -q up2; gitq -C up2 add grabit.sh; gitq -C up2 commit -qm um
   ln -s "$D/up2/grabit.sh" casa2/.local/bin/grabit
-  HOME="$D/casa2" XDG_DATA_HOME= PATH="$STUB:$PATH" bash up2/grabit.sh -L pt desinstalar -y > d3 2>&1
+  HOME="$D/casa2" XDG_DATA_HOME="" PATH="$STUB:$PATH" bash up2/grabit.sh -L pt desinstalar -y > d3 2>&1
   espera "num clone, tira o comando" test ! -e casa2/.local/bin/grabit
   espera "…mas a pasta fica, e ele avisa" contem d3 "continua em"
   espera "…com o script" test -f up2/grabit.sh
@@ -913,7 +913,7 @@ if [[ -f $RAIZ/packaging/aur/PKGBUILD ]]; then
   # os dois caminhos, por dentro do script: quem instala por pacote guarda a configuração na pasta pessoal
   D="$TMP/pacote"; mkdir -p "$D/usr/Cellar/grabit/1.0.0/bin" "$D/casa"; cd "$D" || exit 1
   cp "$G" usr/Cellar/grabit/1.0.0/bin/grabit
-  env -u GRABIT_CONFIG HOME="$D/casa" XDG_CONFIG_HOME= bash usr/Cellar/grabit/1.0.0/bin/grabit -L pt --config > k1 2>&1
+  env -u GRABIT_CONFIG HOME="$D/casa" XDG_CONFIG_HOME="" bash usr/Cellar/grabit/1.0.0/bin/grabit -L pt --config > k1 2>&1
   espera "pelo Homebrew: a configuração fica na pasta pessoal" test -f casa/.config/grabit/grabit.config
   espera "…e não na pasta da versão" test ! -e usr/Cellar/grabit/1.0.0/bin/grabit.config
   HOME="$D/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" bash usr/Cellar/grabit/1.0.0/bin/grabit -L pt update > k2 2>&1

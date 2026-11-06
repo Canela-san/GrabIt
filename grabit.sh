@@ -175,22 +175,22 @@ if [[ ${1:-} == --baixa-partes ]]; then
   # retomar. (Uma ETag fraca, W/…, só promete conteúdo parecido. O --max-filesize evita baixar tudo,
   # caso o site ignore o pedido parcial.)
   identidade() {
-    local l tam="" tag="" data="" estado=""
+    local l tam="" marca_v="" data="" estado=""
     ID_ARQ=""
     sessao
     while IFS= read -r l; do
       l=${l%$'\r'}
       case ${l,,} in
-        http/*) estado=${l#* }; estado=${estado%% *}; tam=""; tag=""; data="" ;;   # (vale a última resposta)
+        http/*) estado=${l#* }; estado=${estado%% *}; tam=""; marca_v=""; data="" ;;   # (vale a última resposta)
         content-range:*) [[ $l =~ /([0-9]+)$ ]] && tam=${BASH_REMATCH[1]} ;;
-        etag:*) tag=${l#*:}; tag=${tag# } ;;
+        etag:*) marca_v=${l#*:}; marca_v=${marca_v# } ;;
         last-modified:*) data=${l#*:}; data=${data# } ;;
       esac
     done < <(curl -s -L -m 10 --max-filesize 65536 --proto =http,https --proto-redir =http,https -r 0-0 \
                -o /dev/null -D - "${CAB[@]}" --url "$link" 2>/dev/null)
-    [[ $tag == [Ww]/* ]] && tag=""
-    [[ $estado == 206 && -n $tam && -n $tag$data ]] || return 1
-    ID_ARQ="$tam ${tag:-$data}"
+    [[ $marca_v == [Ww]/* ]] && marca_v=""
+    [[ $estado == 206 && -n $tam && -n $marca_v$data ]] || return 1
+    ID_ARQ="$tam ${marca_v:-$data}"
   }
   traduz() {
     local l b t v e c vistos=" " re='^\[#[0-9a-f]+ ([0-9.]+[KMGT]?i?B)/([0-9.]+[KMGT]?i?B)' soma=0 n=0 ini=$SECONDS sondar=$sonda_ligada
@@ -461,7 +461,7 @@ tem_tonemap() {
 converte() {
   local ent=$1 sai=$2 cod=${3:-} ext=${2##*.} mux pasta tmp capa="" capa_fonte=${TR_CAPA_FORA:-} tipo_capa=image/jpeg
   local e_vid e_aud e_sub e_capa e_anexo e_cap e_tags e_dur e_subcod e_r t0=$SECONDS feito=0 rc=1 d k v pos=0 vel=""
-  local args exato=() sub=() enc=() antes=() filtro="" audio=() cabe_capa=0 cabe_sub=0 modo tent c_capa c_sub usa_exato=0
+  local args exato=() sub=() enc=() pre_enc=() filtro="" audio=() cabe_capa=0 cabe_sub=0 modo tent c_capa c_sub usa_exato=0
   TR_PERDEU=""; TR_ERRO=""; TR_EXATO=0; TR_TOM=0; ENC_PLACA=""
   muxer_de "$ext" || { TR_ERRO=formato; return 1; }
   mux=$MUX
@@ -471,7 +471,7 @@ converte() {
   (( e_vid + e_aud > 0 )) || { TR_ERRO=ilegivel; return 1; }
   if [[ -n $cod ]]; then
     codificador "$cod" || { TR_ERRO=codificador; return 1; }
-    enc=("${ENC[@]}"); antes=("${ENC_ANTES[@]}"); filtro=$ENC_FILTRO
+    enc=("${ENC[@]}"); pre_enc=("${ENC_ANTES[@]}"); filtro=$ENC_FILTRO
     if (( F_HDR )) && [[ $cod == h264 || $cod == mpeg4 ]] && tem_tonemap; then
       filtro="$TOM_HDR${filtro:+,$filtro}"; TR_TOM=1
       enc+=(-colorspace:v:0 bt709 -color_primaries:v:0 bt709 -color_trc:v:0 bt709)
@@ -533,7 +533,7 @@ converte() {
       c_capa=${tent% *}; c_sub=${tent#* }
       (( c_capa )) && [[ -z $capa ]] && continue
       (( c_sub && ( ! cabe_sub || e_sub == 0 ) )) && continue
-      args=(-nostdin -hide_banner -v error -y "${antes[@]}" -fflags +genpts -i "file:$ent")
+      args=(-nostdin -hide_banner -v error -y "${pre_enc[@]}" -fflags +genpts -i "file:$ent")
       (( c_capa )) && [[ $mux != matroska ]] && args+=(-i "$capa")
       args+=(-map '0:V?' -map '0:a?')
       (( c_sub )) && args+=(-map '0:s?')
@@ -2643,24 +2643,24 @@ PALAVRAS_COMANDO=(config ajuda help instalar install desinstalar uninstall atual
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
 # errado ("converte") nunca é um link: melhor dizer logo do que tentar baixar.
 sugere_comando() {
-  local p=${1,,} c a=() b=() i j m custo melhor="" menor=99
+  local p=${1,,} c ant=() cur=() i j m custo melhor="" menor=99
   p=${p#--}
   (( ${#p} >= 3 )) || return 1
   for c in "${PALAVRAS_COMANDO[@]}"; do
     if [[ $c == "$p"* ]]; then FMT=$c; return 0; fi     # o começo de um comando
-    a=(); for (( j = 0; j <= ${#c}; j++ )); do a[j]=$j; done
+    ant=(); for (( j = 0; j <= ${#c}; j++ )); do ant[j]=$j; done
     for (( i = 1; i <= ${#p}; i++ )); do
-      b=("$i")
+      cur=("$i")
       for (( j = 1; j <= ${#c}; j++ )); do
         custo=1; [[ ${p:i-1:1} == "${c:j-1:1}" ]] && custo=0
-        m=$(( a[j] + 1 ))
-        (( b[j-1] + 1 < m )) && m=$(( b[j-1] + 1 ))
-        (( a[j-1] + custo < m )) && m=$(( a[j-1] + custo ))
-        b[j]=$m
+        m=$(( ant[j] + 1 ))
+        (( cur[j-1] + 1 < m )) && m=$(( cur[j-1] + 1 ))
+        (( ant[j-1] + custo < m )) && m=$(( ant[j-1] + custo ))
+        cur[j]=$m
       done
-      a=("${b[@]}")
+      ant=("${cur[@]}")
     done
-    if (( a[${#c}] < menor )); then menor=${a[${#c}]}; melhor=$c; fi
+    if (( ant[${#c}] < menor )); then menor=${ant[${#c}]}; melhor=$c; fi
   done
   (( menor <= 2 && menor * 2 < ${#p} )) || return 1
   FMT=$melhor
@@ -4586,9 +4586,9 @@ comando_repetir() {                           # → FMT: o mesmo comando, só co
   if [[ $(command -v -- "$nome" 2>/dev/null) -ef $eu ]]; then eu=$nome   # instalado no PATH: basta o nome
   elif [[ $eu != */* ]]; then eu="./$eu"; fi
   [[ $eu == */* && ! -x $eu ]] && txt="bash "
-  local px=()
-  if [[ ${ORIGEM[PROXY]:-} == opção ]]; then sem_senha "$PROXY"; px=(--proxy "$FMT"); fi
-  for p in "$eu" "${OPCOES[@]}" "${px[@]}" -l "$ARQUIVO_FALHAS"; do
+  local arg_proxy=()
+  if [[ ${ORIGEM[PROXY]:-} == opção ]]; then sem_senha "$PROXY"; arg_proxy=(--proxy "$FMT"); fi
+  for p in "$eu" "${OPCOES[@]}" "${arg_proxy[@]}" -l "$ARQUIVO_FALHAS"; do
     if [[ $p =~ ^[[:alnum:]_./:=@%+,-]+$ ]]; then txt+="$p "; else txt+="${p@Q} "; fi
   done
   FMT=${txt% }
@@ -5339,7 +5339,7 @@ perfil_args() {
 # Mostra o que seria baixado, sem baixar nem mudar nada: nem a lista, nem o histórico. Consulta um link por
 # vez, sem pressa, porque é só uma prévia. O tamanho é uma estimativa: nem todo site informa.
 simula_links() {
-  local i=0 url idxs l titulo h fps vc ac dur tam tbr rc saida n_vid=0 n_ja=0 n_fora=0 n_erro=0 soma=0 extras=() livre
+  local i=0 url idxs l titulo h fps vc ac dur tam tbr rc saida n_vid=0 n_ja=0 n_fora=0 n_erro=0 soma=0 livre
   local sep=$SEP m="@@S@@%(title)s$SEP%(height|0)s$SEP%(fps|0)s$SEP%(vcodec|?)s$SEP%(acodec|?)s$SEP%(duration|0)s$SEP%(filesize,filesize_approx|0)s$SEP%(tbr|0)s"
   atualiza_largura
   monta_args_ytdlp
@@ -5347,8 +5347,8 @@ simula_links() {
   for url in "${LINKS[@]}"; do
     i=$(( i + 1 ))
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
-    site_de "$url"; perfil_args "$FMT"; extras=("${ARGS_PERFIL[@]}")
-    saida=$(yt-dlp "${YTDLP_ARGS[@]}" "${extras[@]}" --simulate --no-exec --print "video:$m" -- "$url" 2>&1); rc=$?
+    site_de "$url"; perfil_args "$FMT"
+    saida=$(yt-dlp "${YTDLP_ARGS[@]}" "${ARGS_PERFIL[@]}" --simulate --no-exec --print "video:$m" -- "$url" 2>&1); rc=$?
     (( rc == 101 )) && rc=0
     while IFS= read -r l; do
       case $l in
@@ -5718,8 +5718,8 @@ baixa_pelo_navegador() {
   read -ra opcoes <<<"${GRABIT_NAVEGADOR_OPCOES:-}"
   # (o Chrome não aceita senha nessa opção: se o proxy pedir, a janela pergunta)
   if [[ -n $PROXY ]]; then
-    local px=${PROXY#*://}
-    proxy_chrome=("--proxy-server=${PROXY%%://*}://${px##*@}")
+    local sem_esquema=${PROXY#*://}
+    proxy_chrome=("--proxy-server=${PROXY%%://*}://${sem_esquema##*@}")
     proxy_chrome[0]=${proxy_chrome[0]/socks5h:/socks5:}
   fi
   if [[ $NAV_TIPO == firefox ]]; then
@@ -6090,9 +6090,8 @@ desinstalar() {
     brew)    t des_pacote "brew uninstall grabit"; aviso "$TXT"; return 1 ;;
     sistema) t des_pacote "pacman -R grabit"; aviso "$TXT"; return 1 ;;
   esac
-  for c in "$HOME/.local/bin/grabit"; do
-    if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
-  done
+  c="$HOME/.local/bin/grabit"
+  if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
   for c in "$HOME/.config/fish/completions/grabit.fish" "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/grabit" "$HOME/.zsh/completions/_grabit"; do
     [[ -f $c ]] && grep -qs 'GrabIt' "$c" && lista+=("$c")
   done
@@ -6145,11 +6144,11 @@ eh_clone_grabit() {
 
 # versao_maior A B → 0 se A for mais nova que B
 versao_maior() {
-  local a=() b=() i
-  IFS=. read -ra a <<<"$1"; IFS=. read -ra b <<<"$2"
+  local va=() vb=() i
+  IFS=. read -ra va <<<"$1"; IFS=. read -ra vb <<<"$2"
   for i in 0 1 2; do
-    (( 10#${a[i]:-0} > 10#${b[i]:-0} )) && return 0
-    (( 10#${a[i]:-0} < 10#${b[i]:-0} )) && return 1
+    (( 10#${va[i]:-0} > 10#${vb[i]:-0} )) && return 0
+    (( 10#${va[i]:-0} < 10#${vb[i]:-0} )) && return 1
   done
   return 1
 }
@@ -6881,9 +6880,16 @@ gerencia_baixados() {
 # uma referência: vale a que tem mais dados, descontado o codec, e o resultado diz quanto a outra se afasta
 # dela. Por isso não dá para fazer isto sozinho na hora de escolher o que baixar: é preciso ter os dois
 # arquivos, e sem o original nenhum programa diz qual dos dois está mais perto dele.
+meta_comparar() {                             # (de sonda) → FMT: 2160p · 24 fps · h264 · 2.6 GiB · 11.0 Mb/s
+  local b
+  b=$(awk -v t="$S_TAM" -v d="$S_DUR" 'BEGIN { printf "%.1f", (d > 0 ? t * 8 / d / 1000000 : 0) }')
+  fmt_bytes "$S_TAM"
+  FMT="${S_H}p · $S_FPS fps · $S_VC · $FMT · $b Mb/s"
+}
+
 comparar() {
   local a=${ARGS_LINKS[0]:-} b=${ARGS_LINKS[1]:-} n=${GRABIT_TRECHOS:-5} seg=10 ref dist i pos r_tam d_tam r_ef d_ef
-  local v1 v2 w h w2 h2 f tempo dur vmaf=0 filtro erros l media pior min_m nota s tipo trechos=() psnrs=() menos meta_r meta_d
+  local v1 v2 w h w2 h2 f tempo dur filtro erros l media pior min_m nota s tipo trechos=() psnrs=() menos meta_a meta_b
   if (( ${#ARGS_LINKS[@]} != 2 )); then erro "${T[cpv_uso]}"; return 2; fi
   for f in "$a" "$b"; do
     if [[ ! -f $f ]]; then t cv_nao_existe "$f"; erro "$TXT"; return 1; fi
@@ -6894,9 +6900,11 @@ comparar() {
   atualiza_largura
   printf '\n  %s%s%s\n\n' "$NEG" "${T[cpv_titulo]}" "$R"
   sonda "$a" && [[ -n $S_VC ]] || { t cpv_ilegivel "$a"; erro "$TXT"; return 1; }
-  local a_h=$S_H a_fps=$S_FPS a_vc=$S_VC a_hdr=$S_HDR a_dur=$S_DUR a_tam=$S_TAM
+  local a_vc=$S_VC a_hdr=$S_HDR a_dur=$S_DUR a_tam=$S_TAM
+  meta_comparar; meta_a=$FMT
   sonda "$b" && [[ -n $S_VC ]] || { t cpv_ilegivel "$b"; erro "$TXT"; return 1; }
-  local b_h=$S_H b_fps=$S_FPS b_vc=$S_VC b_hdr=$S_HDR b_dur=$S_DUR b_tam=$S_TAM
+  local b_vc=$S_VC b_hdr=$S_HDR b_dur=$S_DUR b_tam=$S_TAM
+  meta_comparar; meta_b=$FMT
   if [[ ${a_hdr} != "$b_hdr" ]]; then erro "${T[cpv_hdr]}"; return 1; fi
   # quanto cada um tem de dados, descontado o codec
   peso "$a_vc"; r_ef=$(( a_tam * NUM / 100 / (a_dur > 0 ? a_dur : 1) ))
@@ -6906,15 +6914,8 @@ comparar() {
   else
     ref=$a; dist=$b; r_tam=$a_tam; d_tam=$b_tam
   fi
-  for f in a b; do
-    local -n _h=${f}_h _fps=${f}_fps _vc=${f}_vc _dur=${f}_dur _tam=${f}_tam
-    fmt_bytes "$_tam"
-    printf -v meta_d '%sp · %s fps · %s · %s · %s Mb/s' "$_h" "$_fps" "$_vc" "$FMT" "$(awk -v t="$_tam" -v d="$_dur" 'BEGIN { printf "%.1f", (d > 0 ? t * 8 / d / 1000000 : 0) }')"
-    if [[ $f == a ]]; then meta_r=$meta_d; fi
-    unset -n _h _fps _vc _dur _tam
-  done
-  if [[ $ref == "$a" ]]; then kv "${T[cpv_ref]}" "${a##*/}"; kv "" "$meta_r"; kv "${T[cpv_comp]}" "${b##*/}"; kv "" "$meta_d"
-  else kv "${T[cpv_ref]}" "${b##*/}"; kv "" "$meta_d"; kv "${T[cpv_comp]}" "${a##*/}"; kv "" "$meta_r"; fi
+  if [[ $ref == "$a" ]]; then kv "${T[cpv_ref]}" "${a##*/}"; kv "" "$meta_a"; kv "${T[cpv_comp]}" "${b##*/}"; kv "" "$meta_b"
+  else kv "${T[cpv_ref]}" "${b##*/}"; kv "" "$meta_b"; kv "${T[cpv_comp]}" "${a##*/}"; kv "" "$meta_a"; fi
 
   dur=$(( a_dur < b_dur ? a_dur : b_dur ))
   s=$(( a_dur - b_dur )); (( s < 0 )) && s=$(( -s ))
@@ -6943,7 +6944,7 @@ comparar() {
     tempo=$(( n > 1 ? dur * (i + 1) / (n + 1) : 0 ))
     if (( INTERATIVO )); then t cpv_trecho $(( i + 1 )) "$n"; printf '\r%s[K  %s%s%s' "$ESC" "$DIM" "$TXT" "$R"; fi
     if [[ $tipo == vmaf ]]; then
-      filtro="[0:V:0]$prep[d];[1:V:0]$prep[r];[d][r]libvmaf=n_threads=4"
+      filtro="[0:V:0]${prep}[d];[1:V:0]${prep}[r];[d][r]libvmaf=n_threads=4"
       ffmpeg -nostdin -hide_banner -v info -ss "$tempo" -t "$seg" -i "file:$dist" -ss "$tempo" -t "$seg" -i "file:$ref" \
         -lavfi "$filtro" -f null - 2>"$erros"
       l=$(sed -n 's/.*VMAF score: *\([0-9.]*\).*/\1/p' "$erros" | tail -n 1)
@@ -7093,8 +7094,8 @@ gera_completar() {
           '?')   n=":valor:" ;;
           *)     n=":valor:($vals)" ;;
         esac
-        [[ -n $curta ]] && printf '    %s \\\n' "'-$curta[$d]$n'"
-        for s in $longas; do printf '    %s \\\n' "'--$s[$d]$n'"; done
+        [[ -n $curta ]] && printf '    %s \\\n' "'-${curta}[$d]$n'"
+        for s in $longas; do printf '    %s \\\n' "'--${s}[$d]$n'"; done
       done <<<"$TABELA_OPCOES"
       printf '    %s \\\n' "'1:comando ou link:($pal)'"
       printf "    '*:arquivo:_files'\n}\n_grabit \"\$@\"\n" ;;
