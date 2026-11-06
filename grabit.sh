@@ -1291,6 +1291,25 @@ idioma_pt() {
     [sim_nada]="Nada foi baixado nem alterado. Para baixar, rode o mesmo comando sem --simular."
     [sim_sem_espaco]="Pode não caber: há só %s livres no disco."
     [val_perfil]="[%s] %s: valor inválido (%s): esse ajuste não vale."
+    [cmd_canais]="canais baixar"
+    [cn_titulo]="GrabIt · canais que você acompanha"
+    [cn_vazio]="Nenhum canal ainda."
+    [cn_desde]="desde %s"
+    [cn_tudo]="desde o começo"
+    [cn_ajuda]="     grabit canais adicionar LINK [--desde DATA | --todos]   acompanha, a partir de hoje, a não ser que peça
+     grabit canais baixar [opções]                           baixa só o que for novo (-d, -o… valem)
+     grabit canais remover N|LINK                            para de acompanhar"
+    [cn_sem_link]="Faltou o link do canal."
+    [cn_nao_link]="'%s' não é um link."
+    [cn_ja]="Já está na lista: %s"
+    [cn_adicionado]="%s: vídeos a partir de %s"
+    [cn_adicionado_tudo]="%s: todos os vídeos"
+    [cn_proximo]="Para baixar os novos:  %s"
+    [cn_removido]="Removido: %s"
+    [cn_nao_achei]="Não está na lista: %s"
+    [cn_acao]="Ação desconhecida: %s."
+    [cn_sem_hist]="Sem o histórico (-i), não há como saber o que é novo: vão vir de novo todos os vídeos desde a data do canal."
+    [cn_nada_novo]="nada de novo"
     [cmd_desconhecido]="Comando desconhecido: %s."
     [cmd_sugestao]="     Você quis dizer:  grabit %s"
     [des_titulo]="GrabIt · desinstalação"
@@ -1557,6 +1576,8 @@ que grabit --atualizar):
   converter, convert ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
                      muda a extensão de um vídeo já baixado (imagem e som continuam idênticos)
                      ou recomprime em outro codec; o original fica, a não ser com --substituir
+  canais, channels [AÇÃO]
+                     acompanha canais: adicionar LINK, baixar (só o que for novo), remover N
   desinstalar, uninstall
                      tira o que o GrabIt pôs no sistema; vídeos e listas ficam
   ajuda, help        mostra esta ajuda
@@ -1963,6 +1984,25 @@ idioma_en() {
     [sim_nada]="Nothing was downloaded or changed. To download, run the same command without --simulate."
     [sim_sem_espaco]="It may not fit: only %s free on the disk."
     [val_perfil]="[%s] %s: invalid value (%s): this setting doesn't apply."
+    [cmd_canais]="channels download"
+    [cn_titulo]="GrabIt · channels you follow"
+    [cn_vazio]="No channels yet."
+    [cn_desde]="since %s"
+    [cn_tudo]="from the beginning"
+    [cn_ajuda]="     grabit channels add LINK [--since DATE | --all]         follow, from today on, unless you say otherwise
+     grabit channels download [options]                      download only what's new (-d, -o… work)
+     grabit channels remove N|LINK                           stop following"
+    [cn_sem_link]="The channel link is missing."
+    [cn_nao_link]="'%s' is not a link."
+    [cn_ja]="Already on the list: %s"
+    [cn_adicionado]="%s: videos from %s on"
+    [cn_adicionado_tudo]="%s: all videos"
+    [cn_proximo]="To download the new ones:  %s"
+    [cn_removido]="Removed: %s"
+    [cn_nao_achei]="Not on the list: %s"
+    [cn_acao]="Unknown action: %s."
+    [cn_sem_hist]="Without the history (-i), there's no telling what's new: all the videos since the channel's date will come again."
+    [cn_nada_novo]="nothing new"
     [cmd_desconhecido]="Unknown command: %s."
     [cmd_sugestao]="     Did you mean:  grabit %s"
     [des_titulo]="GrabIt · uninstall"
@@ -2229,6 +2269,8 @@ the same as grabit --atualizar):
   convert, converter FILE|FOLDER… -e FORMAT and/or -k CODEC
                      changes the extension of a downloaded video (picture and sound stay
                      identical) or re-encodes to another codec; the original stays, unless --replace
+  channels, canais [ACTION]
+                     follow channels: add LINK, download (only what's new), remove N
   uninstall, desinstalar
                      remove what GrabIt put on the system; videos and lists stay
   help, ajuda        show this help
@@ -2449,11 +2491,13 @@ palavra_comando() {
     curl)                             COMANDO=curl ;;
     converter|convert)                COMANDO=converter ;;
     desinstalar|uninstall)            COMANDO=desinstalar ;;
+    canais|channels)                  COMANDO=canais ;;
+    seguir|follow)                    COMANDO=canais; SEGUIR=1 ;;
     *) return 1 ;;
   esac
 }
 PALAVRAS_COMANDO=(config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
-  versao version curl converter convert)
+  versao version curl converter convert canais channels seguir follow)
 
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
 # errado ("converte") nunca é um link: melhor dizer logo do que tentar baixar.
@@ -2482,7 +2526,7 @@ sugere_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0
 while (( $# )); do
   a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
@@ -2492,6 +2536,7 @@ while (( $# )); do
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
     --simular|--simulate|--dry-run) SIMULAR=1 ;;
+    --todos|--all) CANAL_TODOS=1 ;;
     --desde=*|--since=*) FILTRO_DESDE=${a#*=}; ORIGEM[FILTRO_DESDE]=opção ;;
     --max=*) FILTRO_MAX=${a#*=}; ORIGEM[FILTRO_MAX]=opção ;;
     --max-tamanho=*|--max-size=*) FILTRO_TAMANHO=${a#*=}; ORIGEM[FILTRO_TAMANHO]=opção ;;
@@ -2871,7 +2916,7 @@ TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
 ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
 SALVA_A_CADA=${GRABIT_SALVA_A_CADA:-60}; PROX_MOVER=$SALVA_A_CADA
 CLIP_CMD=(); CLIP_ULTIMO=""; CLIP_PRIMEIRA=1; PROX_CLIP=0; ARQ_CAPTURA=""
-declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=()
+declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=() EXTRA_LINK=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -3501,6 +3546,11 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   done
   hist=("${filtrados[@]}")
   n_hist=${#hist[@]}
+  local canal_igual=0
+  if (( CANAIS_BAIXAR && n_done == 0 && rc == 0 )); then
+    canal_igual=1; n_hist=0
+    linha_resultado "↷" "$AMARELO" "$idxs" "$url" "${T[cn_nada_novo]}"; PERM+=("$LINHA")
+  fi
   if (( n_hist > 0 )); then
     N_JA=$(( N_JA + n_hist )); n_nota=$(( n_nota + n_hist ))
     if (( n_done == 0 && n_hist == 1 )); then
@@ -3536,7 +3586,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
   fi
 
   local fora_filtro=0
-  if (( n_done == 0 && n_hist == 0 && rc == 0 )); then
+  if (( n_done == 0 && n_hist == 0 && rc == 0 && ! canal_igual )); then
     titulo=${TITULO[$idx]:-$url}
     nota=${TITULO[$idx]:-}
     n_ja=$(cat "${logs[@]}" 2>/dev/null | grep -ac 'has already been downloaded')
@@ -3641,6 +3691,8 @@ lanca_job() {                                 # lanca_job IDX
     export GRABIT_SONDAR GRABIT_RETOMAR
   fi
   perfil_args "${SITE[$i]}"; extra+=("${ARGS_PERFIL[@]}"); LIM_JOB=$LIM_PERFIL
+  read -ra ajuste <<<"${EXTRA_LINK[$url]:-}"
+  extra+=("${ajuste[@]}")
   read -ra ajuste <<<"${AJUSTES[$i]:-}"
   extra+=("${ajuste[@]}")
   # Playlist e canal viram dezenas de pedidos seguidos ao mesmo site, num processo só
@@ -5102,6 +5154,7 @@ monta_args_ytdlp() {
   [[ -n $COOKIES_NAVEGADOR ]] && YTDLP_ARGS+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
   [[ -n $USER_AGENT ]]        && YTDLP_ARGS+=(--user-agent "$USER_AGENT")
   (( TEM_JS_RUNTIMES ))       && [[ -n $JS_RUNTIME ]] && YTDLP_ARGS+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  (( CANAIS_BAIXAR )) && YTDLP_ARGS+=(--break-on-existing --lazy-playlist)
   [[ -n $DATA_YTDLP ]] && YTDLP_ARGS+=(--dateafter "$DATA_YTDLP")
   (( FILTRO_MAX > 0 )) && YTDLP_ARGS+=(--max-downloads "$FILTRO_MAX")
   [[ $FILTRO_TAMANHO != 0 ]] && YTDLP_ARGS+=(--max-filesize "$FILTRO_TAMANHO")
@@ -6674,7 +6727,111 @@ gerencia_baixados() {
   return 0
 }
 
+# ───────────────────────────── Canais (grabit canais) ─────────────────────────
+# Acompanhar um canal: grabit canais adicionar LINK, e de tempos em tempos grabit canais baixar, à mão ou
+# pelo cron. Só vêm os vídeos novos: a busca para no primeiro que já está no histórico, ou no primeiro mais
+# velho que o dia em que o canal foi adicionado. Sem isso, a primeira vez baixaria o canal inteiro.
+le_canais() {                                 # → CN_URL CN_DESDE
+  local l
+  CN_URL=(); CN_DESDE=()
+  [[ -r $ARQ_CANAIS ]] || return 0
+  while IFS=$'\t' read -r l desde _ || [[ -n $l ]]; do
+    [[ $l == http* ]] || continue
+    CN_URL+=("$l"); CN_DESDE+=("${desde:-0}")
+  done < "$ARQ_CANAIS"
+}
+
+grava_canais() {
+  local i tmp="$ARQ_CANAIS.grabit-tmp"
+  ( umask 077; mkdir -p "$(dirname -- "$ARQ_CANAIS")" )
+  { for i in "${!CN_URL[@]}"; do printf '%s\t%s\n' "${CN_URL[$i]}" "${CN_DESDE[$i]}"; done; } > "$tmp" && mv -f -- "$tmp" "$ARQ_CANAIS"
+}
+
+# data_de_hoje_menos VALOR → FMT: 2026-01-31, 20260131, ou uma idade (7d, 2w, 3m, 1y) como AAAAMMDD
+data_absoluta() {
+  local v=${1,,} n dias=0 agora
+  printf -v agora '%(%s)T' -1
+  case $v in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) FMT=${v//-/}; return ;;
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9])   FMT=$v; return ;;
+    *d) n=${v%?}; dias=$(( n )) ;;
+    *w) n=${v%?}; dias=$(( n * 7 )) ;;
+    *m) n=${v%?}; dias=$(( n * 30 )) ;;
+    *y|*a) n=${v%?}; dias=$(( n * 365 )) ;;
+    "") ;;
+  esac
+  printf -v FMT '%(%Y%m%d)T' $(( agora - dias * 86400 ))
+}
+
+mostra_data() {                               # 20260131 → FMT: 2026-01-31
+  FMT=$1
+  [[ $1 =~ ^([0-9]{4})([0-9]{2})([0-9]{2})$ ]] && FMT="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
+  return 0
+}
+
+gerencia_canais() {
+  local acao=${ARGS_LINKS[0]:-listar} i u d alvo achou novos=() fica_u=() fica_d=()
+  ARQ_CANAIS="${XDG_DATA_HOME:-$HOME/.local/share}/grabit/canais.txt"
+  (( SEGUIR )) && acao=adicionar || ARGS_LINKS=("${ARGS_LINKS[@]:1}")
+  le_canais
+  case ${acao,,} in
+    listar|list)
+      printf '\n  %s%s%s\n\n' "$NEG" "${T[cn_titulo]}" "$R"
+      for i in "${!CN_URL[@]}"; do
+        if [[ ${CN_DESDE[$i]} == 0 ]]; then d=${T[cn_tudo]}; else mostra_data "${CN_DESDE[$i]}"; t cn_desde "$FMT"; d=$TXT; fi
+        printf '  %s%3d%s  %s  %s%s%s\n' "$DIM" $(( i + 1 )) "$R" "${CN_URL[$i]}" "$DIM" "$d" "$R"
+      done
+      (( ${#CN_URL[@]} )) || printf '  %s\n' "${T[cn_vazio]}"
+      printf '\n%s\n\n' "${T[cn_ajuda]}"
+      exit 0 ;;
+    adicionar|add|seguir|follow)
+      (( ${#ARGS_LINKS[@]} )) || { erro "${T[cn_sem_link]}"; printf '%s\n\n' "${T[cn_ajuda]}"; exit 2; }
+      d=""
+      if (( CANAL_TODOS )); then d=0
+      elif [[ -n $DATA_YTDLP ]]; then data_absoluta "$FILTRO_DESDE"; d=$FMT
+      else printf -v d '%(%Y%m%d)T' -1; fi
+      for u in "${ARGS_LINKS[@]}"; do
+        links_da_linha "$u"
+        if (( ! ${#PALAVRAS_LINK[@]} )); then t cn_nao_link "$u"; erro "$TXT"; exit 2; fi
+        u=${PALAVRAS_LINK[0]}; achou=0
+        for alvo in "${CN_URL[@]}"; do [[ $alvo == "$u" ]] && achou=1; done
+        if (( achou )); then t cn_ja "$u"; aviso "$TXT"; continue; fi
+        CN_URL+=("$u"); CN_DESDE+=("$d")
+        if [[ $d == 0 ]]; then t cn_adicionado_tudo "$u"; else mostra_data "$d"; t cn_adicionado "$u" "$FMT"; fi
+        printf '  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+      done
+      grava_canais
+      comando_grabit "${T[cmd_canais]}"; t cn_proximo "${CIANO}${FMT}${R}"; printf '  %s\n\n' "$TXT"
+      exit 0 ;;
+    remover|remove)
+      (( ${#ARGS_LINKS[@]} )) || { erro "${T[cn_sem_link]}"; printf '%s\n\n' "${T[cn_ajuda]}"; exit 2; }
+      for alvo in "${ARGS_LINKS[@]}"; do
+        achou=0
+        for i in "${!CN_URL[@]}"; do
+          if [[ $alvo == "${CN_URL[$i]}" ]] || [[ $alvo == "$(( i + 1 ))" ]]; then achou=1; novos+=("$i"); fi
+        done
+        if (( ! achou )); then t cn_nao_achei "$alvo"; erro "$TXT"; exit 2; fi
+      done
+      for i in "${!CN_URL[@]}"; do
+        [[ " ${novos[*]} " == *" $i "* ]] && { t cn_removido "${CN_URL[$i]}"; printf '  %s✔%s %s\n' "$VERDE" "$R" "$TXT"; continue; }
+        fica_u+=("${CN_URL[$i]}"); fica_d+=("${CN_DESDE[$i]}")
+      done
+      CN_URL=("${fica_u[@]}"); CN_DESDE=("${fica_d[@]}")
+      grava_canais; printf '\n'
+      exit 0 ;;
+    baixar|download)
+      if (( ! ${#CN_URL[@]} )); then printf '\n  %s\n\n%s\n\n' "${T[cn_vazio]}" "${T[cn_ajuda]}"; exit 0; fi
+      if (( ! USAR_HISTORICO )); then aviso "${T[cn_sem_hist]}"; fi
+      ARGS_LINKS=("${CN_URL[@]}"); LISTA_EXPLICITA=0; CAPTURA=0; FILA_VIVA=0; UPGRADE=0; CANAIS_BAIXAR=1
+      for i in "${!CN_URL[@]}"; do
+        [[ ${CN_DESDE[$i]} == 0 ]] || EXTRA_LINK[${CN_URL[$i]}]="--break-match-filters upload_date>=?${CN_DESDE[$i]}"
+      done ;;
+    *) t cn_acao "$acao"; erro "$TXT"; printf '%s\n\n' "${T[cn_ajuda]}"; exit 2 ;;
+  esac
+}
+
 # ───────────────────────────── Principal ──────────────────────────────────────
+[[ $COMANDO == canais ]] && gerencia_canais
 case $COMANDO in
   instalar)  instalar;  exit $? ;;
   atualizar) atualizar; exit $? ;;

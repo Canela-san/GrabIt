@@ -844,6 +844,43 @@ p g4 -L pt --config
 espera "--config mostra os perfis" grep -qE 'COOKIES_NAVEGADOR +firefox +\[p1.invalid\]' g4
 espera "…e o valor geral fica como estava" grep -qE '^ *RESOLUCAO_MAXIMA +720 ' g4
 
+secao "Canais"
+D="$TMP/canais"; mkdir -p "$D"; cd "$D" || exit 1
+cn() { XDG_DATA_HOME="$D/dados" falso "$@"; }
+HOJE_T=$(date +%Y%m%d)
+cn n1 -L pt canais
+espera "lista vazia" contem n1 "Nenhum canal ainda"
+cn n2 -L pt canais adicionar 'https://c.invalid/@um/videos'
+espera "adiciona, a partir de hoje" grep -q "c.invalid/@um/videos.*$HOJE_T" dados/grabit/canais.txt
+espera "…e diz como baixar" contem n2 "canais baixar"
+cn n3 -L en follow 'https://c.invalid/@dois' --since 2026-01-31
+espera "em inglês, com a data pedida" grep -q "c.invalid/@dois.*20260131" dados/grabit/canais.txt
+cn n4 -L pt seguir 'https://c.invalid/@tres' --desde 30d
+espera "uma idade vira a data daquele dia, que não muda depois" grep -qE 'c.invalid/@tres.[0-9]{8}$' dados/grabit/canais.txt
+cn n5 -L pt canais adicionar 'https://c.invalid/@quatro' --todos
+espera "--todos: o canal inteiro" grep -q "c.invalid/@quatro.0$" dados/grabit/canais.txt
+cn n6 -L pt canais adicionar 'https://c.invalid/@um/videos'
+espera "repetido não entra duas vezes" test "$(grep -c '@um' dados/grabit/canais.txt)" -eq 1
+cn n7 -L pt canais adicionar nao-e-link
+espera "o que não é link é recusado" codigo "$RC" 2
+cn n8 -L pt canais
+espera "lista os canais" grep -qE '1 +https://c.invalid/@um/videos +desde' n8
+: > "$STUB_LOG"
+STUB_D='[download] x: has already been recorded in the archive' cn n9 -L pt canais baixar -o ./Pasta
+espera "baixar: todos os canais" test "$(grep -c -- '-- https://c.invalid/' "$STUB_LOG")" -eq 4
+espera "…parando no primeiro que já está no histórico" contem "$STUB_LOG" "--break-on-existing"
+espera "…ou no mais velho que a data do canal" sh -c "grep -F -- '-- https://c.invalid/@dois' '$STUB_LOG' | grep -qF 'upload_date>=?20260131'"
+espera "…sem data no canal que quer tudo" sh -c "! grep -F -- '-- https://c.invalid/@quatro' '$STUB_LOG' | grep -qF 'upload_date'"
+espera "…e sem nada novo, diz isso" contem n9 "nada de novo"
+cn n10 -L pt canais remover 2
+espera "remover pelo número" nao_contem dados/grabit/canais.txt "@dois"
+cn n11 -L pt canais remover 'https://c.invalid/@tres'
+espera "remover pelo link" nao_contem dados/grabit/canais.txt "@tres"
+cn n12 -L pt canais remover 9
+espera "o que não está na lista é recusado" codigo "$RC" 2
+cn n13 -L pt canais talvez
+espera "ação desconhecida é recusada" codigo "$RC" 2
+
 secao "Filtros"
 D="$TMP/filtros"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
@@ -1332,6 +1369,8 @@ espera "o yt-dlp informa os runtimes no formato esperado" sh -c "yt-dlp -v --ign
 if command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q '^yt-dlp '; then
   espera "o pipx informa como o yt-dlp foi instalado" sh -c "pipx list --json | awk '/\"yt-dlp\": \{/ {y=1} y && /\"main_package\"/ {m=1} m && /\"package_or_url\"/ {print; exit}' | grep -q '\": \"yt-dlp'"
 fi
+
+espera "o yt-dlp aceita as opções que o GrabIt usa" sh -c "yt-dlp --help | grep -q -- --break-match-filters && yt-dlp --help | grep -q -- --lazy-playlist && yt-dlp --help | grep -q -- --break-on-existing && yt-dlp --help | grep -q -- --config-locations && yt-dlp --help | grep -q -- --no-exec"
 
 secao "Preparando os vídeos de teste"
 W="$TMP/www"; mkdir -p "$W/res" "$W/pagina"
@@ -1967,6 +2006,19 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "…sem o arquivo" test -z "$(find p2 -maxdepth 1 -name '*.mp4' -print -quit)"
 fi
 
+secao "Canais, de verdade"
+D="$TMP/d14"; mkdir -p "$D"; cd "$D" || exit 1
+cr() { XDG_DATA_HOME="$D/dados" roda "$@"; }
+cr h1 -L pt canais adicionar "$B/pagina/index.html" --todos
+cr h2 -L pt canais baixar -o ./Can
+espera "a primeira vez baixa o que há" test "$(find Can -maxdepth 1 -name '*.mkv' | wc -l)" -eq 2
+cr h3 -L pt canais baixar -o ./Can
+espera "a segunda não baixa nada" contem h3 "nada de novo"
+espera "…sem erro" codigo "$RC" 0
+XDG_DATA_HOME="$D/dados2" roda h4 -L pt canais adicionar "$B/pagina/index.html" --desde 1d
+espera "o canal entra com a data" grep -q "index.html" dados2/grabit/canais.txt
+
+secao "Verificação da coleção (--verificar)"
 secao "Verificação da coleção (--verificar)"
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1

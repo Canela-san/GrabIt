@@ -201,6 +201,24 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-L pt\|en` | language of the messages: Portuguese or English | the system's |
 | `-h` | show the help (`grabit -L en -h` shows it in English) | — |
 
+### Follow channels
+
+```bash
+grabit channels add https://www.youtube.com/@channel/videos   # from today on
+grabit channels add LINK --since 30d                          # or since a date; --all, the whole channel
+grabit channels download -d                                   # download only what's new
+grabit channels                                               # the list
+grabit channels remove 2
+```
+
+By default, a channel you add only brings what comes out **from today on**, so the first time doesn't download years of videos. The search stops at the first video already in the history, or the first one older than the channel's date: hardly any requests to the site when there's nothing new. It also works for playlists and other links with several videos.
+
+To run it on its own, with the phone notification from `NTFY_TOPICO`, use cron. The folder must be a full path:
+
+```bash
+0 8 * * * grabit channels download -d -o "$HOME/Videos/Channels"
+```
+
 ### Difficult sites
 
 If the video plays in a browser, you can download it, even on sites with an anti-bot check (like Cloudflare's) or a JavaScript player, where yt-dlp alone can't find the video. You still just run `grabit LINK`:

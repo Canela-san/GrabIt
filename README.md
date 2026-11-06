@@ -201,6 +201,24 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-L pt\|en` | idioma das mensagens: português ou inglês | o do sistema |
 | `-h` | mostra a ajuda (`grabit -L en -h` mostra em inglês) | — |
 
+### Acompanhar canais
+
+```bash
+grabit canais adicionar https://www.youtube.com/@canal/videos   # a partir de hoje
+grabit canais adicionar LINK --desde 30d                        # ou desde uma data; --todos, o canal inteiro
+grabit canais baixar -d                                         # baixa só o que for novo
+grabit canais                                                   # a lista
+grabit canais remover 2
+```
+
+Por padrão, um canal adicionado só traz o que sair **a partir de hoje**, para a primeira vez não baixar anos de vídeos. A busca para no primeiro vídeo que já está no histórico, ou no primeiro mais velho que a data do canal: quase nenhum pedido ao site quando não há nada novo. Serve também para playlists e outros links com vários vídeos.
+
+Para rodar sozinho, com o aviso no celular do `NTFY_TOPICO`, use o cron. A pasta precisa ser um caminho completo:
+
+```bash
+0 8 * * * grabit canais baixar -d -o "$HOME/Vídeos/Canais"
+```
+
 ### Sites difíceis
 
 Se o vídeo toca no navegador, dá para baixá-lo, mesmo em sites com verificação anti-robô (como a do Cloudflare) ou com player em JavaScript, onde o yt-dlp sozinho não acha o vídeo. Você continua rodando só `grabit LINK`:
