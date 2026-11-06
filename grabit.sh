@@ -894,7 +894,19 @@ resolve_caminho() {                           # resolve_caminho ARQUIVO → CAMI
 resolve_caminho "$0"
 GRABIT_SCRIPT=$CAMINHO_REAL
 GRABIT_DIR=${GRABIT_SCRIPT%/*}
-CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
+# Instalado por um gerenciador de pacotes, o script fica numa pasta que muda a cada versão ou que não é
+# sua: a configuração vai para a pasta pessoal, e quem atualiza é o gerenciador.
+GRABIT_PACOTE=""
+case $GRABIT_DIR in
+  */Cellar/*)   GRABIT_PACOTE=brew ;;
+  /usr/bin|/usr/local/bin|/usr/bin/*) GRABIT_PACOTE=sistema ;;
+esac
+if [[ -n $GRABIT_PACOTE && -z ${GRABIT_CONFIG:-} ]]; then
+  CONFIG_ARQ="${XDG_CONFIG_HOME:-$HOME/.config}/grabit/grabit.config"
+  mkdir -p "${CONFIG_ARQ%/*}" 2>/dev/null
+else
+  CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
+fi
 
 # Chaves aceitas no grabit.config (e como variáveis de ambiente). Prioridade, da menor
 # para a maior: padrão do script < grabit.config < variável de ambiente < opção do comando.
@@ -1310,6 +1322,45 @@ idioma_pt() {
     [cn_acao]="Ação desconhecida: %s."
     [cn_sem_hist]="Sem o histórico (-i), não há como saber o que é novo: vão vir de novo todos os vídeos desde a data do canal."
     [cn_nada_novo]="nada de novo"
+    [cmp_l]="arquivo com os links"
+    [cmp_o]="pasta onde os vídeos são salvos"
+    [cmp_j]="downloads simultâneos"
+    [cmp_c]="conexões por vídeo"
+    [cmp_O]="mantém o formato do site"
+    [cmp_e]="formato do arquivo"
+    [cmp_k]="recomprime neste codec"
+    [cmp_q]="qualidade ao recomprimir"
+    [cmp_gpu]="recomprime pela placa de vídeo"
+    [cmp_r]="resolução máxima"
+    [cmp_F]="ignora os limites do grabit.config"
+    [cmp_y]="não pergunta"
+    [cmp_b]="usa os cookies do navegador"
+    [cmp_A]="User-Agent do navegador"
+    [cmp_p]="só o vídeo, sem a playlist"
+    [cmp_u]="só o vídeo principal da página"
+    [cmp_x]="só o áudio"
+    [cmp_d]="subpastas por site e canal"
+    [cmp_m]="pastas para Jellyfin, Plex e Kodi"
+    [cmp_f]="continua aberto esperando links"
+    [cmp_U]="troca pelas versões melhores"
+    [cmp_C]="captura os links copiados"
+    [cmp_a]="legendas automáticas"
+    [cmp_s]="marca patrocínios com o SponsorBlock"
+    [cmp_i]="ignora o histórico"
+    [cmp_v]="decodifica cada vídeo atrás de defeitos"
+    [cmp_L]="idioma das mensagens"
+    [cmp_h]="mostra a ajuda"
+    [cmp_proxy]="passa tudo por um proxy"
+    [cmp_simular]="mostra o que seria baixado, sem baixar"
+    [cmp_desde]="só vídeos desde a data"
+    [cmp_max]="no máximo N vídeos por link"
+    [cmp_tamanho]="pula arquivos maiores que isso"
+    [cmp_substituir]="a conversão substitui o original"
+    [cmp_todos]="o canal inteiro"
+    [cmp_uso]="Diga para qual shell: grabit completar fish, bash ou zsh."
+    [cmp_pronto]="Autocompletar instalado: vale nos terminais abertos daqui em diante."
+    [cmp_zsh]="No zsh, ponha no ~/.zshrc, antes do compinit:  %s"
+    [atu_pacote_grabit]="O GrabIt veio de um gerenciador de pacotes: para atualizá-lo, use  %s"
     [cmd_desconhecido]="Comando desconhecido: %s."
     [cmd_sugestao]="     Você quis dizer:  grabit %s"
     [des_titulo]="GrabIt · desinstalação"
@@ -1578,6 +1629,8 @@ que grabit --atualizar):
                      ou recomprime em outro codec; o original fica, a não ser com --substituir
   canais, channels [AÇÃO]
                      acompanha canais: adicionar LINK, baixar (só o que for novo), remover N
+  completar, completion fish|bash|zsh
+                     imprime o autocompletar (o instalar já o põe no lugar)
   desinstalar, uninstall
                      tira o que o GrabIt pôs no sistema; vídeos e listas ficam
   ajuda, help        mostra esta ajuda
@@ -2003,6 +2056,45 @@ idioma_en() {
     [cn_acao]="Unknown action: %s."
     [cn_sem_hist]="Without the history (-i), there's no telling what's new: all the videos since the channel's date will come again."
     [cn_nada_novo]="nothing new"
+    [cmp_l]="file with the links"
+    [cmp_o]="folder where videos are saved"
+    [cmp_j]="simultaneous downloads"
+    [cmp_c]="connections per video"
+    [cmp_O]="keep the site's format"
+    [cmp_e]="file format"
+    [cmp_k]="re-encode in this codec"
+    [cmp_q]="quality when re-encoding"
+    [cmp_gpu]="re-encode on the graphics card"
+    [cmp_r]="maximum resolution"
+    [cmp_F]="ignore the limits in grabit.config"
+    [cmp_y]="don't ask"
+    [cmp_b]="use the browser's cookies"
+    [cmp_A]="browser's User-Agent"
+    [cmp_p]="only the video, not the playlist"
+    [cmp_u]="only the page's main video"
+    [cmp_x]="audio only"
+    [cmp_d]="subfolders by site and channel"
+    [cmp_m]="folders for Jellyfin, Plex and Kodi"
+    [cmp_f]="stay open waiting for links"
+    [cmp_U]="replace with better versions"
+    [cmp_C]="capture copied links"
+    [cmp_a]="automatic subtitles"
+    [cmp_s]="mark sponsors with SponsorBlock"
+    [cmp_i]="ignore the history"
+    [cmp_v]="decode each video looking for defects"
+    [cmp_L]="message language"
+    [cmp_h]="show the help"
+    [cmp_proxy]="send everything through a proxy"
+    [cmp_simular]="show what would be downloaded, without downloading"
+    [cmp_desde]="only videos since the date"
+    [cmp_max]="at most N videos per link"
+    [cmp_tamanho]="skip files larger than that"
+    [cmp_substituir]="conversion replaces the original"
+    [cmp_todos]="the whole channel"
+    [cmp_uso]="Say which shell: grabit completion fish, bash or zsh."
+    [cmp_pronto]="Autocompletion installed: it works in terminals opened from now on."
+    [cmp_zsh]="On zsh, add this to ~/.zshrc, before compinit:  %s"
+    [atu_pacote_grabit]="GrabIt came from a package manager: to update it, use  %s"
     [cmd_desconhecido]="Unknown command: %s."
     [cmd_sugestao]="     Did you mean:  grabit %s"
     [des_titulo]="GrabIt · uninstall"
@@ -2271,6 +2363,8 @@ the same as grabit --atualizar):
                      identical) or re-encodes to another codec; the original stays, unless --replace
   channels, canais [ACTION]
                      follow channels: add LINK, download (only what's new), remove N
+  completion, completar fish|bash|zsh
+                     print the autocompletion (install already puts it in place)
   uninstall, desinstalar
                      remove what GrabIt put on the system; videos and lists stay
   help, ajuda        show this help
@@ -2492,12 +2586,13 @@ palavra_comando() {
     converter|convert)                COMANDO=converter ;;
     desinstalar|uninstall)            COMANDO=desinstalar ;;
     canais|channels)                  COMANDO=canais ;;
+    completar|completion)             COMANDO=completar ;;
     seguir|follow)                    COMANDO=canais; SEGUIR=1 ;;
     *) return 1 ;;
   esac
 }
 PALAVRAS_COMANDO=(config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
-  versao version curl converter convert canais channels seguir follow)
+  versao version curl converter convert canais channels seguir follow completar completion)
 
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
 # errado ("converte") nunca é um link: melhor dizer logo do que tentar baixar.
@@ -5916,6 +6011,7 @@ instalar() {
   monta_plano
   if (( ${#PLANO[@]} == 0 && ${#SISTEMA[@]} == 0 && ${#OPCIONAIS[@]} == 0 )); then
     printf '\n  %s✔%s %s\n' "$VERDE" "$R" "${T[ins_nada]}"
+    instala_completar
     mostra_versoes; return 0
   fi
   if [[ -z $GER && ${#SISTEMA[@]} -gt 0 ]]; then
@@ -5930,6 +6026,7 @@ instalar() {
   fi
   decide_opcionais
   executa_plano
+  instala_completar
   mostra_versoes
   confere_path
   (( NOTA_NAV )) && { aviso "${T[ins_nav_nota]}"; printf '\n'; }
@@ -5943,9 +6040,9 @@ instalar() {
 desinstalar() {
   local lista=() f dados=${XDG_DATA_HOME:-$HOME/.local/share}/grabit clone=0 c
   printf '\n  %s%s%s\n\n' "$NEG" "${T[des_titulo]}" "$R"
-  case $GRABIT_DIR in
-    */Cellar/*)  t des_pacote "brew uninstall grabit"; aviso "$TXT"; return 1 ;;
-    /usr/*)      t des_pacote "pacman -R grabit"; aviso "$TXT"; return 1 ;;
+  case $GRABIT_PACOTE in
+    brew)    t des_pacote "brew uninstall grabit"; aviso "$TXT"; return 1 ;;
+    sistema) t des_pacote "pacman -R grabit"; aviso "$TXT"; return 1 ;;
   esac
   for c in "$HOME/.local/bin/grabit"; do
     if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
@@ -6102,6 +6199,10 @@ baixa_publicada() {
 # repositório. Clone do Git: pelo git; arquivo solto: baixa, confere e troca.
 atualiza_grabit() {
   local antes depois tmp modo notas estavel=0
+  case $GRABIT_PACOTE in
+    brew)    t atu_pacote_grabit "brew upgrade grabit"; printf '    %s\n' "$TXT"; return 1 ;;
+    sistema) t atu_pacote_grabit "pacman -Syu"; printf '    %s\n' "$TXT"; return 1 ;;
+  esac
   [[ $CANAL_ATUALIZACAO == estavel ]] && estavel=1
   if eh_clone_grabit; then
     antes=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
@@ -6216,6 +6317,8 @@ atualizar() {
   decide_opcionais
   if [[ -z $GER && ${#SISTEMA[@]} -gt 0 ]]; then t ins_manual "${SISTEMA[*]}"; aviso "$TXT"; FALHOU_PASSO=1; fi
   executa_plano
+
+  instala_completar
 
   # 4) o que já existia e vem de outro lugar (o que acabou de ser instalado já é o mais novo)
   [[ " ${ETAPAS[*]} " == *" deno "* ]] || atualiza_deno
@@ -6727,6 +6830,140 @@ gerencia_baixados() {
   return 0
 }
 
+# ───────────────────────────── Autocompletar ──────────────────────────────────
+# Uma tabela só, de onde saem os três shells: curta|longas|valores|descrição. Em valores: ARQ, PASTA, ?
+# para um valor livre, vazio para opção sem valor, ou a lista do que dá para escolher.
+TABELA_OPCOES='l||ARQ|cmp_l
+o||PASTA|cmp_o
+j||?|cmp_j
+c||?|cmp_c
+O|original source||cmp_O
+e|formato format extensao extension|mkv mp4 webm mov m4v avi ts original|cmp_e
+k|codec|h264 hevc av1 vp9 mpeg4|cmp_k
+q|qualidade quality|alta media baixa high medium low|cmp_q
+|gpu placa||cmp_gpu
+r||720 1080 1440 2160 4k 8k|cmp_r
+F|||cmp_F
+y|sim yes||cmp_y
+b||firefox chrome chromium brave edge safari vivaldi opera|cmp_b
+A||?|cmp_A
+p|||cmp_p
+u|||cmp_u
+x|||cmp_x
+d|||cmp_d
+m|||cmp_m
+f|||cmp_f
+U|||cmp_U
+C|||cmp_C
+a|||cmp_a
+s|||cmp_s
+i|||cmp_i
+v|||cmp_v
+L||pt en|cmp_L
+h|help||cmp_h
+|proxy|?|cmp_proxy
+|simular simulate dry-run||cmp_simular
+|desde since|?|cmp_desde
+|max|?|cmp_max
+|max-tamanho max-size|?|cmp_tamanho
+|substituir replace||cmp_substituir
+|todos all||cmp_todos'
+
+gera_completar() {
+  local curta longas vals chave d n s=${1:-} todas="" pal=${PALAVRAS_COMANDO[*]}
+  local acoes_cn="adicionar baixar remover add download remove" acoes_bx="editar voltar marcar limpar edit back mark clear"
+  case $s in
+    fish)
+      printf '# Autocompletar do GrabIt (grabit completar fish)\n'
+      printf 'set -l grabit_comandos %s\n' "$pal"
+      printf 'complete -c grabit -n "not __fish_seen_subcommand_from $grabit_comandos" -a "$grabit_comandos"\n'
+      printf "complete -c grabit -n '__fish_seen_subcommand_from canais channels seguir follow' -f -a '%s'\n" "$acoes_cn"
+      printf "complete -c grabit -n '__fish_seen_subcommand_from baixados downloaded' -f -a '%s'\n" "$acoes_bx"
+      printf "complete -c grabit -n '__fish_seen_subcommand_from completar completion' -f -a 'fish bash zsh'\n"
+      while IFS='|' read -r curta longas vals chave; do
+        d=${T[$chave]}; printf 'complete -c grabit'
+        [[ -n $curta ]] && printf ' -s %s' "$curta"
+        for n in $longas; do printf ' -l %s' "$n"; done
+        case $vals in
+          "")    ;;
+          ARQ)   printf ' -r -F' ;;
+          PASTA) printf " -r -a '(__fish_complete_directories)'" ;;
+          '?')   printf ' -x' ;;
+          *)     printf " -x -a '%s'" "$vals" ;;
+        esac
+        printf " -d '%s'\n" "${d//\'/}"
+      done <<<"$TABELA_OPCOES" ;;
+    bash)
+      while IFS='|' read -r curta longas vals chave; do
+        [[ -n $curta ]] && todas+=" -$curta"
+        for n in $longas; do todas+=" --$n"; done
+      done <<<"$TABELA_OPCOES"
+      printf '# Autocompletar do GrabIt (grabit completar bash)\n_grabit() {\n'
+      printf '  local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}\n'
+      printf '  case $prev in\n'
+      while IFS='|' read -r curta longas vals chave; do
+        [[ -n $vals ]] || continue
+        n=""; [[ -n $curta ]] && n="-$curta"
+        for d in $longas; do n+="${n:+|}--$d"; done
+        case $vals in
+          ARQ)   printf '    %s) compopt -o default; COMPREPLY=(); return ;;\n' "$n" ;;
+          PASTA) printf '    %s) compopt -o dirnames; COMPREPLY=(); return ;;\n' "$n" ;;
+          '?')   printf '    %s) COMPREPLY=(); return ;;\n' "$n" ;;
+          *)     printf '    %s) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$n" "$vals" ;;
+        esac
+      done <<<"$TABELA_OPCOES"
+      printf '  esac\n'
+      printf '  if [[ $cur == -* ]]; then COMPREPLY=($(compgen -W "%s" -- "$cur")); return; fi\n' "${todas# }"
+      printf '  if (( COMP_CWORD == 1 )); then COMPREPLY=($(compgen -W "%s" -- "$cur")); compopt -o default; return; fi\n' "$pal"
+      printf '  case ${COMP_WORDS[1]} in\n'
+      printf '    canais|channels|seguir|follow) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_cn"
+      printf '    baixados|downloaded) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_bx"
+      printf '    completar|completion) COMPREPLY=($(compgen -W "fish bash zsh" -- "$cur")); return ;;\n'
+      printf '  esac\n  compopt -o default\n}\ncomplete -F _grabit grabit\n' ;;
+    zsh)
+      printf '#compdef grabit\n# Autocompletar do GrabIt (grabit completar zsh)\n_grabit() {\n  _arguments -s \\\n'
+      while IFS='|' read -r curta longas vals chave; do
+        d=${T[$chave]}; d=${d//\'/}; d=${d//:/ }; d=${d//[/(}; d=${d//]/)}
+        case $vals in
+          "")    n="" ;;
+          ARQ)   n=":arquivo:_files" ;;
+          PASTA) n=":pasta:_files -/" ;;
+          '?')   n=":valor:" ;;
+          *)     n=":valor:($vals)" ;;
+        esac
+        [[ -n $curta ]] && printf '    %s \\\n' "'-$curta[$d]$n'"
+        for s in $longas; do printf '    %s \\\n' "'--$s[$d]$n'"; done
+      done <<<"$TABELA_OPCOES"
+      printf '    %s \\\n' "'1:comando ou link:($pal)'"
+      printf "    '*:arquivo:_files'\n}\n_grabit \"\$@\"\n" ;;
+    *)
+      t cmp_uso; erro "$TXT"; return 2 ;;
+  esac
+}
+
+# instala_completar: deixa o autocompletar em dia para os shells que existem aqui, sem perguntar: são
+# arquivos pequenos, na sua pasta pessoal, que o "grabit desinstalar" tira.
+instala_completar() {
+  local dados=${XDG_DATA_HOME:-$HOME/.local/share} f novo=0
+  if command -v fish >/dev/null 2>&1; then
+    f="$HOME/.config/fish/completions/grabit.fish"
+    [[ -e $f ]] || novo=1
+    mkdir -p "${f%/*}" && gera_completar fish > "$f"
+  fi
+  if command -v bash >/dev/null 2>&1; then
+    f="$dados/bash-completion/completions/grabit"
+    [[ -e $f ]] || novo=1
+    mkdir -p "${f%/*}" && gera_completar bash > "$f"
+  fi
+  if command -v zsh >/dev/null 2>&1; then
+    f="$HOME/.zsh/completions/_grabit"
+    if [[ ! -e $f ]]; then novo=1; t cmp_zsh "${CIANO}fpath+=~/.zsh/completions${R}"; printf '  %s\n' "$TXT"; fi
+    mkdir -p "${f%/*}" && gera_completar zsh > "$f"
+  fi
+  (( novo )) && printf '  %s✔%s %s\n' "$VERDE" "$R" "${T[cmp_pronto]}"
+  return 0
+}
+
 # ───────────────────────────── Canais (grabit canais) ─────────────────────────
 # Acompanhar um canal: grabit canais adicionar LINK, e de tempos em tempos grabit canais baixar, à mão ou
 # pelo cron. Só vêm os vídeos novos: a busca para no primeiro que já está no histórico, ou no primeiro mais
@@ -6840,6 +7077,7 @@ case $COMANDO in
   versao)    mostra_versao; exit $? ;;
   converter) conversao; exit $? ;;
   desinstalar) desinstalar; exit $? ;;
+  completar) gera_completar "${ARGS_LINKS[0]:-}"; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM

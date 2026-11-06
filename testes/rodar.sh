@@ -881,6 +881,30 @@ espera "o que não está na lista é recusado" codigo "$RC" 2
 cn n13 -L pt canais talvez
 espera "ação desconhecida é recusada" codigo "$RC" 2
 
+secao "Autocompletar"
+D="$TMP/completar"; mkdir -p "$D/casa"; cd "$D" || exit 1
+roda b0 -L pt completar
+espera "sem dizer o shell: explica" codigo "$RC" 2
+roda b1 -L pt completar bash
+espera "bash: a sintaxe é válida" bash -n b1
+completa() { bash -c 'source "$1"; shift; COMP_WORDS=(grabit "$@"); COMP_CWORD=$#; compopt() { :; }; _grabit; printf "%s\n" "${COMPREPLY[@]}"' _ b1 "$@"; }
+espera "…os comandos" test "$(completa conv | tr '\n' ' ')" = "converter convert "
+espera "…as opções" contem b1 "--max-tamanho"
+espera "…os valores de uma opção" test "$(completa -k h2 | tr '\n' ' ')" = "h264 "
+espera "…as ações de canais" test "$(completa canais ba | tr '\n' ' ')" = "baixar "
+roda b2 -L en completion fish
+espera "fish: as descrições vêm no idioma" contem b2 "simultaneous downloads"
+espera "…todos os comandos" contem b2 "completar completion"
+roda b3 -L pt completar zsh
+espera "zsh: começa como o zsh espera" test "$(head -n 1 b3)" = "#compdef grabit"
+if command -v fish >/dev/null 2>&1; then espera "fish: a sintaxe é válida" fish --no-execute b2; fi
+if command -v zsh >/dev/null 2>&1; then espera "zsh: a sintaxe é válida" zsh -n b3; fi
+espera "toda opção do getopts está na tabela" sh -c "for o in \$(sed -n 's/.*getopts \":\\([^\"]*\\)\" op.*/\\1/p' '$G' | tr -d ':' | sed 's/./& /g'); do grep -qE \"^(TABELA_OPCOES='|)\$o\\|\" '$G' || { echo \$o; exit 1; }; done"
+mkdir -p semfish; printf '#!/bin/sh\nexit 0\n' > semfish/fish; chmod +x semfish/fish
+HOME="$D/casa" XDG_DATA_HOME="$D/casa/dados" PATH="$D/semfish:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda b4 -L pt install -y
+espera "o instalar põe o autocompletar no lugar" test -f casa/.config/fish/completions/grabit.fish -a -f casa/dados/bash-completion/completions/grabit
+espera "…e avisa" contem b4 "Autocompletar instalado"
+
 secao "Filtros"
 D="$TMP/filtros"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
