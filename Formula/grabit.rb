@@ -14,7 +14,7 @@ class Grabit < Formula
   def install
     inreplace "grabit.sh", "#!/usr/bin/env bash", "#!#{Formula["bash"].opt_bin}/bash"
     bin.install "grabit.sh" => "grabit"
-    generate_completions_from_executable(bin/"grabit", "completar")
+    generate_completions_from_executable(bin/"grabit", "-L", "en", "completar")
   end
 
   test do
