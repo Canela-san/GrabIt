@@ -587,6 +587,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -c N          conexões (fragmentos) por vídeo              (padrão: 4)
   -r ALTURA     resolução máxima: 720, 1080, 2160, 4k…       (padrão: sem limite)
   -F            força: ignora os limites do grabit.config (resolução, sites, pausa…)
+                e o ritmo automático por site
+  -y            com install: instala tudo sem perguntar
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -A AGENTE     usa o User-Agent do navegador, junto com -b, em sites com verificação
   -p            só o vídeo, se o link tiver vídeo + playlist
@@ -695,10 +697,11 @@ EOF
 # Tentativas por link quando a falha é passageira (1 = não tentar de novo)
 #TENTATIVAS=2
 
-# Cortesia com os sites (ajuda com os que bloqueiam muitos downloads seguidos): no
-# máximo N downloads ao mesmo tempo do mesmo site, uma pausa de N segundos (com uma
-# variação aleatória) antes de cada vídeo e uma velocidade máxima por download, como
-# 5M ou 500K. 0 = desligado. -F ignora tudo isso numa execução.
+# Cortesia com os sites: o GrabIt já espalha os downloads entre os sites e ajusta o ritmo de
+# cada um sozinho. Para ir ainda mais devagar de propósito: no máximo N downloads ao mesmo
+# tempo do mesmo site (0 = automático), uma pausa de N segundos (com uma variação aleatória)
+# antes de cada vídeo e uma velocidade máxima por download, como 5M ou 500K (0 = desligado).
+# -F ignora tudo isso numa execução, e também o ritmo automático.
 #LIMITE_POR_SITE=0
 #PAUSA_ENTRE_VIDEOS=0
 #LIMITE_VELOCIDADE=0
@@ -1094,6 +1097,8 @@ Usage:  grabit [options] [LINK or FILE ...]
   -c N          connections (fragments) per video    (default: 4)
   -r HEIGHT     maximum resolution: 720, 1080, 4k…   (default: no limit)
   -F            force: ignore the grabit.config limits (resolution, sites, pause…)
+                and the automatic per-site pace
+  -y            with install: install everything without asking
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -A AGENT      use the browser's User-Agent, along with -b, on sites with a check
   -p            only the video, when the link is video + playlist
@@ -1206,10 +1211,11 @@ EOF
 # Attempts per link when the failure is temporary (1 = don't retry)
 #TENTATIVAS=2
 
-# Being nice to sites (helps with the ones that block many downloads in a row): at
-# most N downloads at once from the same site, an N-second pause (with some random
-# variation) before each video and a maximum speed per download, like 5M or 500K.
-# 0 = off. -F ignores all of this for a run.
+# Being nice to sites: GrabIt already spreads downloads across sites and adjusts each one's
+# pace by itself. To go even slower on purpose: at most N downloads at once from the same
+# site (0 = automatic), an N-second pause (with some random variation) before each video and
+# a maximum speed per download, like 5M or 500K (0 = off).
+# -F ignores all of this for a run, and the automatic pace too.
 #LIMITE_POR_SITE=0
 #PAUSA_ENTRE_VIDEOS=0
 #LIMITE_VELOCIDADE=0

@@ -169,7 +169,8 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-j N` | simultaneous downloads | `4` |
 | `-c N` | connections (fragments) per video | `4` |
 | `-r HEIGHT` | maximum resolution (`720`, `1080`, `2160` or `4k`…) | no limit |
-| `-F` | force: ignore the `grabit.config` limits for this run | — |
+| `-F` | force: ignore the `grabit.config` limits and the automatic per-site pace for this run | — |
+| `-y` | with `install`: install everything without asking | — |
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
 | `-A AGENT` | use the browser's User-Agent, along with `-b`, on sites with a check | — |
 | `-p` | if the link is a video inside a playlist, download just the video | — |
@@ -254,7 +255,7 @@ COOKIES_NAVEGADOR=firefox
 | `DOWNLOADS_SIMULTANEOS` | videos at the same time | `4` |
 | `CONEXOES_POR_VIDEO` | connections per video | `4` |
 | `TENTATIVAS` | attempts per link (`1` = don't retry) | `2` |
-| `LIMITE_POR_SITE` | downloads at once from the same site (`0` = no limit) | `0` |
+| `LIMITE_POR_SITE` | maximum downloads at once from the same site (`0` = automatic) | `0` |
 | `PAUSA_ENTRE_VIDEOS` | seconds of pause before each video, with random variation | `0` |
 | `LIMITE_VELOCIDADE` | maximum speed per download, like `5M` or `500K` (`0` = no limit) | `0` |
 | `IDIOMAS_LEGENDAS` | subtitle languages (`all` = every one) | `pt.*,en.*` |
@@ -300,7 +301,7 @@ grabit -F -l links_falhos.txt       # download the ones left out, at maximum qua
 
 ### Being nice to sites
 
-Some sites block whoever downloads many videos in a row. For those, you can slow down:
+Some sites block whoever downloads many videos in a row. GrabIt already takes care of this by itself: it spreads downloads across sites and adjusts each one's pace (see [How it works](#how-it-works)). To go even slower on purpose:
 
 ```ini
 LIMITE_POR_SITE=1        # one video at a time from each site (other sites keep going in parallel)
@@ -308,7 +309,7 @@ PAUSA_ENTRE_VIDEOS=10    # a ~10 to 15 s pause before each video
 LIMITE_VELOCIDADE=5M     # at most 5 MB/s per download
 ```
 
-The header shows the limits in use, and `-F` turns all of them (and the maximum resolution) off for a run.
+The header shows the limits in use, and `-F` turns all of them (and the maximum resolution) off for a run, along with the slow start and the interval of the automatic pace. A site's request to slow down (429) still counts.
 
 There are also `ARQUIVO_HISTORICO` (where the download history lives) and `NO_COLOR` (turns colors off), as environment variables only.
 
@@ -334,7 +335,10 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 - **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A download that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, network drop) **starts over from scratch** next time instead of resuming the pieces: resuming can leave holes in the video, and here quality comes before speed. The links that were still pending go to `links_falhos.txt`.
 - **Cascade of attempts:** each link starts with the fastest way and only climbs if it has to: **1)** direct; **2)** with the `Referer`, impersonating a browser when `curl-cffi` is installed and with the adjustment for the error (IPv4 on network failures, one connection at a time on refused pieces, slower on 429); **3)** through the browser, if the page only works in one. Errors nothing can fix (private, removed video, 404) stop right away.
 - **The cascade remembers:** the step that worked on each site is kept (in `~/.local/share/grabit/metodos.txt`), and the site's next links start right there. On a long list, this avoids repeating on every link a path already known to fail. The memory expires in 30 days and drops if the method stops working.
-- **Speed:** 4 videos at a time by default; if a site answers 429, it gets a brake for this run and the others carry on as usual. Pieces refused several times in a row (401, 403, 404, 410) end the attempt in seconds, instead of holding the slot for minutes. While the browser window is busy, links from other sites go ahead. Permanent errors (private, removed video, 404) aren't retried.
+- **Spreading across sites:** GrabIt looks at the whole list and sorts the links by site. Each slot goes to the site with the fewest downloads running and, on a tie, to the one with the most links waiting. With 4 slots and 4 sites, it's one of each: a site's links don't pile up just because they came together in the list. While the browser window is busy, links from other sites go ahead.
+- **Protection against blocks:** each site starts with a single download and goes up by one for each one it accepts (it's enough for the download to start arriving), with a small interval between starts. If a site asks to slow down (429), its limit is cut in half and it gets no new requests for 30 s, then 60, 120… up to 10 min, while the others carry on; the link waits along with it, without using up an attempt. After 4 requests to slow down, or 3 links in a row refused, that site's remaining links go to `links_falhos.txt`, and the summary shows how many were postponed. The wait also applies to the next run.
+- **Speed:** 4 videos at a time by default. Pieces refused several times in a row (401, 403, 404, 410) end the attempt in seconds, instead of holding the slot for minutes. When you know the site can take it, `-F` skips the slow start and the interval.
+- **Progress saved:** every minute, downloaded links go to the `DOWNLOADED` section. If the power goes out in the middle of a long list, next time it picks up where it left off. Permanent errors (private, removed video, 404) aren't retried.
 - **Disk full:** the header warns you when the destination folder has less than 2 GiB free. If the disk fills up midway, no new download starts (the next ones wouldn't fit either) and the links still pending go to `links_falhos.txt`.
 - **History:** every downloaded video is recorded in `Downloads/.grabit-historico.txt` (site + video ID). Next time it's skipped before anything else: on most sites GrabIt doesn't even need to open the page. Without the history, yt-dlp would open the page again, download the cover and rewrite the whole file just to conclude it already exists. Videos downloaded before the history existed go through that check only once and are added to it.
 - **Live queue (`-f`):** after finishing the list, GrabIt stays open and checks the link file every 2 seconds: whatever you add (at the top or at the end of the file) joins the queue and starts downloading. When the queue empties, the downloaded links go to the `DOWNLOADED` section and, if the batch took a while, the completion notice arrives. Quit with <kbd>q</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>. It only happens with the option: without `-f`, GrabIt always closes when done.
