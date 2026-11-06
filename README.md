@@ -65,6 +65,8 @@ Ele atualiza o GrabIt, o yt-dlp com as dependências dele, o Deno e o FFmpeg (es
 
 Todos os comandos valem em português e inglês, com ou sem os traços: `grabit update`, `grabit atualizar`, `grabit --update` e `grabit --atualizar` são a mesma coisa. O mesmo vale para `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `downloaded`/`baixados` e `help`/`ajuda`. Só um arquivo de links com o nome de um comando precisa de `./` na frente (`grabit ./update`).
 
+O GrabIt vem da **versão publicada mais nova**, que já passou por todos os testes, e o arquivo baixado é conferido antes de trocar o script (soma SHA-256 e assinatura). O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Para seguir tudo o que entra no repositório, assim que entra, use `CANAL_ATUALIZACAO=main` no `grabit.config`.
+
 Para ver a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript):
 
 ```bash

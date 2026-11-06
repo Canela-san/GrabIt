@@ -65,6 +65,8 @@ It updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter thr
 
 All commands work in English and Portuguese, with or without the dashes: `grabit update`, `grabit atualizar`, `grabit --update` and `grabit --atualizar` are the same thing. The same goes for `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `downloaded`/`baixados` and `help`/`ajuda`. Only a link file named like a command needs `./` in front of it (`grabit ./update`).
 
+GrabIt itself comes from the **newest published version**, which already passed all the tests, and the downloaded file is checked before replacing the script (SHA-256 checksum and signature). What changed in each version is in the [CHANGELOG](CHANGELOG.md). To follow everything that lands in the repository, as soon as it does, use `CANAL_ATUALIZACAO=main` in `grabit.config`.
+
 To see the installed version, whether there's a newer one and what GrabIt is using (yt-dlp, FFmpeg, JavaScript runtime):
 
 ```bash

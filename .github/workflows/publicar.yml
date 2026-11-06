@@ -1,0 +1,39 @@
+name: Publicar versão
+
+# Uma etiqueta v1.2.3 vira uma versão publicada, se os testes passarem. É daqui que o
+# "grabit update" tira a versão nova, no canal estável.
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    uses: ./.github/workflows/testes.yml
+
+  publicar:
+    needs: testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: A etiqueta bate com a versão do script e com o CHANGELOG
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          grep -qx "GRABIT_VERSAO=$v" grabit.sh
+          grep -q "^## $v" CHANGELOG.md
+      - name: Soma e notas da versão
+        run: |
+          sha256sum grabit.sh > grabit.sh.sha256
+          v=${GITHUB_REF_NAME#v}
+          awk -v v="$v" '$1 == "##" { dentro = ($2 == v); next } dentro' CHANGELOG.md > notas.md
+      - name: Publica
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" grabit.sh grabit.sh.sha256 CHANGELOG.md \
+            --title "GrabIt ${GITHUB_REF_NAME#v}" --notes-file notas.md

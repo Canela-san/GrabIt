@@ -42,6 +42,7 @@ roda() {                                      # roda SAÍDA [ARGS...] → RC (a 
   RC=$?
 }
 secao() { printf '\n%s\n' "$1"; }
+gitq() { git -c user.name=t -c user.email=t@t.invalid -c commit.gpgsign=false "$@"; }
 
 # ───────────────────────────── Rápidos ─────────────────────────────────────────
 secao "Sintaxe e ajuda"
@@ -186,6 +187,16 @@ printf '#!/bin/sh\nexit 1\n' > "$STUB/ffprobe"
 cat > "$STUB/curl" <<'EOF'
 #!/bin/sh
 case "$*" in
+  *releases/latest/download/*|*raw.githubusercontent*)    # as versões publicadas, de mentira
+    saida=""; nome=""
+    while [ $# -gt 0 ]; do
+      case "$1" in -o) saida=$2; shift ;; http*) nome=${1##*/} ;; esac
+      shift
+    done
+    [ -f "$STUB_PUBLICADA/$nome" ] || exit 22
+    if [ -n "$saida" ]; then cp "$STUB_PUBLICADA/$nome" "$saida"; else cat "$STUB_PUBLICADA/$nome"; fi
+    ;;
+  *releases/latest*) [ -n "${STUB_TAG:-}" ] || exit 22; printf 'https://x.invalid/releases/tag/%s' "$STUB_TAG" ;;
   *deno.land*) [ -z "${STUB_CURL_FALHA:-}" ] || exit 22
     cat <<'DENO'
 mkdir -p "$HOME/.deno/bin"
@@ -331,7 +342,6 @@ G="$D/solto/grabit.sh" falso v0 -L pt --versao
 espera "cópia sem Git é reconhecida" contem v0 "cópia sem Git"
 espera "…e diz quando não dá para conferir" contem v0 "não deu para conferir"
 if command -v git >/dev/null 2>&1; then
-  gitq() { git -c user.name=t -c user.email=t@t.invalid -c commit.gpgsign=false "$@"; }
   mkdir -p up alheio/bin
   cp "$G" up/grabit.sh; gitq init -q up; gitq -C up add grabit.sh; gitq -C up commit -qm um
   git clone -q up clone
@@ -350,6 +360,73 @@ if command -v git >/dev/null 2>&1; then
   cp "$G" alheio/bin/grabit.sh; gitq init -q alheio; gitq -C alheio add bin; gitq -C alheio commit -qm um
   G="$D/alheio/bin/grabit.sh" STUB_JS="node-22.1.0" falso a2 -L pt --atualizar
   espera "--atualizar não dá git pull em outro repositório" nao_contem a2 "git pull"
+fi
+
+secao "Versões publicadas"
+D="$TMP/versoes"; mkdir -p "$D/pub" "$D/solto"; cd "$D" || exit 1
+VER=$(sed -n 's/^GRABIT_VERSAO=//p' "$G")
+espera "o script diz a própria versão" test -n "$VER"
+espera "…e ela está no CHANGELOG" grep -q "^## $VER" "$RAIZ/CHANGELOG.md"
+soma_de() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
+publica() {                                   # publica VERSÃO: uma versão nova, com a soma e as novidades
+  { head -n 1 "$G"; echo '[[ -n ${GRABIT_RELANCADO:-} ]] && echo "RELANCADO-COM-O-NOVO"'; tail -n +2 "$G"; } |
+    sed "s/^GRABIT_VERSAO=.*/GRABIT_VERSAO=$1/" > pub/grabit.sh
+  soma_de pub/grabit.sh > pub/grabit.sh.sha256
+  printf '# Mudanças\n\n## %s\n\n- Novidade da versão nova\n\n## %s\n\n- Coisa velha\n' "$1" "$VER" > pub/CHANGELOG.md
+}
+solta() { cp "$G" solto/grabit.sh; }
+atu() { local s=$1; shift; G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" falso "$s" -L pt "$@"; }
+publica 99.0.0; solta
+STUB_TAG=v99.0.0 atu w1 --versao
+espera "--versao mostra a versão" contem w1 "$VER"
+espera "…e a publicada, se for mais nova" contem w1 "há uma versão mais nova (99.0.0)"
+espera "…e o canal" contem w1 "estável"
+STUB_TAG=v99.0.0 atu u1 update
+espera "o update troca o script pela versão publicada" grep -qx 'GRABIT_VERSAO=99.0.0' solto/grabit.sh
+espera "…mostra as versões" contem u1 "$VER → 99.0.0"
+espera "…e as novidades" contem u1 "Novidade da versão nova"
+espera "…sem as de antes" nao_contem u1 "Coisa velha"
+espera "…e é ela que termina o trabalho" contem u1 "RELANCADO-COM-O-NOVO"
+publica 99.0.0; solta
+printf 'aaaa  grabit.sh\n' > pub/grabit.sh.sha256
+STUB_TAG=v99.0.0 atu u2 update
+espera "soma que não bate: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+espera "…e explica" contem u2 "não bate com a soma"
+publica 99.0.0; solta
+head -c 2000 pub/grabit.sh > pub/cortado; mv pub/cortado pub/grabit.sh; soma_de pub/grabit.sh > pub/grabit.sh.sha256
+STUB_TAG=v99.0.0 atu u3 update
+espera "arquivo cortado, mesmo com a soma certa: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+publica 99.0.0; solta
+sed -i.x "s/^GRABIT_VERSAO=.*/GRABIT_VERSAO=98.0.0/" pub/grabit.sh; soma_de pub/grabit.sh > pub/grabit.sh.sha256
+STUB_TAG=v99.0.0 atu u4 update
+espera "o arquivo diz outra versão: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+publica 0.0.1; solta
+STUB_TAG=v0.0.1 atu u5 update
+espera "versão publicada mais velha: não volta atrás" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+espera "…e diz que está em dia" contem u5 "já está na versão mais nova"
+publica 99.0.0; solta
+atu u6 update
+espera "sem saber qual é a versão publicada: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+espera "…e diz o que fazer" contem u6 "CANAL_ATUALIZACAO=main"
+CANAL_ATUALIZACAO=main atu u7 update
+espera "canal main: pega direto do repositório" grep -qx 'GRABIT_VERSAO=99.0.0' solto/grabit.sh
+CANAL_ATUALIZACAO=talvez atu u8 --config
+espera "canal inválido é recusado" codigo "$RC" 2
+if command -v git >/dev/null 2>&1; then
+  publica 99.0.0
+  mkdir up; cp "$G" up/grabit.sh; gitq init -q up; gitq -C up add grabit.sh; gitq -C up commit -qm um
+  git clone -q up clone
+  cp pub/grabit.sh up/grabit.sh; cp pub/CHANGELOG.md up/; gitq -C up add .; gitq -C up commit -qm dois; gitq -C up tag v99.0.0
+  echo '# depois da versão' >> up/grabit.sh; gitq -C up commit -qam tres
+  noclone() { local s=$1; shift; G="$D/clone/grabit.sh" GRABIT_URL_PUBLICADA=https://x.invalid/releases/latest STUB_TAG=v99.0.0 STUB_JS="node-22.1.0" falso "$s" -L pt "$@"; }
+  noclone c1 --versao
+  espera "clone: avisa da versão publicada" contem c1 "há uma versão mais nova (99.0.0)"
+  noclone c2 update
+  espera "clone: vai para a versão publicada" grep -qx 'GRABIT_VERSAO=99.0.0' clone/grabit.sh
+  espera "…e não para o que veio depois dela" nao_contem clone/grabit.sh "depois da versão"
+  espera "…com as novidades" contem c2 "Novidade da versão nova"
+  CANAL_ATUALIZACAO=main noclone c3 update
+  espera "clone, canal main: vai até o último commit" contem clone/grabit.sh "depois da versão"
 fi
 
 secao "--atualizar cuida de tudo"

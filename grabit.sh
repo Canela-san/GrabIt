@@ -19,6 +19,8 @@ fi
 set -uo pipefail
 shopt -s extglob
 
+GRABIT_VERSAO=1.0.0
+
 PATH_ORIGINAL=$PATH
 
 # O idioma do sistema é lido antes de forçar o UTF-8 logo abaixo
@@ -805,7 +807,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP PROXY USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP PROXY CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -832,6 +834,7 @@ COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
 PROXY=                                        # ex.: http://host:8080 ou socks5://host:1080; vale para tudo
+CANAL_ATUALIZACAO=estavel                     # estavel: só versões publicadas; main: tudo o que entra no repositório
 USAR_NAVEGADOR=1                              # 0 = nunca abrir um navegador para achar o vídeo
 PROCURAR_ARQUIVO=1                            # 0 = não procurar um arquivo direto melhor que o stream
 FORMATO_SAIDA=mkv                             # mkv, mp4, webm, mov…, ou original: como o site entrega
@@ -1018,6 +1021,15 @@ idioma_pt() {
     [f_antes]=" (mais %d de execuções anteriores)"
     [kv_situacao]="Situação"
     [ver_em_dia]="em dia com o repositório"
+    [kv_canal]="Canal"
+    [canal_estavel]="estável: só versões publicadas, que passaram por todos os testes"
+    [canal_main]="main: tudo o que entra no repositório"
+    [val_canal]="%s: use estavel ou main (veio '%s', de: %s)."
+    [atu_git_versao]="atualizar o GrabIt para a versão %s"
+    [atu_baixa_versao]="baixar o GrabIt %s e conferir o arquivo"
+    [atu_sem_publicada]="Não deu para saber qual é a versão publicada (sem conexão?). Para seguir o repositório direto, use CANAL_ATUALIZACAO=main."
+    [atu_soma]="O arquivo baixado não bate com a soma publicada: nada foi trocado."
+    [atu_novidades]="Novidades:"
     [ver_nova]="há uma versão mais nova"
     [ver_sem_net]="não deu para conferir (sem conexão?)"
     [ver_sem_git]="cópia sem Git"
@@ -1492,6 +1504,10 @@ EOF
 # Opções a mais para o yt-dlp, separadas por espaços. Ex.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
 
+# Por onde o "grabit update" atualiza o GrabIt: estavel, só as versões publicadas, que passaram por
+# todos os testes; ou main, tudo o que entra no repositório, assim que entra.
+#CANAL_ATUALIZACAO=estavel
+
 # Proxy para tudo o que o GrabIt acessa, inclusive a busca por arquivo direto e o navegador
 # (--proxy): http://host:8080 ou socks5://host:1080. Um proxy SOCKS desliga a busca por arquivo
 # direto e as várias conexões, porque o ffprobe e o aria2c não passam por ele.
@@ -1615,6 +1631,15 @@ idioma_en() {
     [f_antes]=" (plus %d from earlier runs)"
     [kv_situacao]="Status"
     [ver_em_dia]="up to date with the repository"
+    [kv_canal]="Channel"
+    [canal_estavel]="stable: published versions only, which passed all the tests"
+    [canal_main]="main: everything that lands in the repository"
+    [val_canal]="%s: use estavel or main (got '%s', from: %s)."
+    [atu_git_versao]="update GrabIt to version %s"
+    [atu_baixa_versao]="download GrabIt %s and check the file"
+    [atu_sem_publicada]="Couldn't tell which version is published (no connection?). To follow the repository directly, use CANAL_ATUALIZACAO=main."
+    [atu_soma]="The downloaded file doesn't match the published checksum: nothing was replaced."
+    [atu_novidades]="What's new:"
     [ver_nova]="there's a newer version"
     [ver_sem_net]="couldn't check (no connection?)"
     [ver_sem_git]="copy without Git"
@@ -2094,6 +2119,10 @@ EOF
 # Extra options for yt-dlp, separated by spaces. E.g.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
 
+# Where "grabit update" gets GrabIt from: estavel (stable), only published versions, which passed all
+# the tests; or main, everything that lands in the repository, as soon as it does.
+#CANAL_ATUALIZACAO=estavel
+
 # Proxy for everything GrabIt accesses, including the direct-file search and the browser
 # (--proxy): http://host:8080 or socks5://host:1080. A SOCKS proxy turns off the direct-file search
 # and multiple connections, because ffprobe and aria2c cannot go through it.
@@ -2383,6 +2412,11 @@ sem_senha() {
   if [[ $1 =~ ^([^/]*//)[^/@]*@(.*)$ ]]; then FMT="${BASH_REMATCH[1]}•••@${BASH_REMATCH[2]}"; fi
   return 0
 }
+case ${CANAL_ATUALIZACAO,,} in
+  estavel|estável|stable|"") CANAL_ATUALIZACAO=estavel ;;
+  main|dev)                  CANAL_ATUALIZACAO=main ;;
+  *) origem_txt CANAL_ATUALIZACAO; t val_canal CANAL_ATUALIZACAO "$CANAL_ATUALIZACAO" "$FMT"; erro "$TXT"; exit 2 ;;
+esac
 # Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = desligado
 for nome in RESOLUCAO_MAXIMA RESOLUCAO_ALERTA; do
   case ${!nome,,} in
@@ -5346,13 +5380,50 @@ eh_clone_grabit() {
   [[ $raiz -ef $GRABIT_DIR ]] && git -C "$GRABIT_DIR" ls-files --error-unmatch grabit.sh >/dev/null 2>&1
 }
 
-# grabit --versao: o que está instalado e se há coisa mais nova. O GrabIt não tem número de
-# versão: num clone do Git, ela é o commit; numa cópia solta, compara com o arquivo publicado.
+# versao_maior A B → 0 se A for mais nova que B
+versao_maior() {
+  local a=() b=() i
+  IFS=. read -ra a <<<"$1"; IFS=. read -ra b <<<"$2"
+  for i in 0 1 2; do
+    (( 10#${a[i]:-0} > 10#${b[i]:-0} )) && return 0
+    (( 10#${a[i]:-0} < 10#${b[i]:-0} )) && return 1
+  done
+  return 1
+}
+
+# versao_publicada → VER_PUB e URL_PUB: a versão mais nova publicada. Uma versão só é publicada depois de
+# passar por todos os testes, e o GitHub redireciona "releases/latest" para ela. Um clone pergunta ao
+# repositório de onde veio (um fork, ao dele); um clone de outro lugar não tem como saber.
+versao_publicada() {
+  local o u
+  VER_PUB=""; URL_PUB=${GRABIT_URL_PUBLICADA:-}
+  if [[ -z $URL_PUB ]]; then
+    if eh_clone_grabit; then
+      o=$(git -C "$GRABIT_DIR" remote get-url origin 2>/dev/null)
+      [[ $o =~ github\.com[:/]([^/]+)/([^/]+)$ ]] && URL_PUB="https://github.com/${BASH_REMATCH[1]}/${BASH_REMATCH[2]%.git}/releases/latest"
+    else
+      URL_PUB="https://github.com/Canela-san/GrabIt/releases/latest"
+    fi
+  fi
+  [[ -n $URL_PUB ]] || return 1
+  u=$(curl -fsSL -m 10 -o /dev/null -w '%{url_effective}' "$URL_PUB" 2>/dev/null) || return 1
+  [[ $u =~ /tag/v([0-9]+(\.[0-9]+)*)$ ]] || return 1
+  VER_PUB=${BASH_REMATCH[1]}
+}
+
+# grabit --versao: o que está instalado e se há coisa mais nova.
 mostra_versao() {
-  local v remoto tmp nova=0 situacao=${T[ver_sem_net]}
+  local v remoto tmp nova=0 clone=0 situacao=${T[ver_sem_net]}
   atualiza_largura
+  v=$GRABIT_VERSAO
   if eh_clone_grabit; then
-    v=$(git -C "$GRABIT_DIR" log -1 --format='%h · %cd' --date=short 2>/dev/null)
+    clone=1; v+=" · $(git -C "$GRABIT_DIR" log -1 --format='%h · %cd' --date=short 2>/dev/null)"
+  else
+    v+=" · ${T[ver_sem_git]}"
+  fi
+  if [[ $CANAL_ATUALIZACAO == estavel ]] && versao_publicada; then
+    if versao_maior "$VER_PUB" "$GRABIT_VERSAO"; then nova=1; else situacao=${T[ver_em_dia]}; fi
+  elif (( clone )); then
     remoto=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -oBatchMode=yes -oConnectTimeout=8} \
       git -C "$GRABIT_DIR" -c http.lowSpeedLimit=1 -c http.lowSpeedTime=8 ls-remote origin HEAD 2>/dev/null)
     remoto=${remoto%%[[:space:]]*}
@@ -5360,28 +5431,68 @@ mostra_versao() {
       if git -C "$GRABIT_DIR" merge-base --is-ancestor "$remoto" HEAD 2>/dev/null; then situacao=${T[ver_em_dia]}
       else nova=1; fi
     fi
-  else
-    v=${T[ver_sem_git]}
-    if tmp=$(mktemp "${TMPDIR:-/tmp}/grabit.XXXXXX"); then
-      if curl -fsSL -m 10 "$URL_SCRIPT" -o "$tmp" 2>/dev/null; then
-        if cmp -s "$tmp" "$GRABIT_SCRIPT"; then situacao=${T[ver_em_dia]}; else nova=1; fi
-      fi
-      rm -f -- "$tmp"
+  elif [[ $CANAL_ATUALIZACAO == main ]] && tmp=$(mktemp "${TMPDIR:-/tmp}/grabit.XXXXXX"); then
+    if curl -fsSL -m 10 "$URL_SCRIPT" -o "$tmp" 2>/dev/null; then
+      if cmp -s "$tmp" "$GRABIT_SCRIPT"; then situacao=${T[ver_em_dia]}; else nova=1; fi
     fi
+    rm -f -- "$tmp"
   fi
-  (( nova )) && situacao=${T[ver_nova]}
+  if (( nova )); then situacao="${T[ver_nova]}${VER_PUB:+ ($VER_PUB)}"; fi
   printf '\n'
   kv "GrabIt" "$v"
+  if [[ $CANAL_ATUALIZACAO == main ]]; then kv "${T[kv_canal]}" "${T[canal_main]}"; else kv "${T[kv_canal]}" "${T[canal_estavel]}"; fi
   kv "${T[kv_situacao]}" "$situacao"
   if (( nova )); then comando_grabit "${T[cmd_atualizar]}"; t av_ytdlp2 "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"; fi
   mostra_versoes
 }
 
-# atualiza_grabit → 0 se o script mudou. Clone do Git: git pull; arquivo solto: baixa, confere e troca
+# mostra_novidades ANTIGA ARQUIVO: o que o CHANGELOG diz das versões depois da ANTIGA
+mostra_novidades() {
+  [[ -f $2 ]] || return 0
+  printf '    %s\n' "${T[atu_novidades]}"
+  awk -v a="$1" '$1 == "##" && $2 == a { exit } $1 == "##" || $1 == "-" { print }' "$2" | head -n 25 | sed 's/^/      /'
+}
+
+vai_para_tag() {                              # vai_para_tag TAG: só para frente, sem mexer em nada seu
+  git -C "$GRABIT_DIR" fetch --quiet origin "refs/tags/$1:refs/tags/$1" && git -C "$GRABIT_DIR" merge --ff-only --quiet "$1"
+}
+
+soma256() {                                   # soma256 ARQUIVO → SOMA
+  local s=""
+  if command -v sha256sum >/dev/null 2>&1; then s=$(sha256sum -- "$1" 2>/dev/null)
+  elif command -v shasum >/dev/null 2>&1; then s=$(shasum -a 256 -- "$1" 2>/dev/null)
+  elif command -v openssl >/dev/null 2>&1; then s=$(openssl dgst -sha256 -r "$1" 2>/dev/null); fi
+  SOMA=${s%%[[:space:]]*}
+}
+
+# baixa_publicada ARQUIVO VERSÃO: uma página de erro, um download cortado ou um arquivo diferente do
+# publicado nunca substituem o script.
+baixa_publicada() {
+  local arq=$1 ver=$2 esperada
+  curl -fsSL -m 300 "$URL_PUB/download/grabit.sh" -o "$arq" || return 1
+  esperada=$(curl -fsSL -m 30 "$URL_PUB/download/grabit.sh.sha256") || return 1
+  esperada=${esperada%%[[:space:]]*}
+  soma256 "$arq"
+  if [[ -z $SOMA || ${SOMA,,} != "${esperada,,}" ]]; then erro "${T[atu_soma]}"; return 1; fi
+  bash -n "$arq" && grep -q "GrabIt (grabit.sh)" "$arq" && grep -qx "GRABIT_VERSAO=$ver" "$arq" && [[ $(tail -n 1 "$arq") == "exit 0" ]]
+}
+
+# atualiza_grabit → 0 se o script mudou. No canal estável, vai para a versão publicada mais nova, nunca
+# para uma mais velha. No canal main, ou num clone sem versões publicadas, pega tudo o que entrou no
+# repositório. Clone do Git: pelo git; arquivo solto: baixa, confere e troca.
 atualiza_grabit() {
-  local antes depois tmp modo
+  local antes depois tmp modo notas estavel=0
+  [[ $CANAL_ATUALIZACAO == estavel ]] && estavel=1
   if eh_clone_grabit; then
     antes=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
+    if (( estavel )) && versao_publicada; then
+      if ! versao_maior "$VER_PUB" "$GRABIT_VERSAO"; then printf '    %s\n' "${T[atu_igual]}"; return 1; fi
+      t atu_git_versao "$VER_PUB"
+      passo "$TXT" vai_para_tag "v$VER_PUB" || return 1
+      printf '    %s → %s\n' "$GRABIT_VERSAO" "$VER_PUB"
+      mostra_novidades "$GRABIT_VERSAO" "$GRABIT_DIR/CHANGELOG.md"
+      return 0
+    fi
     passo "${T[atu_git]}" git -C "$GRABIT_DIR" pull --ff-only --quiet || return 1
     depois=$(git -C "$GRABIT_DIR" rev-parse --short HEAD)
     if [[ $antes == "$depois" ]]; then printf '    %s\n' "${T[atu_igual]}"; return 1; fi
@@ -5392,19 +5503,35 @@ atualiza_grabit() {
     t atu_sem_escrita "$GRABIT_DIR"; erro "$TXT"; FALHOU_PASSO=1
     return 1
   fi
-  # bash -n e a assinatura do cabeçalho: uma página de erro nunca substitui o script
-  if ! passo "${T[atu_baixa]}" sh -c 'curl -fsSL "$1" -o "$2" && bash -n "$2" && grep -q "GrabIt (grabit.sh)" "$2"' _ "$URL_SCRIPT" "$tmp"; then
-    rm -f -- "$tmp"
-    return 1
-  fi
-  if cmp -s "$tmp" "$GRABIT_SCRIPT"; then
-    printf '    %s\n' "${T[atu_igual]}"; rm -f -- "$tmp"
-    return 1
+  if (( estavel )); then
+    if ! versao_publicada; then erro "${T[atu_sem_publicada]}"; FALHOU_PASSO=1; rm -f -- "$tmp"; return 1; fi
+    if ! versao_maior "$VER_PUB" "$GRABIT_VERSAO"; then printf '    %s\n' "${T[atu_igual]}"; rm -f -- "$tmp"; return 1; fi
+    t atu_baixa_versao "$VER_PUB"
+    if ! passo "$TXT" baixa_publicada "$tmp" "$VER_PUB"; then rm -f -- "$tmp"; return 1; fi
+  else
+    # bash -n, a assinatura do cabeçalho e a última linha: uma página de erro ou um arquivo cortado
+    # nunca substituem o script
+    if ! passo "${T[atu_baixa]}" sh -c 'curl -fsSL "$1" -o "$2" && bash -n "$2" && grep -q "GrabIt (grabit.sh)" "$2" && [ "$(tail -n 1 "$2")" = "exit 0" ]' _ "$URL_SCRIPT" "$tmp"; then
+      rm -f -- "$tmp"
+      return 1
+    fi
+    if cmp -s "$tmp" "$GRABIT_SCRIPT"; then
+      printf '    %s\n' "${T[atu_igual]}"; rm -f -- "$tmp"
+      return 1
+    fi
   fi
   # arquivo novo no lugar (mv), com as permissões do antigo: o GrabIt em execução
   # continua lendo o arquivo velho, sem tropeçar no meio da troca
   modo=$(stat -c %a -- "$GRABIT_SCRIPT" 2>/dev/null || stat -f %Lp -- "$GRABIT_SCRIPT" 2>/dev/null)
-  chmod "${modo:-755}" "$tmp" && mv -f -- "$tmp" "$GRABIT_SCRIPT" && printf '    %s\n' "${T[atu_trocado]}"
+  chmod "${modo:-755}" "$tmp" && mv -f -- "$tmp" "$GRABIT_SCRIPT" && printf '    %s\n' "${T[atu_trocado]}" || return 1
+  if (( estavel )); then
+    printf '    %s → %s\n' "$GRABIT_VERSAO" "$VER_PUB"
+    if notas=$(mktemp "${TMPDIR:-/tmp}/grabit.XXXXXX"); then
+      curl -fsSL -m 15 "$URL_PUB/download/CHANGELOG.md" -o "$notas" 2>/dev/null && mostra_novidades "$GRABIT_VERSAO" "$notas"
+      rm -f -- "$notas"
+    fi
+  fi
+  return 0
 }
 
 # O yt-dlp, pelo caminho por onde foi instalado: pipx; pip (o Python do "#!" do próprio
