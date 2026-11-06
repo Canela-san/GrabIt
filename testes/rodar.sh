@@ -660,7 +660,8 @@ espera "um link que sumiu (404) não apaga a memória do site" contem "$M" "sumi
 secao "Distribuição entre os sites"
 D="$TMP/freio"; mkdir -p "$D"; cd "$D" || exit 1
 export STUB_CONC="$TMP/conc"
-primeiros() { grep -oE -- '-- http://[a-z0-9]+\.invalid/[0-9]+' "$STUB_LOG" | head -n "$1" | sed 's/^-- http:..//' | tr '\n' ' '; }
+# Quem começou primeiro, em ordem alfabética: os downloads saem juntos e a ordem no log é uma corrida
+primeiros() { grep -oE -- '-- http://[a-z0-9]+\.invalid/[0-9]+' "$STUB_LOG" | head -n "$1" | sed 's/^-- http:..//' | sort | tr '\n' ' '; }
 falso z0 -L pt http://y.invalid/1 http://y.invalid/2 http://y.invalid/3 http://y.invalid/4 http://y.invalid/5
 espera "4 downloads ao mesmo tempo por padrão" contem z0 "4 vídeo(s)"
 : > "$STUB_LOG"
@@ -669,8 +670,8 @@ espera "as vagas se espalham entre os sites, mesmo com os links juntos na lista"
 espera "…sem perder a ordem dentro de cada site" test "$(primeiros 5 | tr ' ' '\n' | grep -c '^a')" -eq 3
 espera "…e o cabeçalho conta os sites" contem z2 "3 sites"
 : > "$STUB_LOG"
-falso z3 -L pt -j 2 http://k.invalid/1 http://j.invalid/1 http://j.invalid/2 http://j.invalid/3
-espera "no empate, vai primeiro o site com mais links esperando" test "$(primeiros 2)" = "j.invalid/1 k.invalid/1 "
+falso z3 -L pt -j 1 http://k.invalid/1 http://j.invalid/1 http://j.invalid/2 http://j.invalid/3
+espera "no empate, vai primeiro o site com mais links esperando" test "$(primeiros 1)" = "j.invalid/1 "
 
 secao "Ritmo por site"
 : > "$STUB_CONC"
