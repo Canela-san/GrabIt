@@ -37,3 +37,48 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" grabit.sh grabit.sh.sha256 CHANGELOG.md \
             --title "GrabIt ${GITHUB_REF_NAME#v}" --notes-file notas.md
+
+  pacotes:
+    needs: publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - name: Atualiza a fórmula do Homebrew e o PKGBUILD
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          v=${TAG#v}
+          curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/grabit.sh" -o /tmp/grabit.sh
+          curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$TAG/LICENSE" -o /tmp/LICENSE
+          s=$(sha256sum /tmp/grabit.sh | cut -d' ' -f1)
+          l=$(sha256sum /tmp/LICENSE | cut -d' ' -f1)
+          sed -i -E "s|download/v[0-9.]+/grabit.sh|download/$TAG/grabit.sh|; s|^  version \".*|  version \"$v\"|; s|^  sha256 \".*|  sha256 \"$s\"|" Formula/grabit.rb
+          sed -i -E "s|^pkgver=.*|pkgver=$v|; s|^pkgrel=.*|pkgrel=1|; s|^sha256sums=\('[0-9a-f]+'|sha256sums=('$s'|; s|^( +)'[0-9a-f]{64}'\)|\1'$l')|" packaging/aur/PKGBUILD
+          sed -i -E "s|(pkgver = ).*|\1$v|; s|(pkgrel = ).*|\11|; s|grabit-[0-9.]+\.sh::|grabit-$v.sh::|; s|LICENSE-[0-9.]+::|LICENSE-$v::|; s|download/v[0-9.]+/|download/$TAG/|; s|GrabIt/v[0-9.]+/LICENSE|GrabIt/$TAG/LICENSE|" packaging/aur/.SRCINFO
+          awk -v s="$s" -v l="$l" '/sha256sums = / { n++; print "\tsha256sums = " (n == 1 ? s : l); next } { print }' packaging/aur/.SRCINFO > /tmp/srcinfo && cp /tmp/srcinfo packaging/aur/.SRCINFO
+      - name: Grava na main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git diff --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Pacotes: $TAG"
+          git push origin HEAD:main
+
+  homebrew:
+    needs: pacotes
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Instala pelo Homebrew e confere
+        run: |
+          brew tap "${GITHUB_REPOSITORY%%/*}/grabit" "https://github.com/$GITHUB_REPOSITORY"
+          brew install grabit
+          grabit -L en -h | grep -q "Usage:"
+          brew test grabit

@@ -1,0 +1,28 @@
+# Maintainer: Gabriel Canela (Canela-san)
+pkgname=grabit
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Batch video downloader on top of yt-dlp, always at the highest quality'
+arch=('any')
+url='https://github.com/Canela-san/GrabIt'
+license=('MIT')
+depends=('bash' 'curl' 'ffmpeg' 'yt-dlp')
+optdepends=('aria2: direct files over several connections'
+            'deno: JavaScript runtime that YouTube needs for the best resolutions'
+            'python-curl-cffi: impersonate a browser when a site blocks automatic downloads'
+            'wl-clipboard: capture copied links on Wayland'
+            'xclip: capture copied links on X11'
+            'firefox: pages that only work in a browser')
+source=("grabit-$pkgver.sh::https://github.com/Canela-san/GrabIt/releases/download/v$pkgver/grabit.sh"
+        "LICENSE-$pkgver::https://raw.githubusercontent.com/Canela-san/GrabIt/v$pkgver/LICENSE")
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000'
+            '0000000000000000000000000000000000000000000000000000000000000001')
+
+package() {
+  install -Dm755 "grabit-$pkgver.sh" "$pkgdir/usr/bin/grabit"
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  export GRABIT_CONFIG=/dev/null
+  bash "grabit-$pkgver.sh" -L en completar bash | install -Dm644 /dev/stdin "$pkgdir/usr/share/bash-completion/completions/grabit"
+  bash "grabit-$pkgver.sh" -L en completar zsh | install -Dm644 /dev/stdin "$pkgdir/usr/share/zsh/site-functions/_grabit"
+  bash "grabit-$pkgver.sh" -L en completar fish | install -Dm644 /dev/stdin "$pkgdir/usr/share/fish/vendor_completions.d/grabit.fish"
+}

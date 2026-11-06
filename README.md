@@ -43,6 +43,16 @@ cd GrabIt
 bash grabit.sh --instalar
 ```
 
+Ou, sem o Git, só a versão publicada mais nova:
+
+```bash
+mkdir -p ~/.local/share/grabit
+curl -fsSL https://github.com/Canela-san/GrabIt/releases/latest/download/grabit.sh -o ~/.local/share/grabit/grabit.sh
+bash ~/.local/share/grabit/grabit.sh --instalar
+```
+
+No macOS, pelo Homebrew: `brew tap Canela-san/grabit https://github.com/Canela-san/GrabIt && brew install grabit`. No Arch Linux, há um `PKGBUILD` em [`packaging/aur`](packaging/README.md).
+
 O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer coisa. O indispensável é o FFmpeg e o yt-dlp, pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, e o comando `grabit` em `~/.local/bin`. O que só melhora o que o GrabIt consegue fazer é perguntado, um por um:
 
 | Opcional | Para quê | Se você só apertar Enter |

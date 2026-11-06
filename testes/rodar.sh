@@ -905,6 +905,24 @@ HOME="$D/casa" XDG_DATA_HOME="$D/casa/dados" PATH="$D/semfish:$STUB:$GBREW:$TMP/
 espera "o instalar põe o autocompletar no lugar" test -f casa/.config/fish/completions/grabit.fish -a -f casa/dados/bash-completion/completions/grabit
 espera "…e avisa" contem b4 "Autocompletar instalado"
 
+secao "Pacotes"
+if [[ -f $RAIZ/packaging/aur/PKGBUILD ]]; then
+  espera "o PKGBUILD é um script válido" bash -n "$RAIZ/packaging/aur/PKGBUILD"
+  espera "…e usa o comando de autocompletar que existe" grep -q 'completar fish' "$RAIZ/packaging/aur/PKGBUILD"
+  if command -v ruby >/dev/null 2>&1; then espera "a fórmula do Homebrew é Ruby válido" ruby -c "$RAIZ/Formula/grabit.rb"; fi
+  # os dois caminhos, por dentro do script: quem instala por pacote guarda a configuração na pasta pessoal
+  D="$TMP/pacote"; mkdir -p "$D/usr/Cellar/grabit/1.0.0/bin" "$D/casa"; cd "$D" || exit 1
+  cp "$G" usr/Cellar/grabit/1.0.0/bin/grabit
+  env -u GRABIT_CONFIG HOME="$D/casa" XDG_CONFIG_HOME= bash usr/Cellar/grabit/1.0.0/bin/grabit -L pt --config > k1 2>&1
+  espera "pelo Homebrew: a configuração fica na pasta pessoal" test -f casa/.config/grabit/grabit.config
+  espera "…e não na pasta da versão" test ! -e usr/Cellar/grabit/1.0.0/bin/grabit.config
+  HOME="$D/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" bash usr/Cellar/grabit/1.0.0/bin/grabit -L pt update > k2 2>&1
+  espera "…e o update aponta para o Homebrew" contem k2 "brew upgrade grabit"
+  espera "…sem mexer no script" cmp -s usr/Cellar/grabit/1.0.0/bin/grabit "$G"
+  HOME="$D/casa" PATH="$STUB:$PATH" bash usr/Cellar/grabit/1.0.0/bin/grabit -L pt desinstalar -y > k3 2>&1
+  espera "…e o desinstalar também" contem k3 "brew uninstall grabit"
+fi
+
 secao "Filtros"
 D="$TMP/filtros"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
