@@ -307,6 +307,22 @@ grabit --config                   # show the values in use and where each one ca
 
 The file stays out of Git (`.gitignore`), so updating GrabIt never touches your settings. To go back to the defaults, just delete it: it's recreated.
 
+### Per-site profiles
+
+A section named after the site, at the end of `grabit.config`, applies only to its links:
+
+```ini
+[youtube.com]
+RESOLUCAO_MAXIMA=1080
+COOKIES_NAVEGADOR=firefox
+
+[cnbr.space]
+CONEXOES_POR_VIDEO=1
+PAUSA_ENTRE_VIDEOS=3
+```
+
+These work: `RESOLUCAO_MAXIMA`, `COOKIES_NAVEGADOR`, `USER_AGENT`, `LIMITE_VELOCIDADE`, `CONEXOES_POR_VIDEO`, `LIMITE_POR_SITE`, `PAUSA_ENTRE_VIDEOS`, `IDIOMAS_LEGENDAS` and `OPCOES_YTDLP`. An option on the command beats the profile, and `-F` ignores its limits. `grabit --config` shows the profiles in use.
+
 ### Maximum resolution
 
 Want to save space? With `RESOLUCAO_MAXIMA=1080` GrabIt downloads the **best version up to 1080p** of each video — still picking the best codec, frame rate and audio within the limit. The limit applies to the shorter side of the picture, so a 1080×1920 vertical video counts as 1080p. If a video has no version within the limit, it isn't downloaded: it shows up as a failure, with a notice, and goes to `links_falhos.txt`.

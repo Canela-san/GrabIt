@@ -947,6 +947,9 @@ HIST_DO_AMBIENTE=${ARQUIVO_HISTORICO:+1}
 ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
 CONFIG_CRIADO=0; AVISOS_CONFIG=(); N_AJUSTES_CONFIG=0
+# Perfis por site: uma seção [youtube.com] no grabit.config vale só para os links desse site
+declare -A PERFIL=()
+CHAVES_SITE=" RESOLUCAO_MAXIMA COOKIES_NAVEGADOR USER_AGENT LIMITE_VELOCIDADE CONEXOES_POR_VIDEO LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS IDIOMAS_LEGENDAS OPCOES_YTDLP "
 
 # em_bytes_filtro 2G → NUM
 em_bytes_filtro() {
@@ -957,21 +960,40 @@ em_bytes_filtro() {
   NUM=$(awk -v v="$v" -v m="$m" 'BEGIN { printf "%d", v * m }')
 }
 
+site_de() {
+  local h=${1#*://}
+  h=${h%%[/?#]*}; h=${h##*@}; h=${h%%:*}; h=${h,,}
+  # Vira chave de tabelas do Bash: um link de fora (a captura -C lê o que vier) não pode levar
+  # nada além de um nome de site, ou "$(…)" num link acabaria executado.
+  h=${h//[!a-z0-9.-]/_}
+  [[ $h == youtu.be ]] && h=youtube.com
+  if [[ $h =~ ([^.]+\.(com|co|net|org|gov|edu|ac)\.[a-z]{2})$ ]]; then h=${BASH_REMATCH[1]}
+  elif [[ $h =~ ([^.]+\.[^.]+)$ ]]; then h=${BASH_REMATCH[1]}; fi
+  FMT=${h:-?}
+}
+
 # carrega_config: lê CHAVE=valor do grabit.config (sem executar nada do arquivo). Valores
 # podem vir entre aspas; "# comentário" no fim da linha é ignorado.
 carrega_config() {
-  local linha chave valor n=0
+  local linha chave valor n=0 secao=""
   [[ -f $CONFIG_ARQ && -r $CONFIG_ARQ ]] || return 0
   while IFS= read -r linha || [[ -n $linha ]]; do
     n=$(( n + 1 ))
     linha=${linha%$'\r'}
     [[ $linha =~ ^[[:space:]]*(#|$) ]] && continue
+    if [[ $linha =~ ^[[:space:]]*\[([^]]+)\][[:space:]]*(#.*)?$ ]]; then
+      site_de "https://${BASH_REMATCH[1]}/"; secao=$FMT
+      continue
+    fi
     if [[ $linha =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
       chave=${BASH_REMATCH[1]}; valor=${BASH_REMATCH[2]}
       valor=${valor%%[[:space:]]#*}
       valor=${valor%"${valor##*[![:space:]]}"}
       if [[ $valor == \"*\" || $valor == \'*\' ]] && (( ${#valor} >= 2 )); then valor=${valor:1:-1}; fi
-      if [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
+      if [[ -n $secao ]]; then
+        if [[ $CHAVES_SITE == *" $chave "* ]]; then PERFIL["$secao|$chave"]=$valor
+        else AVISOS_CONFIG+=("$n: [$secao] $chave"); fi
+      elif [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
         printf -v "$chave" '%s' "$valor"; ORIGEM[$chave]=config
         N_AJUSTES_CONFIG=$(( N_AJUSTES_CONFIG + 1 ))
       else
@@ -1268,6 +1290,7 @@ idioma_pt() {
     [sim_ja]="Já baixados"
     [sim_nada]="Nada foi baixado nem alterado. Para baixar, rode o mesmo comando sem --simular."
     [sim_sem_espaco]="Pode não caber: há só %s livres no disco."
+    [val_perfil]="[%s] %s: valor inválido (%s): esse ajuste não vale."
     [cmd_desconhecido]="Comando desconhecido: %s."
     [cmd_sugestao]="     Você quis dizer:  grabit %s"
     [des_titulo]="GrabIt · desinstalação"
@@ -1700,6 +1723,13 @@ EOF
 # nome difícil de adivinhar e coloque-o aqui (ou a URL completa de um servidor seu).
 # Vai só o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
 #NTFY_TOPICO=
+
+# Perfis por site: uma seção com o nome do site vale só para os links dele, e fica no fim deste arquivo.
+# Valem: RESOLUCAO_MAXIMA, COOKIES_NAVEGADOR, USER_AGENT, LIMITE_VELOCIDADE, CONEXOES_POR_VIDEO,
+# LIMITE_POR_SITE, PAUSA_ENTRE_VIDEOS, IDIOMAS_LEGENDAS e OPCOES_YTDLP. Uma opção no comando vence o perfil.
+#[youtube.com]
+#RESOLUCAO_MAXIMA=1080
+#COOKIES_NAVEGADOR=firefox
 EOF
 )
 }
@@ -1932,6 +1962,7 @@ idioma_en() {
     [sim_ja]="Already downloaded"
     [sim_nada]="Nothing was downloaded or changed. To download, run the same command without --simulate."
     [sim_sem_espaco]="It may not fit: only %s free on the disk."
+    [val_perfil]="[%s] %s: invalid value (%s): this setting doesn't apply."
     [cmd_desconhecido]="Unknown command: %s."
     [cmd_sugestao]="     Did you mean:  grabit %s"
     [des_titulo]="GrabIt · uninstall"
@@ -2370,6 +2401,13 @@ EOF
 # topic with a hard-to-guess name and put it here (or the full URL of your own server).
 # Only the summary goes out (how many downloaded and how many failed), never links or titles.
 #NTFY_TOPICO=
+
+# Per-site profiles: a section named after the site applies only to its links, and goes at the end of this
+# file. These work: RESOLUCAO_MAXIMA, COOKIES_NAVEGADOR, USER_AGENT, LIMITE_VELOCIDADE, CONEXOES_POR_VIDEO,
+# LIMITE_POR_SITE, PAUSA_ENTRE_VIDEOS, IDIOMAS_LEGENDAS and OPCOES_YTDLP. An option on the command beats the profile.
+#[youtube.com]
+#RESOLUCAO_MAXIMA=1080
+#COOKIES_NAVEGADOR=firefox
 EOF
 )
 }
@@ -2732,6 +2770,20 @@ if ! [[ $FILTRO_TAMANHO =~ ^(0|[0-9]+(\.[0-9]+)?[KMGT]?)$ ]]; then
   origem_txt FILTRO_TAMANHO; t val_tamanho FILTRO_TAMANHO "$FILTRO_TAMANHO" "$FMT"; erro "$TXT"
   exit 2
 fi
+# Os valores dos perfis, como os do resto da configuração. O que estiver errado vira aviso e não vale.
+for k in "${!PERFIL[@]}"; do
+  v=${PERFIL[$k]}; ok=1
+  case ${k#*|} in
+    RESOLUCAO_MAXIMA)
+      case ${v,,} in 4k) v=2160 ;; 8k) v=4320 ;; *) if [[ ${v,,} =~ ^([0-9]{1,5})p?$ ]]; then v=$(( 10#${BASH_REMATCH[1]} )); else ok=0; fi ;; esac ;;
+    CONEXOES_POR_VIDEO) [[ $v =~ ^[1-9][0-9]*$ ]] || ok=0 ;;
+    LIMITE_POR_SITE|PAUSA_ENTRE_VIDEOS) [[ $v =~ ^[0-9]+$ ]] || ok=0 ;;
+    LIMITE_VELOCIDADE) [[ $v =~ ^(0|[0-9]+(\.[0-9]+)?[KkMmGg]?)$ ]] || ok=0; v=${v^^} ;;
+  esac
+  if (( ok )); then PERFIL[$k]=$v
+  else t val_perfil "${k%%|*}" "${k#*|}" "$v"; aviso "$TXT"; unset "PERFIL[$k]"; fi
+done
+unset k v ok
 case ${CANAL_ATUALIZACAO,,} in
   estavel|estável|stable|"") CANAL_ATUALIZACAO=estavel ;;
   main|dev)                  CANAL_ATUALIZACAO=main ;;
@@ -2766,6 +2818,12 @@ mostra_config() {
     pad=""; (( ${#v} < 22 )) && printf -v pad '%*s' $(( 22 - ${#v} )) ''   # por caracteres: "—" ocupa 3 bytes
     printf '  %-22s %s%s%s%s %s%s%s\n' "$k" "$NEG" "$v" "$R" "$pad" "$DIM" "$FMT" "$R"
   done
+  if (( ${#PERFIL[@]} )); then
+    printf '\n'
+    while IFS= read -r k; do
+      printf '  %-22s %s%s%s %s[%s]%s\n' "${k#*|}" "$NEG" "${PERFIL[$k]}" "$R" "$DIM" "${k%%|*}" "$R"
+    done < <(printf '%s\n' "${!PERFIL[@]}" | sort)
+  fi
   for v in "${AVISOS_CONFIG[@]}"; do t cfg_linha "${v%%:*}" "${v#*:}"; aviso "$TXT"; done
   printf '\n'
 }
@@ -3582,6 +3640,7 @@ lanca_job() {                                 # lanca_job IDX
     (( ${REBAIXAR[$i]:-0} )) && GRABIT_RETOMAR=""   # o que veio da última vez estava estragado
     export GRABIT_SONDAR GRABIT_RETOMAR
   fi
+  perfil_args "${SITE[$i]}"; extra+=("${ARGS_PERFIL[@]}"); LIM_JOB=$LIM_PERFIL
   read -ra ajuste <<<"${AJUSTES[$i]:-}"
   extra+=("${ajuste[@]}")
   # Playlist e canal viram dezenas de pedidos seguidos ao mesmo site, num processo só
@@ -3626,7 +3685,7 @@ lanca_job() {                                 # lanca_job IDX
 # baixa_link URL [OPÇÕES EXTRAS…]: roda em segundo plano, com a saída indo para o log.
 # Com -u, antes descobre qual é o vídeo principal da página e pede só ele.
 baixa_link() {
-  local url=$1 escolha=() marca arq_site fmts cmd yt rc lim=$RESOLUCAO_MAXIMA
+  local url=$1 escolha=() marca arq_site fmts cmd yt rc lim=${LIM_JOB:-$RESOLUCAO_MAXIMA}
   shift
   if (( UPGRADE )); then upgrade_link "$url" "$@"; exit $?; fi
   if (( SO_PRINCIPAL )); then
@@ -3890,6 +3949,7 @@ site_pode_comecar() {
   (( SECONDS >= ${PROX_INICIO_SITE[$s]:-0} )) || return 1
   (( FORCAR && ! ${BLOQ_SITE[$s]:-0} )) && lim=$J_ALVO
   (( LIMITE_POR_SITE > 0 && LIMITE_POR_SITE < lim )) && lim=$LIMITE_POR_SITE
+  if perfil_de "$s" LIMITE_POR_SITE && (( FMT > 0 && FMT < lim )); then lim=$FMT; fi
   (( at < lim )) || return 1
   nivel_previsto "${FILA_CAB[$s]}"
   (( NUM < 2 )) || [[ ! -d $TMP/navegador.trava ]]
@@ -3901,10 +3961,11 @@ site_pode_comecar() {
 # não vira um monte de conexões abertas nele. -F dispensa esse teto, mas não o pedido do site.
 conexoes_do_job() {
   local i=$1 s=${SITE[$1]} n=$CONEXOES_POR_VIDEO teto
+  perfil_de "$s" CONEXOES_POR_VIDEO && n=$FMT
   if (( ${BLOQ_SITE[$s]:-0} || ${UMA_CONEXAO[$s]:-0} )) || [[ ${AJUSTES[$i]:-} == *"-N 1"* ]]; then
     n=1
   elif (( ! FORCAR )); then
-    teto=$(( CONEXOES_POR_VIDEO * 2 ))
+    teto=$(( n * 2 ))
     (( ${CONEX_SITE[$s]:-0} + n > teto )) && n=$(( teto - ${CONEX_SITE[$s]:-0} ))
     (( n < 1 )) && n=1
   fi
@@ -4124,17 +4185,6 @@ nivel_do_link() {
 
 # site_de URL → FMT: o site do link, para o limite por site (www.youtube.com,
 # m.youtube.com e youtu.be contam todos como youtube.com)
-site_de() {
-  local h=${1#*://}
-  h=${h%%[/?#]*}; h=${h##*@}; h=${h%%:*}; h=${h,,}
-  # Vira chave de tabelas do Bash: um link de fora (a captura -C lê o que vier) não pode levar
-  # nada além de um nome de site, ou "$(…)" num link acabaria executado.
-  h=${h//[!a-z0-9.-]/_}
-  [[ $h == youtu.be ]] && h=youtube.com
-  if [[ $h =~ ([^.]+\.(com|co|net|org|gov|edu|ac)\.[a-z]{2})$ ]]; then h=${BASH_REMATCH[1]}
-  elif [[ $h =~ ([^.]+\.[^.]+)$ ]]; then h=${BASH_REMATCH[1]}; fi
-  FMT=${h:-?}
-}
 
 # ───── Teclas no painel: p pausa/continua · q termina depois dos atuais (de novo: cancela)
 # ───── + e - mudam quantos downloads rodam ao mesmo tempo
@@ -4937,15 +4987,20 @@ prepara_aria() {
     chmod +x "$TMP/aria/aria2c" && ARIA="$TMP/aria/aria2c"
 }
 
-monta_args_ytdlp() {
-  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd qualidade=() opcoes=() capa=() ordem=""
+# formato_ate ALTURA → FORMATO: com limite, vale o lado menor da imagem: a altura em vídeos deitados e a
+# largura nos verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
+formato_ate() {
+  local n=$1
   FORMATO='bv*+ba/b'
-  # Com limite, vale o lado menor da imagem: a altura em vídeos deitados e a largura nos
-  # verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
   if (( n > 0 )); then
     FORMATO="(bv*[height<=?$n][aspect_ratio>=?1]/bv*[width<=?$n][aspect_ratio<1])+ba"
     FORMATO+="/b[height<=?$n][aspect_ratio>=?1]/b[width<=?$n][aspect_ratio<1]"
   fi
+}
+
+monta_args_ytdlp() {
+  local langs=$IDIOMAS_LEGENDAS cmd qualidade=() opcoes=() capa=() ordem=""
+  formato_ate "$RESOLUCAO_MAXIMA"
   # "all" incluiria o chat ao vivo: um JSON enorme que nem dá para embutir
   [[ ,$langs, == *,all,* && $langs != *live_chat* ]] && langs+=",-live_chat"
   if (( SO_AUDIO )); then
@@ -5056,8 +5111,35 @@ monta_args_ytdlp() {
   return 0
 }
 
-# perfil_args SITE → ARGS_PERFIL: as opções do yt-dlp que valem só para este site
-perfil_args() { ARGS_PERFIL=(); }
+# perfil_de SITE CHAVE → FMT: o valor do perfil do site. Uma opção no comando vence, e o -F ignora os limites.
+perfil_de() {
+  FMT=${PERFIL["$1|$2"]:-}
+  [[ -n $FMT ]] || return 1
+  if [[ ${ORIGEM[$2]:-} == opção ]]; then FMT=""; return 1; fi
+  if (( FORCAR )); then
+    case $2 in RESOLUCAO_MAXIMA|LIMITE_POR_SITE|PAUSA_ENTRE_VIDEOS|LIMITE_VELOCIDADE) FMT=""; return 1 ;; esac
+  fi
+}
+
+# perfil_args SITE → ARGS_PERFIL e LIM_PERFIL: as opções do yt-dlp que valem só para este site. Elas vêm
+# depois das outras: no yt-dlp, vale a última.
+perfil_args() {
+  local s=$1 opcoes=() f=$FORMATO
+  ARGS_PERFIL=(); LIM_PERFIL=$RESOLUCAO_MAXIMA
+  (( ${#PERFIL[@]} )) || return 0
+  if perfil_de "$s" RESOLUCAO_MAXIMA && (( ! SO_AUDIO )); then
+    LIM_PERFIL=$FMT; formato_ate "$FMT"; ARGS_PERFIL+=(-f "$FORMATO"); FORMATO=$f
+  fi
+  perfil_de "$s" COOKIES_NAVEGADOR && ARGS_PERFIL+=(--cookies-from-browser "$FMT")
+  perfil_de "$s" USER_AGENT && ARGS_PERFIL+=(--user-agent "$FMT")
+  if perfil_de "$s" LIMITE_VELOCIDADE && [[ $FMT != 0 ]]; then ARGS_PERFIL+=(--limit-rate "$FMT"); fi
+  perfil_de "$s" IDIOMAS_LEGENDAS && ARGS_PERFIL+=(--sub-langs "$FMT")
+  if perfil_de "$s" PAUSA_ENTRE_VIDEOS && (( FMT > 0 )); then
+    ARGS_PERFIL+=(--sleep-interval "$FMT" --max-sleep-interval $(( FMT * 3 / 2 )))
+  fi
+  if perfil_de "$s" OPCOES_YTDLP; then read -ra opcoes <<<"$FMT"; ARGS_PERFIL+=("${opcoes[@]}"); fi
+  return 0
+}
 
 # ───────────────────────────── Simulação (--simular) ──────────────────────────
 # Mostra o que seria baixado, sem baixar nem mudar nada: nem a lista, nem o histórico. Consulta um link por

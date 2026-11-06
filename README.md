@@ -304,6 +304,22 @@ grabit --config                   # mostra os valores em uso e de onde veio cada
 
 O arquivo fica fora do Git (`.gitignore`), então atualizar o GrabIt nunca mexe nas suas configurações. Para voltar aos padrões, basta apagá-lo: ele é recriado.
 
+### Perfis por site
+
+Uma seção com o nome do site, no fim do `grabit.config`, vale só para os links dele:
+
+```ini
+[youtube.com]
+RESOLUCAO_MAXIMA=1080
+COOKIES_NAVEGADOR=firefox
+
+[cnbr.space]
+CONEXOES_POR_VIDEO=1
+PAUSA_ENTRE_VIDEOS=3
+```
+
+Valem `RESOLUCAO_MAXIMA`, `COOKIES_NAVEGADOR`, `USER_AGENT`, `LIMITE_VELOCIDADE`, `CONEXOES_POR_VIDEO`, `LIMITE_POR_SITE`, `PAUSA_ENTRE_VIDEOS`, `IDIOMAS_LEGENDAS` e `OPCOES_YTDLP`. Uma opção no comando vence o perfil, e o `-F` ignora os limites dele. `grabit --config` mostra os perfis em uso.
+
 ### Resolução máxima
 
 Quer economizar espaço? Com `RESOLUCAO_MAXIMA=1080` o GrabIt baixa a **melhor versão até 1080p** de cada vídeo — continua escolhendo o melhor codec, fps e áudio dentro do limite. O limite vale para o lado menor da imagem, então um vídeo vertical de 1080×1920 conta como 1080p. Se um vídeo não tiver nenhuma versão dentro do limite, ele não é baixado: aparece como falha, com o aviso, e vai para o `links_falhos.txt`.

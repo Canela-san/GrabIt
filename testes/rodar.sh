@@ -154,7 +154,7 @@ cat > "$STUB/yt-dlp" <<'EOF'
 conf=""; ant=""
 for a in "$@"; do [ "$ant" = --config-locations ] && conf=$a; ant=$a; done
 # (o arquivo de opções entra no log como se viesse na linha de comando)
-if [ -n "$conf" ]; then printf '%s %s\n' "$*" "$(sed 's/"//g' "$conf" | tr '\n' ' ')" >> "$STUB_LOG"
+if [ -n "$conf" ]; then printf '%s %s\n' "$*" "$(sed 's/\\"/@@A@@/g; s/"//g; s/@@A@@/"/g' "$conf" | tr '\n' ' ')" >> "$STUB_LOG"
 else printf '%s\n' "$*" >> "$STUB_LOG"; fi
 case " $* " in
   *" --version "*) echo "${STUB_VER:-2099.01.01}"; exit 0 ;;
@@ -801,6 +801,49 @@ if command -v git >/dev/null 2>&1; then
   espera "…com o script" test -f up2/grabit.sh
 fi
 
+secao "Perfis por site"
+D="$TMP/perfis"; mkdir -p "$D"; cd "$D" || exit 1
+cat > perfil.config <<'EOF'
+RESOLUCAO_MAXIMA=720
+
+[www.p1.invalid]
+RESOLUCAO_MAXIMA=4k
+COOKIES_NAVEGADOR=firefox
+USER_AGENT=Agente/1.0
+LIMITE_VELOCIDADE=5m
+IDIOMAS_LEGENDAS=fr
+PAUSA_ENTRE_VIDEOS=4
+OPCOES_YTDLP=--force-ipv4 --geo-bypass
+
+[p2.invalid]
+RESOLUCAO_MAXIMA=alta
+CHAVE_ERRADA=1
+EOF
+p() { GRABIT_CONFIG="$D/perfil.config" falso "$@"; }
+: > "$STUB_LOG"
+p g1 -L pt http://p1.invalid/1 http://outro.invalid/1
+linha_de() { grep -F -- "$1" "$STUB_LOG"; }
+espera "a resolução do site vale só para ele" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF '[height<=?2160]'"
+espera "…os outros seguem a geral" sh -c "grep -F -- '-- http://outro.invalid/1' '$STUB_LOG' | grep -vqF '[height<=?2160]'"
+espera "os cookies do site" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF -- '--cookies-from-browser firefox'"
+espera "…os outros, não" sh -c "! grep -F -- '-- http://outro.invalid/1' '$STUB_LOG' | grep -qF -- '--cookies-from-browser'"
+espera "o User-Agent" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF -- '--user-agent Agente/1.0'"
+espera "a velocidade" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF -- '--limit-rate 5M'"
+espera "as legendas" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF -- '--sub-langs fr'"
+espera "a pausa" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF -- '--sleep-interval 4 --max-sleep-interval 6'"
+espera "as opções a mais" sh -c "grep -F -- '-- http://p1.invalid/1' '$STUB_LOG' | grep -qF -- '--force-ipv4 --geo-bypass'"
+espera "valor inválido vira aviso" contem g1 "[p2.invalid] RESOLUCAO_MAXIMA"
+espera "chave que não vale em perfil, também" contem g1 "CHAVE_ERRADA"
+: > "$STUB_LOG"
+p g2 -L pt -r 480 http://p1.invalid/2
+espera "uma opção no comando vence o perfil" sh -c "! grep -F -- '-- http://p1.invalid/2' '$STUB_LOG' | grep -qF '[height<=?2160]'"
+: > "$STUB_LOG"
+p g3 -L pt -F http://p1.invalid/3
+espera "-F ignora os limites do perfil" nao_contem "$STUB_LOG" "--limit-rate"
+p g4 -L pt --config
+espera "--config mostra os perfis" grep -qE 'COOKIES_NAVEGADOR +firefox +\[p1.invalid\]' g4
+espera "…e o valor geral fica como estava" grep -qE '^ *RESOLUCAO_MAXIMA +720 ' g4
+
 secao "Filtros"
 D="$TMP/filtros"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
@@ -1180,6 +1223,7 @@ import fcntl, os, pty, select, signal, struct, sys, termios, time
 saida, linhas, roteiro, cmd = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
 pid, fd = pty.fork()
 if pid == 0:
+    signal.signal(signal.SIGINT, signal.SIG_DFL)   # (quem roda em segundo plano herda o Ctrl+C ignorado)
     os.execvp(cmd[0], cmd)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", linhas, 120, 0, 0))
 os.kill(pid, signal.SIGWINCH)
