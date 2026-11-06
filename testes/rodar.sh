@@ -749,7 +749,7 @@ espera "trava de outro GrabIt vivo: espera ele terminar" contem l4.txt "BAIXADOS
 
 secao "Privacidade"
 D="$TMP/privado"; mkdir -p "$D/Downloads/logs/2020-01-01_000000" "$D/Downloads/logs/novo"; cd "$D" || exit 1
-printf 'x\n' > Downloads/logs/2020-01-01_000000/1.log; touch -d 2020-01-02T03:04:05 Downloads/logs/2020-01-01_000000/1.log
+printf 'x\n' > Downloads/logs/2020-01-01_000000/1.log; touch -t 202001020304.05 Downloads/logs/2020-01-01_000000/1.log
 printf 'x\n' > Downloads/logs/novo/1.log
 : > "$STUB_LOG"
 falso c1 -L pt curl 'https://a.invalid/video.m3u8' -H 'Authorization: Bearer s3gredo' -H 'Cookie: a=1'
@@ -1987,13 +1987,13 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "…sem sobrar nada para continuar" test ! -e i1/.parciais
   interrompe ./i2
   # o arquivo muda no site: outra data de modificação, e os pedaços velhos não podem entrar
-  touch -d 2020-01-02T03:04:05 "$W/grande.mp4"
+  touch -t 202001020304.05 "$W/grande.mp4"
   : > "$W/pedidos.log"
   roda r2 -L pt -O -o ./i2 "$B/calmo/grande.mp4"
   espera "o arquivo mudou no site: não continua" nao_contem r2 "continuou de onde parou"
   espera "…baixa de novo, inteiro" test "$(imagens "$(so_um i2 mp4)")" = "$REF"
   interrompe ./i3
-  find i3/.parciais -name '*.aria2' -exec touch -d 2020-01-02T03:04:05 {} +
+  find i3/.parciais -name '*.aria2' -exec touch -t 202001020304.05 {} +
   roda r3 -L pt -O -o ./i3 "$B/curto.mp4"
   espera "guardado há mais de 14 dias: libera o espaço" test ! -e i3/.parciais
   interrompe ./i4

@@ -7261,7 +7261,7 @@ printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
 if [[ -d $PASTA_SAIDA/logs ]]; then
   chmod 700 "$PASTA_SAIDA/logs" 2>/dev/null
   find "$PASTA_SAIDA/logs" -mindepth 1 -type f -mtime +30 -delete 2>/dev/null
-  find "$PASTA_SAIDA/logs" -mindepth 1 -type d -empty -delete 2>/dev/null
+  for d in "$PASTA_SAIDA/logs"/*/; do rmdir "$d" 2>/dev/null; done
 fi
 prepara_parciais
 (( UPGRADE )) && recupera_antigos
