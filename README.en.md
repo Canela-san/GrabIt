@@ -180,6 +180,11 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-F` | force: ignore the `grabit.config` limits and the automatic per-site pace for this run | — |
 | `-y` | with `install`: install everything without asking | — |
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
+| `--proxy URL` | send everything through a proxy: `http://host:8080` or `socks5://host:1080` | — |
+| `--simulate` | show what would be downloaded and its size, without downloading | — |
+| `--since DATE` | only videos since the date (`2026-01-31`) or the age (`7d`, `2w`, `3m`, `1y`) | — |
+| `--max N` | at most N videos per link | — |
+| `--max-size SIZE` | skip files larger than that (`2G`, `500M`) | — |
 | `-A AGENT` | use the browser's User-Agent, along with `-b`, on sites with a check | — |
 | `-p` | if the link is a video inside a playlist, download just the video | — |
 | `-x` | audio only: the best track, in its original format, no re-encoding | — |
@@ -278,6 +283,9 @@ COOKIES_NAVEGADOR=firefox
 | `USAR_NAVEGADOR` | `1` opens a browser when a page only works in one; `0` never opens it | `1` |
 | `PROCURAR_ARQUIVO` | `1` looks for a direct file better than the stream before downloading; `0` doesn't | `1` |
 | `FORMATO_SAIDA` | file format: `mkv`, `mp4`, `webm`, `mov`…, or `original` (as the site delivers it) | `mkv` |
+| `FILTRO_DESDE`, `FILTRO_MAX`, `FILTRO_TAMANHO` | the same as `--since`, `--max` and `--max-size` | — |
+| `PROXY` | send everything through a proxy, including the direct-file search and the browser | — |
+| `CANAL_ATUALIZACAO` | `estavel` (stable): published versions only; `main`: everything that lands in the repository | `estavel` |
 | `CODEC_VIDEO` | re-encodes if the video comes in another codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
 | `QUALIDADE_VIDEO` | quality when re-encoding: `alta` (high), `media` (medium), `baixa` (low) or the CRF number | `alta` |
 | `ACELERACAO_VIDEO` | who re-encodes: `cpu`, `auto`, `nvenc`, `vaapi`, `qsv`, `videotoolbox` | `cpu` |

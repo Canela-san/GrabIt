@@ -163,6 +163,7 @@ case " $* " in
   *" -U "*) echo "yt-dlp is up to date"; exit 0 ;;
 esac
 [ -n "${STUB_AVISO:-}" ] && echo "WARNING: $STUB_AVISO"
+case " $* " in *" --simulate "*) [ -z "${STUB_SIM:-}" ] || printf '%s\n' "$STUB_SIM" ;; esac
 case " $* " in *" --referer "*)                                                       # o 2º degrau da cascata
   [ -z "${STUB_ERRO2:-}" ] || STUB_ERRO=$STUB_ERRO2
   [ -z "${STUB_SO_SEM_REFERER:-}" ] || STUB_ERRO="" ;;
@@ -799,6 +800,50 @@ if command -v git >/dev/null 2>&1; then
   espera "…mas a pasta fica, e ele avisa" contem d3 "continua em"
   espera "…com o script" test -f up2/grabit.sh
 fi
+
+secao "Filtros"
+D="$TMP/filtros"; mkdir -p "$D"; cd "$D" || exit 1
+: > "$STUB_LOG"
+falso f1 -L pt --desde 2026-01-31 --max 5 --max-tamanho 2g http://a.invalid/f1
+espera "--desde vira a data do yt-dlp" contem "$STUB_LOG" "--dateafter 20260131"
+espera "--max" contem "$STUB_LOG" "--max-downloads 5"
+espera "--max-tamanho" contem "$STUB_LOG" "--max-filesize 2G"
+: > "$STUB_LOG"
+falso f2 -L en --since 7d http://a.invalid/f2
+espera "uma idade conta a partir de hoje" contem "$STUB_LOG" "--dateafter today-7days"
+falso f3 -L pt --desde ontem http://a.invalid/f3
+espera "data inválida é recusada" codigo "$RC" 2
+falso f4 -L pt --max-tamanho enorme http://a.invalid/f4
+espera "tamanho inválido é recusado" codigo "$RC" 2
+printf 'http://a.invalid/f5\n' > f5.txt
+STUB_D='[download] Video upload date is not in range 20260131 - 99991231' falso f5 -L pt --desde 2026-01-31 f5.txt
+espera "fora dos filtros: diz isso" contem f5 "fora dos filtros"
+espera "…no resumo também" grep -qE 'Fora dos filtros +1' f5
+espera "…e o link continua na lista, porque não foi baixado" nao_contem f5.txt "BAIXADOS"
+espera "…sem contar como erro" codigo "$RC" 0
+STUB_D='[download] File is larger than max-filesize (9 bytes > 1 bytes). Aborting.' falso f6 -L pt --max-tamanho 1 http://a.invalid/f6
+espera "maior que o limite: também" contem f6 "fora dos filtros"
+
+secao "Simulação"
+D="$TMP/simular"; mkdir -p "$D"; cd "$D" || exit 1
+printf 'http://a.invalid/s1\nhttp://a.invalid/s2\n' > lista.txt; cp lista.txt lista.orig
+: > "$STUB_LOG"
+S=$(printf '\037')
+STUB_SIM="@@S@@Filme um${S}1080${S}30${S}h264${S}aac${S}60${S}1048576${S}0" falso u1 -L pt --simular lista.txt
+espera "mostra o que seria baixado" contem u1 "Filme um"
+espera "…a resolução" contem u1 "1080p"
+espera "…a soma do tamanho" contem u1 "2.0 MiB"
+espera "…e deixa claro que nada foi baixado" contem u1 "Nada foi baixado"
+espera "o yt-dlp só consulta" contem "$STUB_LOG" "--simulate"
+espera "a lista fica como estava" cmp -s lista.txt lista.orig
+espera "…e nenhuma pasta é criada" test ! -e Downloads
+STUB_SIM="@@S@@Sem tamanho${S}720${S}30${S}h264${S}aac${S}100${S}NA${S}8000" falso u2 -L pt --simular http://a.invalid/s3
+espera "sem tamanho informado, estima pelo bitrate" contem u2 "95.3 MiB"
+STUB_D='[download] x: has already been recorded in the archive' falso u3 -L pt --simular http://a.invalid/s4
+espera "o que já foi baixado é contado à parte" grep -qE 'Já baixados +1' u3
+STUB_ERRO='HTTP Error 404: Not Found' falso u4 -L pt --simulate http://a.invalid/s5
+espera "link que não abre: diz, e sai com código 1" codigo "$RC" 1
+espera "…com o motivo" contem u4 "404"
 
 secao "Vídeo passado por engano como lista"
 D="$TMP/nao-lista"; mkdir -p "$D"; cd "$D" || exit 1
@@ -1863,6 +1908,22 @@ espera "…a página é lida por ele" grep -qE '^GET so-pelo-proxy.invalid /dir/
 espera "…e a medição do arquivo direto também: sem ela, ficaria o stream de 360p" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
 kill "$SRV_P" 2>/dev/null
 
+secao "Filtros e simulação, de verdade"
+D="$TMP/d13"; mkdir -p "$D"; cd "$D" || exit 1
+roda g1 -L pt --simular "$B/curto.mp4"
+espera "a simulação mostra o vídeo do site" contem g1 "curto"
+espera "…e nada é baixado" test ! -e Downloads
+roda g2 -L pt --max-tamanho 1K -o ./p "$B/curto.mp4"
+espera "maior que o limite de tamanho: pula, sem erro" codigo "$RC" 0
+espera "…e avisa" contem g2 "fora dos filtros"
+espera "…sem arquivo nenhum" test -z "$(find p -maxdepth 1 -name '*.mkv' -print -quit)"
+if command -v aria2c >/dev/null 2>&1; then
+  roda g3 -L pt -O --max-tamanho 5M -o ./p2 "$B/grande.mp4"
+  espera "com o aria2c também: ele não conhece o limite, mas o GrabIt sim" contem g3 "fora dos filtros"
+  espera "…sem o arquivo" test -z "$(find p2 -maxdepth 1 -name '*.mp4' -print -quit)"
+fi
+
+secao "Verificação da coleção (--verificar)"
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
 roda saida1 -L pt -o ./Col "$B/curto.mp4" "$B/longo.mp4" "$B/res/mestre.m3u8"

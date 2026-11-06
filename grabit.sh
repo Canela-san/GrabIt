@@ -192,6 +192,11 @@ if [[ ${1:-} == --baixa-partes ]]; then
         if [[ $l =~ DL:([0-9.]+[KMGT]?i?B) ]]; then em_bytes "${BASH_REMATCH[1]}"; v=$NUM; fi
         if [[ $l =~ ETA:([0-9hms]+) ]]; then em_segundos "${BASH_REMATCH[1]}"; e=$NUM; fi
         printf '@@P@@%d\x1f%d\x1f%d\x1f%d\x1f\x1f\x1f?\x1f\x1f\x1f\x1f%s\n' "$b" "$t" "$v" "$e" "$nome"
+        # O aria2c não conhece o limite de tamanho: para aqui, e a nova tentativa, pelo yt-dlp, pula o arquivo
+        if (( ${GRABIT_MAX_BYTES:-0} > 0 && t > GRABIT_MAX_BYTES )); then
+          printf '[grabit] lento\n@@R@@%s\n' "aria2c: maior que o limite de tamanho"
+          kill "$$" 2>/dev/null
+        fi
         # Só arquivo grande vale um pedido a mais ao site: o pequeno, se cair, recomeça rápido
         if (( guardar && t >= 52428800 && SECONDS - ini >= 2 )); then
           guardar=0
@@ -896,7 +901,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP PROXY CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP PROXY FILTRO_DESDE FILTRO_MAX FILTRO_TAMANHO CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -923,6 +928,9 @@ COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
 PROXY=                                        # ex.: http://host:8080 ou socks5://host:1080; vale para tudo
+FILTRO_DESDE=                                 # só vídeos desde esta data: 2026-01-31, 7d, 2w, 3m, 1y
+FILTRO_MAX=0                                  # no máximo N vídeos por link (0 = sem limite)
+FILTRO_TAMANHO=0                              # pula arquivos maiores que isto, ex.: 2G ou 500M (0 = sem limite)
 CANAL_ATUALIZACAO=estavel                     # estavel: só versões publicadas; main: tudo o que entra no repositório
 USAR_NAVEGADOR=1                              # 0 = nunca abrir um navegador para achar o vídeo
 PROCURAR_ARQUIVO=1                            # 0 = não procurar um arquivo direto melhor que o stream
@@ -939,6 +947,15 @@ HIST_DO_AMBIENTE=${ARQUIVO_HISTORICO:+1}
 ARQUIVO_HISTORICO="${ARQUIVO_HISTORICO:-}"    # padrão: <pasta de saída>/.grabit-historico.txt
 TEMPLATE_SAIDA='%(title).180B [%(id)s].%(ext)s'
 CONFIG_CRIADO=0; AVISOS_CONFIG=(); N_AJUSTES_CONFIG=0
+
+# em_bytes_filtro 2G → NUM
+em_bytes_filtro() {
+  local v=$1 m=1
+  case $v in
+    *K) m=1024; v=${v%K} ;; *M) m=1048576; v=${v%M} ;; *G) m=1073741824; v=${v%G} ;; *T) m=1099511627776; v=${v%T} ;;
+  esac
+  NUM=$(awk -v v="$v" -v m="$m" 'BEGIN { printf "%d", v * m }')
+}
 
 # carrega_config: lê CHAVE=valor do grabit.config (sem executar nada do arquivo). Valores
 # podem vir entre aspas; "# comentário" no fim da linha é ignorado.
@@ -1240,6 +1257,17 @@ idioma_pt() {
     [val_proxy]="%s: '%s' não é um endereço de proxy. Use http://host:porta ou socks5://host:porta (veio de: %s)."
     [proxy_socks]="Com proxy SOCKS, não há busca por arquivo direto nem várias conexões: o ffprobe e o aria2c não passam por ele."
     [kv_proxy]="Proxy"
+    [val_desde]="%s: use uma data como 2026-01-31 ou uma idade como 7d, 2w, 3m, 1y (veio '%s', de: %s)."
+    [val_tamanho]="%s: use um tamanho como 2G ou 500M (veio '%s', de: %s)."
+    [r_filtrado]="fora dos filtros"
+    [s_filtrados]="Fora dos filtros"
+    [sim_titulo]="GrabIt · simulação: nada será baixado"
+    [sim_resumo]="Simulação"
+    [sim_baixaria]="Seriam baixados"
+    [sim_tamanho]="Tamanho estimado"
+    [sim_ja]="Já baixados"
+    [sim_nada]="Nada foi baixado nem alterado. Para baixar, rode o mesmo comando sem --simular."
+    [sim_sem_espaco]="Pode não caber: há só %s livres no disco."
     [cmd_desconhecido]="Comando desconhecido: %s."
     [cmd_sugestao]="     Você quis dizer:  grabit %s"
     [des_titulo]="GrabIt · desinstalação"
@@ -1461,6 +1489,11 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -A AGENTE     usa o User-Agent do navegador, junto com -b, em sites com verificação
   --proxy URL   passa tudo por um proxy: http://host:8080 ou socks5://host:1080
+  --simular     mostra o que seria baixado e quanto ocupa, sem baixar nada
+  --desde DATA  só vídeos desde a data: 2026-01-31, ou a idade: 7d, 2w, 3m, 1y
+  --max N       no máximo N vídeos por link
+  --max-tamanho TAM
+                pula arquivos maiores que isso, ex.: 2G ou 500M
   -p            só o vídeo, se o link tiver vídeo + playlist
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
   -x            só o áudio (a melhor faixa, sem recomprimir)
@@ -1625,6 +1658,13 @@ EOF
 
 # Opções a mais para o yt-dlp, separadas por espaços. Ex.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
+
+# Filtros: só vídeos desde uma data (--desde: 2026-01-31, ou a idade: 7d, 2w, 3m, 1y), no máximo N
+# vídeos por link (--max) e pular arquivos maiores que um tamanho (--max-tamanho: 2G, 500M). O que fica
+# de fora não conta como baixado: o link continua na lista.
+#FILTRO_DESDE=
+#FILTRO_MAX=0
+#FILTRO_TAMANHO=0
 
 # Por onde o "grabit update" atualiza o GrabIt: estavel, só as versões publicadas, que passaram por
 # todos os testes; ou main, tudo o que entra no repositório, assim que entra.
@@ -1881,6 +1921,17 @@ idioma_en() {
     [val_proxy]="%s: '%s' is not a proxy address. Use http://host:port or socks5://host:port (from: %s)."
     [proxy_socks]="With a SOCKS proxy there is no direct-file search or multiple connections: ffprobe and aria2c cannot go through it."
     [kv_proxy]="Proxy"
+    [val_desde]="%s: use a date like 2026-01-31 or an age like 7d, 2w, 3m, 1y (got '%s', from: %s)."
+    [val_tamanho]="%s: use a size like 2G or 500M (got '%s', from: %s)."
+    [r_filtrado]="outside the filters"
+    [s_filtrados]="Outside the filters"
+    [sim_titulo]="GrabIt · simulation: nothing will be downloaded"
+    [sim_resumo]="Simulation"
+    [sim_baixaria]="Would download"
+    [sim_tamanho]="Estimated size"
+    [sim_ja]="Already downloaded"
+    [sim_nada]="Nothing was downloaded or changed. To download, run the same command without --simulate."
+    [sim_sem_espaco]="It may not fit: only %s free on the disk."
     [cmd_desconhecido]="Unknown command: %s."
     [cmd_sugestao]="     Did you mean:  grabit %s"
     [des_titulo]="GrabIt · uninstall"
@@ -2102,6 +2153,11 @@ Usage:  grabit [options] [LINK or FILE ...]
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -A AGENT      use the browser's User-Agent, along with -b, on sites with a check
   --proxy URL   send everything through a proxy: http://host:8080 or socks5://host:1080
+  --simulate    show what would be downloaded and its size, without downloading
+  --since DATE  only videos since the date: 2026-01-31, or the age: 7d, 2w, 3m, 1y
+  --max N       at most N videos per link
+  --max-size SIZE
+                skip files larger than that, e.g. 2G or 500M
   -p            only the video, when the link is video + playlist
   -u            only the main video (the longest) of pages with several videos
   -x            audio only (the best track, no re-encoding)
@@ -2272,6 +2328,13 @@ EOF
 # Extra options for yt-dlp, separated by spaces. E.g.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
 
+# Filters: only videos since a date (--since: 2026-01-31, or the age: 7d, 2w, 3m, 1y), at most N videos
+# per link (--max) and skip files larger than a size (--max-size: 2G, 500M). What stays out doesn't count
+# as downloaded: the link stays on the list.
+#FILTRO_DESDE=
+#FILTRO_MAX=0
+#FILTRO_TAMANHO=0
+
 # Where "grabit update" gets GrabIt from: estavel (stable), only published versions, which passed all
 # the tests; or main, everything that lands in the repository, as soon as it does.
 #CANAL_ATUALIZACAO=estavel
@@ -2381,7 +2444,7 @@ sugere_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0
 while (( $# )); do
   a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
@@ -2390,6 +2453,18 @@ while (( $# )); do
     --yes|--sim) ASSUME_SIM=1 ;;
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
+    --simular|--simulate|--dry-run) SIMULAR=1 ;;
+    --desde=*|--since=*) FILTRO_DESDE=${a#*=}; ORIGEM[FILTRO_DESDE]=opção ;;
+    --max=*) FILTRO_MAX=${a#*=}; ORIGEM[FILTRO_MAX]=opção ;;
+    --max-tamanho=*|--max-size=*) FILTRO_TAMANHO=${a#*=}; ORIGEM[FILTRO_TAMANHO]=opção ;;
+    --desde|--since|--max|--max-tamanho|--max-size)
+      (( $# )) || { t opcao_valor "$a"; erro "$TXT"; exit 2; }
+      case $a in
+        --desde|--since) FILTRO_DESDE=$1; ORIGEM[FILTRO_DESDE]=opção ;;
+        --max) FILTRO_MAX=$1; ORIGEM[FILTRO_MAX]=opção ;;
+        *) FILTRO_TAMANHO=$1; ORIGEM[FILTRO_TAMANHO]=opção ;;
+      esac
+      shift ;;
     --gpu|--placa) ACELERACAO_VIDEO=auto; ORIGEM[ACELERACAO_VIDEO]=opção ;;
     --gpu=*|--placa=*) ACELERACAO_VIDEO=${a#*=}; ORIGEM[ACELERACAO_VIDEO]=opção ;;
     --qualidade=*|--quality=*) ARGS_CURTOS+=(-q "${a#*=}") ;;
@@ -2630,6 +2705,33 @@ sem_senha() {
   if [[ $1 =~ ^([^/]*//)[^/@]*@(.*)$ ]]; then FMT="${BASH_REMATCH[1]}•••@${BASH_REMATCH[2]}"; fi
   return 0
 }
+# Os filtros, no formato que o yt-dlp entende. Datas relativas (7d, 2w, 3m, 1y) contam a partir de hoje.
+DATA_YTDLP=""
+if [[ -n $FILTRO_DESDE && $FILTRO_DESDE != 0 ]]; then
+  case ${FILTRO_DESDE,,} in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) DATA_YTDLP=${FILTRO_DESDE//-/} ;;
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9])   DATA_YTDLP=$FILTRO_DESDE ;;
+    *d) DATA_YTDLP="today-${FILTRO_DESDE%?}days" ;;
+    *w) DATA_YTDLP="today-${FILTRO_DESDE%?}weeks" ;;
+    *m) DATA_YTDLP="today-${FILTRO_DESDE%?}months" ;;
+    *y|*a) DATA_YTDLP="today-${FILTRO_DESDE%?}years" ;;
+  esac
+  if ! [[ $DATA_YTDLP =~ ^([0-9]{8}|today-[0-9]+(days|weeks|months|years))$ ]]; then
+    origem_txt FILTRO_DESDE; t val_desde FILTRO_DESDE "$FILTRO_DESDE" "$FMT"; erro "$TXT"
+    exit 2
+  fi
+fi
+[[ -z $FILTRO_MAX ]] && FILTRO_MAX=0
+if ! [[ $FILTRO_MAX =~ ^[0-9]+$ ]]; then
+  origem_txt FILTRO_MAX; t val_inteiro0 FILTRO_MAX "$FILTRO_MAX" "$FMT"; erro "$TXT"
+  exit 2
+fi
+[[ -z $FILTRO_TAMANHO ]] && FILTRO_TAMANHO=0
+FILTRO_TAMANHO=${FILTRO_TAMANHO^^}
+if ! [[ $FILTRO_TAMANHO =~ ^(0|[0-9]+(\.[0-9]+)?[KMGT]?)$ ]]; then
+  origem_txt FILTRO_TAMANHO; t val_tamanho FILTRO_TAMANHO "$FILTRO_TAMANHO" "$FMT"; erro "$TXT"
+  exit 2
+fi
 case ${CANAL_ATUALIZACAO,,} in
   estavel|estável|stable|"") CANAL_ATUALIZACAO=estavel ;;
   main|dev)                  CANAL_ATUALIZACAO=main ;;
@@ -2686,7 +2788,7 @@ ALERTA=$RESOLUCAO_ALERTA
 
 # ───────────────────────────── Estado global ──────────────────────────────────
 J=0; TOTAL=0; COLS=100; TICK=0; LIVE_H=0; CANCELADO=0; SINAL=""; STTY_SAVE=""; TMP=""
-N_OK=0; N_JA=0; N_ERRO=0; N_AVISOS=0; N_FATAIS=0; N_COSMETICOS=0; AVISO_CTX=""; BYTES_NOVOS=0; FINALIZADOS=0; DUPLICADOS=0; INVALIDAS=0
+N_OK=0; N_JA=0; N_FILTRADOS=0; N_ERRO=0; N_AVISOS=0; N_FATAIS=0; N_COSMETICOS=0; AVISO_CTX=""; BYTES_NOVOS=0; FINALIZADOS=0; DUPLICADOS=0; INVALIDAS=0
 VEL_TOTAL=0; EM_REPETICAO=0; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; COMECOU=0
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; JS_RECUSADO=""; JS_CANDIDATOS=(); AVISO_JSC=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
@@ -3375,11 +3477,15 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     n_hist=1                                    # já foi contado: o bloco de baixo não vale
   fi
 
+  local fora_filtro=0
   if (( n_done == 0 && n_hist == 0 && rc == 0 )); then
     titulo=${TITULO[$idx]:-$url}
     nota=${TITULO[$idx]:-}
     n_ja=$(cat "${logs[@]}" 2>/dev/null | grep -ac 'has already been downloaded')
-    if (( n_ja > 0 )); then
+    if cat "${logs[@]}" 2>/dev/null | grep -aqE 'upload date is not in range|does not pass filter|larger than max-filesize|did not match filter'; then
+      fora_filtro=1; N_FILTRADOS=$(( N_FILTRADOS + 1 ))
+      linha_resultado "↷" "$AMARELO" "$idxs" "$titulo" "${T[r_filtrado]}"
+    elif (( n_ja > 0 )); then
       N_JA=$(( N_JA + 1 ))
       linha_resultado "↷" "$AMARELO" "$idxs" "$titulo" "${T[r_ja_existia]}"
     else
@@ -3437,7 +3543,8 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     fi
   fi
   if (( rc == 0 )); then
-    SUCESSO[$idx]=1
+    # (o que os filtros deixaram de fora não foi baixado: o link continua na lista)
+    (( fora_filtro )) || SUCESSO[$idx]=1
     lembra_metodo "${SITE[$idx]:-}" "${NIVEL[$idx]:-0}"
     if (( n_nota > 1 )); then
       if [[ -n $nota ]]; then t nota_n "$n_nota" "$nota"; else t nota_n0 "$n_nota"; fi
@@ -4312,6 +4419,7 @@ resumo() {
   linha_resumo "✔" "$VERDE"    "${T[s_baixados]}" "${NEG}${N_OK}${R}"
   linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"       "${NEG}${N_JA}${R}"
   linha_resumo "✖" "$VERMELHO" "${T[s_erro]}"     "${NEG}${N_ERRO}${R}"
+  (( N_FILTRADOS > 0 )) && linha_resumo "↷" "$AMARELO" "${T[s_filtrados]}" "${NEG}${N_FILTRADOS}${R}"
   if (( N_ADIADOS > 0 )); then
     linha_resumo "‖" "$AMARELO" "${T[s_adiados]}" "${NEG}${N_ADIADOS}${R}  ${DIM}${T[s_adiados_det]}${R}"
   fi
@@ -4823,6 +4931,7 @@ regrava_lista() {
 
 # O aria2c que o yt-dlp vai chamar: veja --baixa-partes. Sem ele, cada arquivo direto usa uma conexão.
 prepara_aria() {
+  if [[ $FILTRO_TAMANHO != 0 ]]; then em_bytes_filtro "$FILTRO_TAMANHO"; export GRABIT_MAX_BYTES=$NUM; fi
   (( CONEXOES_POR_VIDEO > 1 && ! PROXY_SOCKS )) && command -v aria2c >/dev/null 2>&1 && mkdir -p "$TMP/aria" || return 0
   printf '#!/usr/bin/env bash\nexec bash %q --baixa-partes "$@"\n' "$GRABIT_SCRIPT" > "$TMP/aria/aria2c" &&
     chmod +x "$TMP/aria/aria2c" && ARIA="$TMP/aria/aria2c"
@@ -4938,10 +5047,75 @@ monta_args_ytdlp() {
   [[ -n $COOKIES_NAVEGADOR ]] && YTDLP_ARGS+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
   [[ -n $USER_AGENT ]]        && YTDLP_ARGS+=(--user-agent "$USER_AGENT")
   (( TEM_JS_RUNTIMES ))       && [[ -n $JS_RUNTIME ]] && YTDLP_ARGS+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  [[ -n $DATA_YTDLP ]] && YTDLP_ARGS+=(--dateafter "$DATA_YTDLP")
+  (( FILTRO_MAX > 0 )) && YTDLP_ARGS+=(--max-downloads "$FILTRO_MAX")
+  [[ $FILTRO_TAMANHO != 0 ]] && YTDLP_ARGS+=(--max-filesize "$FILTRO_TAMANHO")
   (( PROXY_SOCKS )) && YTDLP_ARGS+=(--downloader m3u8:native)   # o ffmpeg iria direto ao site
   read -ra opcoes <<<"$OPCOES_YTDLP"
   YTDLP_ARGS+=("${EXTRA_YTDLP[@]}" "${opcoes[@]}")
   return 0
+}
+
+# perfil_args SITE → ARGS_PERFIL: as opções do yt-dlp que valem só para este site
+perfil_args() { ARGS_PERFIL=(); }
+
+# ───────────────────────────── Simulação (--simular) ──────────────────────────
+# Mostra o que seria baixado, sem baixar nem mudar nada: nem a lista, nem o histórico. Consulta um link por
+# vez, sem pressa, porque é só uma prévia. O tamanho é uma estimativa: nem todo site informa.
+simula_links() {
+  local i=0 url idxs l titulo h fps vc ac dur tam tbr rc saida n_vid=0 n_ja=0 n_fora=0 n_erro=0 soma=0 extras=() livre
+  local sep=$SEP m="@@S@@%(title)s$SEP%(height|0)s$SEP%(fps|0)s$SEP%(vcodec|?)s$SEP%(acodec|?)s$SEP%(duration|0)s$SEP%(filesize,filesize_approx|0)s$SEP%(tbr|0)s"
+  atualiza_largura
+  monta_args_ytdlp
+  printf '\n  %s%s%s\n\n' "$NEG" "${T[sim_titulo]}" "$R"
+  for url in "${LINKS[@]}"; do
+    i=$(( i + 1 ))
+    printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
+    site_de "$url"; perfil_args "$FMT"; extras=("${ARGS_PERFIL[@]}")
+    saida=$(yt-dlp "${YTDLP_ARGS[@]}" "${extras[@]}" --simulate --no-exec --print "video:$m" -- "$url" 2>&1); rc=$?
+    (( rc == 101 )) && rc=0
+    while IFS= read -r l; do
+      case $l in
+        @@S@@*)
+          IFS=$sep read -r titulo h fps vc ac dur tam tbr <<<"${l#@@S@@}"
+          num "$tam"; tam=$NUM
+          if (( tam == 0 )); then                  # sem o tamanho: pelo bitrate e pela duração
+            num "$tbr"; tbr=$NUM; num "$dur"
+            tam=$(( tbr * 1000 / 8 * NUM ))
+          fi
+          soma=$(( soma + tam )); n_vid=$(( n_vid + 1 ))
+          montar_meta "$h" "$fps" SDR "$vc" "$ac" 0 "$dur" "$tam"
+          linha_resultado "▸" "$CIANO" "$idxs" "${titulo//[[:cntrl:]]/ }" "$META"
+          printf '%s\n' "$LINHA" ;;
+        *'has already been recorded in the archive')
+          n_ja=$(( n_ja + 1 ))
+          linha_resultado "↷" "$AMARELO" "$idxs" "$url" "${T[r_ja_baixado]}"; printf '%s\n' "$LINHA" ;;
+        *'upload date is not in range'*|*'does not pass filter'*|*'did not match filter'*)
+          n_fora=$(( n_fora + 1 ))
+          linha_resultado "↷" "$AMARELO" "$idxs" "$url" "${T[r_filtrado]}"; printf '%s\n' "$LINHA" ;;
+      esac
+    done <<<"$saida"
+    if (( rc != 0 )); then
+      n_erro=$(( n_erro + 1 ))
+      l=$(grep -a '^ERROR:' <<<"$saida" | tail -n 1); l=${l#ERROR: }
+      linha_resultado "✖" "$VERMELHO" "$idxs" "$url" "${T[r_falhou]}"; printf '%s\n' "$LINHA"
+      if [[ -n $l ]]; then corta "$l" $(( COLS - 12 )); printf '         %s↳ %s%s\n' "$VERMELHO" "$FMT" "$R"; fi
+    fi
+  done
+  printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "${T[sim_resumo]}" "$R"
+  linha_resumo "▸" "$CIANO"  "${T[sim_baixaria]}" "${NEG}${n_vid}${R}"
+  fmt_bytes "$soma"; linha_resumo "▣" "$DIM" "${T[sim_tamanho]}" "~ $FMT"
+  linha_resumo "↷" "$AMARELO" "${T[sim_ja]}" "${NEG}${n_ja}${R}"
+  (( n_fora )) && linha_resumo "↷" "$AMARELO" "${T[s_filtrados]}" "${NEG}${n_fora}${R}"
+  (( n_erro )) && linha_resumo "✖" "$VERMELHO" "${T[s_erro]}" "${NEG}${n_erro}${R}"
+  printf '\n  %s%s%s\n' "$DIM" "${T[sim_nada]}" "$R"
+  livre=$(df -Pk -- "$(dirname -- "$PASTA_SAIDA/x")" 2>/dev/null | awk 'NR==2 {print $4}')
+  [[ -d $PASTA_SAIDA ]] || livre=$(df -Pk . 2>/dev/null | awk 'NR==2 {print $4}')
+  if [[ $livre =~ ^[0-9]+$ ]] && (( soma / 1024 > livre )); then
+    fmt_bytes $(( livre * 1024 )); t sim_sem_espaco "$FMT"; aviso "$TXT"
+  fi
+  printf '\n'
+  (( n_erro == 0 ))
 }
 
 # ───────────────────────────── Download pelo navegador ────────────────────────
@@ -6445,6 +6619,7 @@ if (( CAPTURA )) && ! detecta_clip; then
 fi
 (( CAPTURA )) && aviso_wayland
 ler_links
+if (( SIMULAR )); then simula_links; exit $?; fi
 
 mkdir -p "$PASTA_SAIDA" || { t pasta_falhou "$PASTA_SAIDA"; erro "$TXT"; exit 1; }
 printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
@@ -6612,6 +6787,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     (( idx > 0 )) || continue
     kill -0 "${SLOT_PID[$s]}" 2>/dev/null && continue
     wait "${SLOT_PID[$s]}" 2>/dev/null; rc=$?
+    (( rc == 101 )) && rc=0                     # o yt-dlp parou no limite pedido (--max): não é erro
     SLOT_IDX[$s]=0
     ATIVOS_SITE[${SITE[$idx]}]=$(( ${ATIVOS_SITE[${SITE[$idx]}]:-1} - 1 ))
     confere_recusa "$idx"

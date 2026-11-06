@@ -180,6 +180,11 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-F` | força: ignora os limites do `grabit.config` e o ritmo automático por site nesta execução | — |
 | `-y` | com `install`: instala tudo sem perguntar | — |
 | `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
+| `--proxy URL` | passa tudo por um proxy: `http://host:8080` ou `socks5://host:1080` | — |
+| `--simular` | mostra o que seria baixado e quanto ocupa, sem baixar nada | — |
+| `--desde DATA` | só vídeos desde a data (`2026-01-31`) ou a idade (`7d`, `2w`, `3m`, `1y`) | — |
+| `--max N` | no máximo N vídeos por link | — |
+| `--max-tamanho TAM` | pula arquivos maiores que isso (`2G`, `500M`) | — |
 | `-A AGENTE` | usa o User-Agent do navegador, junto com `-b`, em sites com verificação | — |
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
 | `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
@@ -277,6 +282,9 @@ COOKIES_NAVEGADOR=firefox
 | `USAR_NAVEGADOR` | `1` abre um navegador quando a página só funciona nele; `0` nunca abre | `1` |
 | `PROCURAR_ARQUIVO` | `1` procura um arquivo direto melhor que o stream, antes de baixar; `0` não procura | `1` |
 | `FORMATO_SAIDA` | formato do arquivo: `mkv`, `mp4`, `webm`, `mov`…, ou `original` (como o site entrega) | `mkv` |
+| `FILTRO_DESDE`, `FILTRO_MAX`, `FILTRO_TAMANHO` | os mesmos de `--desde`, `--max` e `--max-tamanho` | — |
+| `PROXY` | passa tudo por um proxy, inclusive a busca por arquivo direto e o navegador | — |
+| `CANAL_ATUALIZACAO` | `estavel`: só versões publicadas; `main`: tudo o que entra no repositório | `estavel` |
 | `CODEC_VIDEO` | recomprime se o vídeo vier em outro codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
 | `QUALIDADE_VIDEO` | qualidade ao recomprimir: `alta`, `media`, `baixa` ou o número do CRF | `alta` |
 | `ACELERACAO_VIDEO` | quem recomprime: `cpu`, `auto`, `nvenc`, `vaapi`, `qsv`, `videotoolbox` | `cpu` |
