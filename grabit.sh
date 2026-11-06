@@ -1582,7 +1582,7 @@ idioma_pt() {
     [f_logs]=" — logs em %s/"
     [f_continuar]="     Para continuar:  %s"
     [c_cancelado]="Cancelado."
-    [c_descartado]=" Arquivos diretos grandes continuam de onde pararam na próxima vez; o resto recomeça do zero."
+    [c_descartado]=" Arquivos grandes continuam de onde pararam; o resto recomeça."
     [k_retomado]="%s: continuou de onde parou, com %s já baixados"
     [kv_para_retomar]="Interrompidos"
     [kv_retomar]="%d para continuar (%s, guardados por 14 dias)"
@@ -1694,8 +1694,8 @@ que grabit --atualizar):
   ajuda, help        mostra esta ajuda
 
 • Um arquivo de links com o nome de um comando precisa de ./ na frente: grabit ./update
-• Links e arquivos de links também podem vir direto no comando (aí o
-  links.txt só é lido se você passar -l), e as opções valem antes ou depois deles:
+• Links e arquivos de links podem vir direto no comando, e as opções valem antes
+  ou depois deles:
       grabit https://youtu.be/xxxx outra_lista.txt -j 4
 • Nos arquivos: linhas vazias e comentários (# …, inclusive no fim da linha)
   são ignorados, assim como texto em volta do link; repetidos são descartados.
@@ -2372,7 +2372,7 @@ idioma_en() {
     [f_logs]=" — logs in %s/"
     [f_continuar]="     To continue:  %s"
     [c_cancelado]="Canceled."
-    [c_descartado]=" Large direct files pick up where they stopped next time; everything else starts over."
+    [c_descartado]=" Large files pick up where they stopped; the rest starts over."
     [k_retomado]="%s: picked up where it stopped, with %s already downloaded"
     [kv_para_retomar]="Interrupted"
     [kv_retomar]="%d to continue (%s, kept for 14 days)"
@@ -2484,8 +2484,8 @@ the same as grabit --atualizar):
   help, ajuda        show this help
 
 • A link file named like a command needs ./ in front of it: grabit ./update
-• Links and link files can also go straight on the command line (then
-  links.txt is only read if you pass -l), and options work before or after them:
+• Links and link files can come straight on the command line, and options work
+  before or after them:
       grabit https://youtu.be/xxxx another_list.txt -j 4
 • In the files: empty lines and comments (# …, also at the end of a line)
   are ignored, as is any text around the link; duplicates are dropped.

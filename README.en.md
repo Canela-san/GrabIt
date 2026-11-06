@@ -173,7 +173,8 @@ cat list.txt | grabit -l -                   # read links from standard input
 | <kbd>p</kbd> | pauses everything (running downloads freeze) and resumes |
 | <kbd>q</kbd> | stops after the current downloads; the remaining ones go to `links_falhos.txt`. Again: cancels right away |
 | <kbd>+</kbd> / <kbd>-</kbd> | raises or lowers how many videos download at once |
-| <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancels right away; anything half-done starts over from scratch next time |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancels right away; large direct files pick up where they stopped next time, and the rest starts over |
+| <kbd>Ctrl</kbd>+<kbd>Z</kbd> | suspends and gives the terminal back; `fg` continues where it stopped |
 
 ### Options
 
@@ -290,7 +291,7 @@ COOKIES_NAVEGADOR=firefox
 | Key | What it does | Default |
 |---|---|---|
 | `IDIOMA` | language of the messages: `pt`, `en` or `auto` (follows the system) | `auto` |
-| `ARQUIVO_LINKS` | list read when you run just `grabit` | `links.txt` |
+| `ARQUIVO_LINKS` | the list that `grabit download` downloads | `links.txt` |
 | `PASTA_SAIDA` | where videos are saved | `./Downloads` |
 | `RESOLUCAO_MAXIMA` | maximum resolution (`1080`, `2160`, `4k`…); `0` = no limit | `0` |
 | `SO_AUDIO` | `1` downloads only the audio (same as `-x`) | `0` |

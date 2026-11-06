@@ -173,7 +173,8 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | <kbd>p</kbd> | pausa tudo (os downloads em andamento congelam) e continua |
 | <kbd>q</kbd> | termina depois dos downloads atuais; os que faltavam vão para `links_falhos.txt`. De novo: cancela na hora |
 | <kbd>+</kbd> / <kbd>-</kbd> | aumenta ou diminui quantos vídeos baixam ao mesmo tempo |
-| <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancela na hora; o que estava pela metade recomeça do zero na próxima vez |
+| <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancela na hora; arquivos diretos grandes continuam de onde pararam na próxima vez, e o resto recomeça do zero |
+| <kbd>Ctrl</kbd>+<kbd>Z</kbd> | suspende e devolve o terminal; `fg` continua de onde parou |
 
 ### Opções
 
@@ -289,7 +290,7 @@ COOKIES_NAVEGADOR=firefox
 | Chave | O que faz | Padrão |
 |---|---|---|
 | `IDIOMA` | idioma das mensagens: `pt`, `en` ou `auto` (segue o sistema) | `auto` |
-| `ARQUIVO_LINKS` | lista lida quando você roda só `grabit` | `links.txt` |
+| `ARQUIVO_LINKS` | a lista que o `grabit download` baixa | `links.txt` |
 | `PASTA_SAIDA` | onde os vídeos são salvos | `./Downloads` |
 | `RESOLUCAO_MAXIMA` | resolução máxima (`1080`, `2160`, `4k`…); `0` = sem limite | `0` |
 | `SO_AUDIO` | `1` baixa só o áudio (o mesmo que `-x`) | `0` |
