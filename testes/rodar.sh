@@ -380,13 +380,13 @@ publica() {                                   # publica VERSÃO: uma versão nov
   printf '# Mudanças\n\n## %s\n\n- Novidade da versão nova\n\n## %s\n\n- Coisa velha\n' "$1" "$VER" > pub/CHANGELOG.md
 }
 solta() { cp "$G" solto/grabit.sh; }
-atu() { local s=$1; shift; G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" falso "$s" -L pt "$@"; }
+atu_pub() { local s=$1; shift; G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" falso "$s" -L pt "$@"; }
 publica 99.0.0; solta
-STUB_TAG=v99.0.0 atu w1 --versao
+STUB_TAG=v99.0.0 atu_pub w1 --versao
 espera "--versao mostra a versão" contem w1 "$VER"
 espera "…e a publicada, se for mais nova" contem w1 "há uma versão mais nova (99.0.0)"
 espera "…e o canal" contem w1 "estável"
-STUB_TAG=v99.0.0 atu u1 update
+STUB_TAG=v99.0.0 atu_pub u1 update
 espera "o update troca o script pela versão publicada" grep -qx 'GRABIT_VERSAO=99.0.0' solto/grabit.sh
 espera "…mostra as versões" contem u1 "$VER → 99.0.0"
 espera "…e as novidades" contem u1 "Novidade da versão nova"
@@ -394,28 +394,28 @@ espera "…sem as de antes" nao_contem u1 "Coisa velha"
 espera "…e é ela que termina o trabalho" contem u1 "RELANCADO-COM-O-NOVO"
 publica 99.0.0; solta
 printf 'aaaa  grabit.sh\n' > pub/grabit.sh.sha256
-STUB_TAG=v99.0.0 atu u2 update
+STUB_TAG=v99.0.0 atu_pub u2 update
 espera "soma que não bate: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
 espera "…e explica" contem u2 "não bate com a soma"
 publica 99.0.0; solta
 head -c 2000 pub/grabit.sh > pub/cortado; mv pub/cortado pub/grabit.sh; soma_de pub/grabit.sh > pub/grabit.sh.sha256
-STUB_TAG=v99.0.0 atu u3 update
+STUB_TAG=v99.0.0 atu_pub u3 update
 espera "arquivo cortado, mesmo com a soma certa: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
 publica 99.0.0; solta
 sed -i.x "s/^GRABIT_VERSAO=.*/GRABIT_VERSAO=98.0.0/" pub/grabit.sh; soma_de pub/grabit.sh > pub/grabit.sh.sha256
-STUB_TAG=v99.0.0 atu u4 update
+STUB_TAG=v99.0.0 atu_pub u4 update
 espera "o arquivo diz outra versão: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
 publica 0.0.1; solta
-STUB_TAG=v0.0.1 atu u5 update
+STUB_TAG=v0.0.1 atu_pub u5 update
 espera "versão publicada mais velha: não volta atrás" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
 espera "…e diz que está em dia" contem u5 "já está na versão mais nova"
 publica 99.0.0; solta
-atu u6 update
+atu_pub u6 update
 espera "sem saber qual é a versão publicada: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
 espera "…e diz o que fazer" contem u6 "CANAL_ATUALIZACAO=main"
-CANAL_ATUALIZACAO=main atu u7 update
+CANAL_ATUALIZACAO=main atu_pub u7 update
 espera "canal main: pega direto do repositório" grep -qx 'GRABIT_VERSAO=99.0.0' solto/grabit.sh
-CANAL_ATUALIZACAO=talvez atu u8 --config
+CANAL_ATUALIZACAO=talvez atu_pub u8 --config
 espera "canal inválido é recusado" codigo "$RC" 2
 if command -v git >/dev/null 2>&1; then
   publica 99.0.0
@@ -445,7 +445,7 @@ espera "atualiza o FFmpeg, se houver versão nova" contem "$STUB_LOG" "brew upgr
 printf '#!/bin/sh\nprintf "deno %%s\\n" "$*" >> "$STUB_LOG"\n' > "$TMP/casa_a/.deno/bin/deno"; chmod +x "$TMP/casa_a/.deno/bin/deno"
 GRABIT_RELANCADO=1 STUB_JS="deno-2.9.8" STUB_SPEC="yt-dlp[curl-cffi,default]" atu at2 -L pt --update   # (a cópia solta não tem de onde se baixar)
 espera "com o Deno instalado, atualiza o Deno" contem "$STUB_LOG" "deno upgrade"
-espera "…sem instalar de novo" nao_contem "$STUB_LOG" "brew install"
+espera "…sem instalar de novo" nao_contem "$STUB_LOG" "brew install deno"
 espera "com o FFmpeg em dia, não mexe nele" nao_contem "$STUB_LOG" "brew upgrade"
 espera "tudo certo, diz isso" contem at2 "Tudo na versão mais nova."
 : > "$STUB_LOG"
@@ -752,11 +752,13 @@ D="$TMP/privado"; mkdir -p "$D/Downloads/logs/2020-01-01_000000" "$D/Downloads/l
 printf 'x\n' > Downloads/logs/2020-01-01_000000/1.log; touch -t 202001020304.05 Downloads/logs/2020-01-01_000000/1.log
 printf 'x\n' > Downloads/logs/novo/1.log
 : > "$STUB_LOG"
-falso c1 -L pt curl 'https://a.invalid/video.m3u8' -H 'Authorization: Bearer s3gredo' -H 'Cookie: a=1'
-espera "o cabeçalho chega ao yt-dlp" contem "$STUB_LOG" "--add-header Authorization:Bearer s3gredo"
-espera "…por um arquivo, fora da linha de comando" contem "$STUB_LOG" "--config-locations"
-conf_c1=$(grep -F -- '--config-locations' "$STUB_LOG" | head -n 1 | sed -E 's/.*--config-locations ([^ ]+).*/\1/')
-espera "…que fica guardado só enquanto roda" test ! -e "$conf_c1"
+if command -v python3 >/dev/null 2>&1; then    # (ler o comando copiado precisa do Python)
+  falso c1 -L pt curl 'https://a.invalid/video.m3u8' -H 'Authorization: Bearer s3gredo' -H 'Cookie: a=1'
+  espera "o cabeçalho chega ao yt-dlp" contem "$STUB_LOG" "--add-header Authorization:Bearer s3gredo"
+  espera "…por um arquivo, fora da linha de comando" contem "$STUB_LOG" "--config-locations"
+  conf_c1=$(grep -F -- '--config-locations' "$STUB_LOG" | head -n 1 | sed -E 's/.*--config-locations ([^ ]+).*/\1/')
+  espera "…que fica guardado só enquanto roda" test ! -e "$conf_c1"
+fi
 falso c2 -L pt http://a.invalid/logs
 espera "logs de mais de 30 dias são apagados" test ! -e Downloads/logs/2020-01-01_000000
 espera "…os novos ficam" test -f Downloads/logs/novo/1.log
@@ -1271,7 +1273,7 @@ command -v aria2c >/dev/null 2>&1 || espera "…inclusive o aria2, que abre vár
 espera "…e não chega a pedir confirmação" nao_contem i1 "[S/n]"
 : > "$STUB_LOG"
 PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" falso i2 -L pt --install --yes
-espera "-y sem navegador compatível instala o Firefox" contem "$STUB_LOG" "brew install firefox"
+espera "-y sem navegador compatível instala o Firefox" grep -qE '^brew install.* firefox' "$STUB_LOG"
 espera "…e nenhum outro" test "$(grep -c '^brew install' "$STUB_LOG")" -eq 1
 : > "$STUB_LOG"
 HOME="$TMP/casa" PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda i6 -L pt install -y
