@@ -106,6 +106,190 @@ if [[ ${1:-} == --nfo ]]; then
   exit 0
 fi
 
+# Modo auxiliar da busca pelo arquivo direto: o yt-dlp chama o GrabIt assim depois de escolher
+# o formato e antes de baixar. Um stream nem sempre é o melhor que o site tem: um .mp4 que chega
+# sem altura nem fps informados perde para qualquer stream com esses dados, por pior que o stream
+# seja, e um .mp4 citado só num script ou num botão de baixar nem entra na conta. Aqui, cada
+# candidato é medido com o ffprobe: o nome do arquivo não diz nada, e "direto" não quer dizer
+# "melhor". Só troca se for o mesmo vídeo (a mesma duração: um trailer também é .mp4), com áudio
+# e melhor em números. Qualquer dúvida ou erro deixa tudo como está (o yt-dlp segue com o stream).
+#
+# Achou: grava MARCA (o link, o título, a linha do histórico, a página e o formato, se for da
+# oferta do site) e avisa o JOB, que interrompe este yt-dlp e baixa o arquivo (baixa_direto).
+# Com PROTO "-" não há stream para comparar: a página
+# não abriu no yt-dlp, e vale o vídeo mais longo, de pelo menos 30 segundos.
+if [[ ${1:-} == --procura-direto ]]; then
+  marca=$2 job=$3 arq_site=$4 arq_fmts=$5 limite=$6 pagina=$7 titulo=$8 extrator=$9 id=${10} escolhido=${11}
+  proto=${12} alt=${13} larg=${14} fps=${15} tbr=${16} dur=${17} dr=${18} acodec=${19} entradas=${20} ua=${21:-}
+  [[ $ua == NA ]] && ua=""
+  command -v ffprobe >/dev/null 2>&1 || exit 0
+  case $entradas in NA|0|1) ;; *) exit 0 ;; esac      # um vídeo de uma lista: a página fala de vários
+  [[ $dr == SDR || $dr == NA ]] || exit 0             # HDR: nenhuma medida daqui compara com ele
+
+  inteiro() { local v=${1%%.*}; [[ $v =~ ^[0-9]+$ ]] && NUM=$v || NUM=0; }
+  # lado menor da imagem: é o que vale em vídeos verticais, como no resto do GrabIt
+  lado() { if (( $1 > 0 && $2 > 0 )); then NUM=$(( $1 < $2 ? $1 : $2 )); else NUM=$(( $1 + $2 )); fi; }
+  mil_fps() {                                 # 30000/1001 ou 29.97 → NUM: quadros por 1000 segundos
+    local p q
+    if [[ $1 == */* ]]; then
+      p=${1%/*}; q=${1#*/}
+      [[ $p =~ ^[0-9]+$ && $q =~ ^[1-9][0-9]*$ ]] && NUM=$(( p * 1000 / q )) || NUM=0
+    elif [[ $1 =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      NUM=$(awk -v f="$1" 'BEGIN { printf "%d", f * 1000 }')
+    else NUM=0; fi
+  }
+  mede() {                                    # mede URL → M_LADO M_FPS M_KBPS M_DUR M_AUDIO
+    local k v tipo="" visto=0 w=0 h=0
+    M_LADO=0; M_FPS=0; M_KBPS=0; M_DUR=0; M_AUDIO=0
+    while IFS='=' read -r k v; do
+      case $k in
+        codec_type) tipo=$v; [[ $v == audio ]] && M_AUDIO=1 ;;
+        width)  (( visto )) || { [[ $tipo == video ]] && { inteiro "$v"; w=$NUM; }; } ;;
+        height) (( visto )) || { [[ $tipo == video ]] && { inteiro "$v"; h=$NUM; }; } ;;
+        r_frame_rate|avg_frame_rate)
+          (( visto )) && continue
+          [[ $tipo == video ]] || continue
+          mil_fps "$v"; (( NUM > 0 )) && M_FPS=$NUM
+          [[ $k == avg_frame_rate ]] && visto=1 ;;
+        duration) inteiro "$v"; M_DUR=$NUM ;;
+        bit_rate) inteiro "$v"; M_KBPS=$(( NUM / 1000 )) ;;
+      esac
+    done < <(ffprobe -v error -protocol_whitelist http,https,tcp,tls,crypto -rw_timeout 15000000 \
+               ${ua:+-user_agent "$ua"} -headers "Referer: $pagina"$'\r\n' \
+               -show_entries format=duration,bit_rate:stream=codec_type,width,height,r_frame_rate,avg_frame_rate \
+               -of default=nw=1 -- "$1" 2>/dev/null)
+    lado "$w" "$h"; M_LADO=$NUM
+    (( M_LADO > 0 ))
+  }
+  rotulo() {                                  # rotulo LADO FPS KBPS → FMT: "1080p · 60 fps · 16 Mb/s"
+    FMT="$1p"
+    (( $2 > 0 )) && FMT+=" · $(( ($2 + 500) / 1000 )) fps"
+    (( $3 >= 1000 )) && FMT+=" · $(( ($3 + 500) / 1000 )) Mb/s"
+    (( $3 > 0 && $3 < 1000 )) && FMT+=" · $3 kb/s"
+  }
+
+  cands=()
+  junta() {
+    local u=$1 c
+    [[ $u =~ ^https?:// && $u != "$escolhido" ]] || return 0
+    for c in "${cands[@]}"; do [[ $c == "$u" ]] && return 0; done
+    (( ${#cands[@]} < 4 )) && cands+=("$u")
+    return 0
+  }
+
+  inteiro "$alt"; a=$NUM; inteiro "$larg"; lado "$a" "$NUM"; lado_s=$NUM
+  mil_fps "$fps"; fps_s=$NUM; inteiro "$tbr"; kbps_s=$NUM; inteiro "$dur"; dur_s=$NUM
+
+  # 1) O que o site já oferece, mas sem os dados: da melhor oferta para a pior
+  linhas=(); declare -A oferta=()
+  [[ -s $arq_fmts ]] && mapfile -t linhas < <(grep -oE '\{[^{}]*\}' -- "$arq_fmts" 2>/dev/null)
+  re_url='"url": "([^"]+)"'; re_alt='"height": ([0-9]+)'; re_id='"format_id": "([^"]+)"'
+  for (( i = ${#linhas[@]} - 1; i >= 0; i-- )); do
+    l=${linhas[$i]}
+    [[ $l == *'"protocol": "http"'* || $l == *'"protocol": "https"'* ]] || continue
+    [[ $l == *'"vcodec": "none"'* ]] && continue
+    # com todos os dados, a ordenação do yt-dlp já levou esta oferta em conta
+    [[ $l == *'"height":'* && $l == *'"fps":'* && $l == *'"tbr":'* ]] && continue
+    if [[ $l =~ $re_alt ]] && (( BASH_REMATCH[1] < a )); then continue; fi
+    [[ $l =~ $re_url ]] || continue
+    u=${BASH_REMATCH[1]}
+    [[ $l =~ $re_id ]] && oferta[$u]=${BASH_REMATCH[1]}
+    junta "$u"
+  done
+
+  # 2) O que a página cita: só quando vai baixar um stream, e não num site que já não tinha nada
+  #    três vezes nesta execução (pedidos a mais são justamente o que bloqueia).
+  s_pag=${pagina%%[?#]*}
+  case ${proto,,} in
+    http|https|http+http|https+https|http+https|https+http) vale_pagina=0 ;;
+    *) vale_pagina=1 ;;
+  esac
+  case ${s_pag,,} in *.m3u8|*.mpd|*.mp4|*.m4v|*.webm|*.mkv|*.mov|*.ts|*.f4m|*.ism) vale_pagina=0 ;; esac
+  if (( vale_pagina )) && [[ $pagina =~ ^https?:// ]] && command -v curl >/dev/null 2>&1; then
+    n=0
+    [[ -f $arq_site ]] && n=$(wc -l < "$arq_site")
+    if (( n < 3 )); then
+      origem=${pagina#*://}; origem="${pagina%%://*}://${origem%%[/?#]*}"
+      pasta=${s_pag%/*}; [[ $pasta == "${pagina%%://*}:/" ]] && pasta=$origem
+      c='[^][:space:]"'\''<>()\\`]'
+      while IFS= read -r l; do
+        l=${l#[\"\'=(]}
+        case $l in
+          http://*|https://*) ;;
+          //*) l="${pagina%%://*}:$l" ;;
+          /*)  l=$origem$l ;;
+          *)   l=$pasta/$l ;;
+        esac
+        # o que claramente não é o vídeo nem merece um pedido (a duração pegaria de qualquer jeito)
+        [[ ${l,,} =~ [/_.-](trailer|teaser|preview|sample|thumb|thumbnail|sprite|logo|intro|banner|ads?|vast|poster)[/_.-] ]] && continue
+        junta "$l"
+      done < <(curl -fsSL -m 15 --max-filesize 5000000 --proto =http,https --proto-redir =http,https \
+                 ${ua:+-A "$ua"} -e "$pagina" --url "$pagina" 2>/dev/null | head -c 3000000 |
+               sed -e 's#\\/#/#g' -e 's#\\u002[fF]#/#g' -e 's#&amp;#\&#g' |
+               grep -aoiE "([\"'=(]|(https?:)?//)$c+\.(mp4|m4v|webm|mov|mkv)(\?$c*)?")
+    fi
+  fi
+  if (( ! ${#cands[@]} )); then
+    (( ${vale_pagina:-0} )) && printf 'x\n' >> "$arq_site"
+    exit 0
+  fi
+
+  # 3) O que vai ser baixado, se o yt-dlp não souber dizer. Sem isso não há como comparar.
+  printf '[grabit] procura\n'
+  sem_ref=0; [[ $proto == - ]] && sem_ref=1
+  if (( ! sem_ref && (lado_s == 0 || fps_s == 0 || kbps_s == 0 || dur_s == 0) )) && [[ $escolhido == http* ]] && mede "$escolhido"; then
+    (( lado_s )) || lado_s=$M_LADO
+    (( fps_s )) || fps_s=$M_FPS
+    (( kbps_s )) || kbps_s=$M_KBPS
+    (( dur_s )) || dur_s=$M_DUR
+  fi
+  (( sem_ref || (lado_s > 0 && dur_s > 0) )) || exit 0
+
+  # 4) A comparação, na ordem da do yt-dlp: resolução, depois fps, depois bitrate. Com a mesma
+  #    imagem, fica o arquivo se ele não for pior: um arquivo só é bem menos pedidos que um stream.
+  melhor=""; lado_m=$lado_s; fps_m=$fps_s; kbps_m=$kbps_s; dur_m=$dur_s; limiar=95
+  folga=$(( dur_s / 50 )); (( folga < 5 )) && folga=5
+  for u in "${cands[@]}"; do
+    mede "$u" || continue
+    (( M_DUR > 0 )) || continue
+    (( limite > 0 && M_LADO > limite )) && continue
+    (( M_AUDIO )) || [[ $acodec == none ]] || continue
+    ganha=0
+    if (( sem_ref )); then
+      (( M_DUR >= 30 )) || continue
+      if (( M_DUR > dur_m + 5 )); then ganha=1
+      elif (( M_DUR + 5 < dur_m )); then continue; fi
+    else
+      d=$(( M_DUR - dur_s )); (( d < 0 )) && d=$(( -d ))
+      (( d <= folga )) || continue
+    fi
+    if (( ! ganha )); then
+      if (( M_LADO > lado_m )); then ganha=1
+      elif (( M_LADO == lado_m )); then
+        if (( fps_m > 0 && M_FPS > fps_m + 1000 )); then ganha=1
+        elif (( M_FPS + 1000 >= fps_m && kbps_m > 0 && M_KBPS * 100 >= kbps_m * limiar )); then ganha=1; fi
+      fi
+    fi
+    (( ganha )) || continue
+    melhor=$u; lado_m=$M_LADO; fps_m=$M_FPS; kbps_m=$M_KBPS; dur_m=$M_DUR; limiar=101
+  done
+  if [[ -z $melhor ]]; then
+    (( ${vale_pagina:-0} )) && printf 'x\n' >> "$arq_site"
+    exit 0
+  fi
+
+  rm -f -- "$arq_site"
+  rotulo "$lado_m" "$fps_m" "$kbps_m"; d=$FMT
+  if (( sem_ref )); then printf '[grabit] direto: %s\n' "$d"
+  else rotulo "$lado_s" "$fps_s" "$kbps_s"; printf '[grabit] direto: %s\x1f%s\n' "$d" "$FMT"; fi
+  chave=""
+  [[ -n $extrator && $extrator != NA && -n $id && $id != NA ]] && chave="${extrator,,} $id"
+  titulo=${titulo//[[:cntrl:]]/ }; [[ $titulo == NA ]] && titulo=""
+  printf '%s\n%s\n%s\n%s\n%s\n' "$melhor" "$titulo" "$chave" "$pagina" "${oferta[$melhor]:-}" > "$marca.tmp" && mv -f -- "$marca.tmp" "$marca"
+  (( job > 0 )) && kill -USR1 "$job" 2>/dev/null
+  exit 0
+fi
+
 # ───────────────────────────── Configuração ───────────────────────────────────
 # Onde o GrabIt mora de verdade (seguindo links simbólicos, como ~/.local/bin/grabit):
 # é ali, ao lado do script, que fica o grabit.config.
@@ -128,7 +312,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP USAR_NAVEGADOR PROGRAMA_NAVEGADOR USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -155,6 +339,7 @@ COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
 USAR_NAVEGADOR=1                              # 0 = nunca abrir um navegador para achar o vídeo
+PROCURAR_ARQUIVO=1                            # 0 = não procurar um arquivo direto melhor que o stream
 PROGRAMA_NAVEGADOR=                           # vazio = procura Firefox, Chrome, Chromium, Brave, Edge…
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
@@ -513,6 +698,8 @@ idioma_pt() {
     [curl_colar]="     Também dá para colar o comando depois de grabit:  grabit curl 'https://…' -H …"
     [clip_wayland]="No Wayland, ler a área de transferência precisa do wl-clipboard. Para instalar:  %s"
     [et_navegador]="no navegador · faça a verificação ou dê play, se precisar"
+    [et_procura]="comparando com um arquivo direto do site"
+    [et_direto]="baixando o arquivo direto: é melhor que o stream"
     [nav_abrindo]="Este site precisa de um navegador: vou abrir o %s. Se aparecer uma verificação, é só fazê-la na janela."
     [k_freio]="%s pediu para ir mais devagar: no máximo %d download(s) ao mesmo tempo desse site, e o próximo daqui a %d s"
     [k_parado]="%s está recusando os pedidos: os links que faltam dele ficam para depois, e os outros sites continuam"
@@ -550,6 +737,10 @@ idioma_pt() {
     [d_verificacao]="o arquivo tem defeitos (ficou com %s no nome)"
     [r_baixa]="resolução baixa:"
     [r_baixa_det]="%dp era a melhor versão disponível (com login, -b, às vezes há mais)"
+    [r_direto]="arquivo direto:"
+    [r_direto_det]="%s, melhor que o stream (%s)"
+    [r_curto]="mais curto:"
+    [r_curto_det]="o arquivo tem %s, e o site informa %s; confira se veio inteiro"
     [s_baixa]="Baixa resolução"
     [s_baixa_det]="%d vídeo(s) abaixo de %dp"
     [s_resumo]="Resumo"
@@ -739,6 +930,10 @@ EOF
 # Edge…; para escolher, ponha o nome do programa em PROGRAMA_NAVEGADOR.
 #USAR_NAVEGADOR=1
 #PROGRAMA_NAVEGADOR=
+
+# Antes de baixar um stream, procurar na oferta do site e na página um arquivo direto (.mp4…) e
+# medir: se for o mesmo vídeo e melhor, baixa ele. Custa poucos pedidos a mais. 0 = não procurar.
+#PROCURAR_ARQUIVO=1
 
 # Pular na hora os vídeos já baixados antes (0 = conferir sempre; o mesmo que -i)
 #USAR_HISTORICO=1
@@ -1023,6 +1218,8 @@ idioma_en() {
     [curl_colar]="     You can also paste the command after grabit:  grabit curl 'https://…' -H …"
     [clip_wayland]="On Wayland, reading the clipboard needs wl-clipboard. To install it:  %s"
     [et_navegador]="in the browser · do the check or press play, if needed"
+    [et_procura]="comparing with a direct file from the site"
+    [et_direto]="downloading the direct file: it beats the stream"
     [nav_abrindo]="This site needs a browser: I'll open %s. If a check shows up, just do it in the window."
     [k_freio]="%s asked to slow down: at most %d download(s) at once from that site, and the next one in %d s"
     [k_parado]="%s is refusing requests: its remaining links are left for later, and the other sites carry on"
@@ -1060,6 +1257,10 @@ idioma_en() {
     [d_verificacao]="the file has defects (kept with %s in its name)"
     [r_baixa]="low resolution:"
     [r_baixa_det]="%dp was the best version available (logged in, -b, there may be more)"
+    [r_direto]="direct file:"
+    [r_direto_det]="%s, better than the stream (%s)"
+    [r_curto]="shorter:"
+    [r_curto_det]="the file runs %s, and the site says %s; check that it came whole"
     [s_baixa]="Low resolution"
     [s_baixa_det]="%d video(s) below %dp"
     [s_resumo]="Summary"
@@ -1254,6 +1455,11 @@ EOF
 #USAR_NAVEGADOR=1
 #PROGRAMA_NAVEGADOR=
 
+# Before downloading a stream, look for a direct file (.mp4…) in the site's offer and in the page,
+# and measure it: if it is the same video and better, download that. Costs a few extra requests.
+# 0 = don't look.
+#PROCURAR_ARQUIVO=1
+
 # Skip videos already downloaded before (0 = always check; same as -i)
 #USAR_HISTORICO=1
 
@@ -1406,7 +1612,7 @@ for nome in DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS; do
     exit 2
   fi
 done
-for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_NAVEGADOR USAR_HISTORICO NOTIFICAR; do
+for nome in SO_AUDIO LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR USAR_NAVEGADOR PROCURAR_ARQUIVO USAR_HISTORICO NOTIFICAR; do
   if ! [[ ${!nome} =~ ^[01]$ ]]; then
     origem_txt "$nome"; t val_01 "$nome" "${!nome}" "$FMT"; erro "$TXT"
     exit 2
@@ -1747,6 +1953,8 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
     "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
     "[grabit] navegador"*)                                         ETAPA=${T[et_navegador]} ;;
+    "[grabit] procura"*)                                           ETAPA=${T[et_procura]} ;;
+    "[grabit] direto"*)                                            ETAPA=${T[et_direto]} ;;
     "[Exec]"*"--nfo "*)                                            ETAPA=${T[et_nfo]} ;;
     "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
     "[download] Sleeping "*)
@@ -1997,7 +2205,7 @@ salva_log() {                                 # guarda o log de todas as tentati
 processa_resultado() {                        # processa_resultado IDX CÓDIGO_DE_SAÍDA
   local idx=$1 rc=$2 url idxs d n_done n_ja n_hist t tent logs=() dones=() hist=()
   local tipo h fps hdr vc ac canais dur titulo vid caminho tam glifo cor det l hid filtrados=()
-  local nota="" n_nota=0
+  local nota="" n_nota=0 direto dur_site dur_arq dur_a
   local -A baixados=()
   url=${LINKS[$(( idx - 1 ))]}
   tent=${TENTATIVA[$idx]:-1}
@@ -2048,9 +2256,9 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     [[ -n $vid ]] && baixados[$vid]=1
     titulo=${titulo//[[:cntrl:]]/ }
     n_nota=$(( n_nota + 1 )); [[ -z $nota ]] && nota=$titulo
-    canais=0; tam=0
+    canais=0; tam=0; num "${dur%%.*}"; dur_site=$NUM; dur_arq=0
     # os dados do arquivo gravado (ffprobe) valem mais que os do extrator
-    if sonda "$caminho"; then h=$S_H; fps=$S_FPS; hdr=$S_HDR; vc=$S_VC; ac=$S_AC; canais=$S_CANAIS; dur=$S_DUR; tam=$S_TAM; fi
+    if sonda "$caminho"; then h=$S_H; fps=$S_FPS; hdr=$S_HDR; vc=$S_VC; ac=$S_AC; canais=$S_CANAIS; dur=$S_DUR; tam=$S_TAM; num "${S_DUR%%.*}"; dur_arq=$NUM; fi
     if (( tam == 0 )); then                     # sem ffprobe: stat do GNU (Linux) ou do BSD (macOS)
       tam=$(stat -c %s -- "$caminho" 2>/dev/null || stat -f %z -- "$caminho" 2>/dev/null)
       num "$tam"; tam=$NUM
@@ -2071,6 +2279,21 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       N_BAIXA_RES=$(( N_BAIXA_RES + 1 ))
       t r_baixa_det "$NUM"; corta "$TXT" $(( COLS - 13 - ${#T[r_baixa]} ))
       PERM+=("         ${AMARELO}↳ ${T[r_baixa]}${R}${DIM} ${FMT}${R}")
+    fi
+    if [[ $tipo == N ]]; then
+      direto=$(cat "${logs[@]}" 2>/dev/null | grep -a '^\[grabit\] direto: ' | tail -n 1)
+      if [[ $direto == *"$SEP"* ]]; then
+        direto=${direto#\[grabit\] direto: }
+        t r_direto_det "${direto%%"$SEP"*}" "${direto#*"$SEP"}"; corta "$TXT" $(( COLS - 13 - ${#T[r_direto]} ))
+        PERM+=("         ${VERDE}↳ ${T[r_direto]}${R}${DIM} ${FMT}${R}")
+      fi
+      # Um pedaço pode faltar sem nenhum erro: alguns sites entregam só uma prévia a quem não entrou
+      # na conta. A folga é grande porque a duração dita pelo site nem sempre é exata.
+      if (( dur_site >= 60 && dur_arq > 0 && dur_arq * 10 < dur_site * 9 )); then
+        fmt_tempo "$dur_arq"; dur_a=$FMT; fmt_tempo "$dur_site"
+        t r_curto_det "$dur_a" "$FMT"; corta "$TXT" $(( COLS - 13 - ${#T[r_curto]} ))
+        PERM+=("         ${AMARELO}↳ ${T[r_curto]}${R}${DIM} ${FMT}${R}")
+      fi
     fi
   done
 
@@ -2228,6 +2451,7 @@ lanca_job() {                                 # lanca_job IDX
   # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
   # histórico e continuam sendo pulados.
   (( ${REBAIXAR[$i]:-0} )) && extra+=(--force-overwrites)
+  IDX_JOB=$i
   if (( NIVEL[$i] == 2 )); then
     mkdir "$TMP/navegador.trava" 2>/dev/null; NAV_DONO=$i    # uma janela por vez: o perfil é um só
     if (( ! NAV_AVISADO )); then
@@ -2249,14 +2473,85 @@ lanca_job() {                                 # lanca_job IDX
 # baixa_link URL [OPÇÕES EXTRAS…]: roda em segundo plano, com a saída indo para o log.
 # Com -u, antes descobre qual é o vídeo principal da página e pede só ele.
 baixa_link() {
-  local url=$1 escolha=()
+  local url=$1 escolha=() marca arq_site fmts cmd yt rc lim=$RESOLUCAO_MAXIMA
   shift
   if (( UPGRADE )); then upgrade_link "$url" "$@"; exit $?; fi
   if (( SO_PRINCIPAL )); then
     printf '[grabit] principal\n'
     escolhe_principal "$url" "$@" && escolha=(--playlist-items "$PRINCIPAL")
   fi
-  exec yt-dlp "${YTDLP_ARGS[@]}" "$@" "${escolha[@]}" -- "$url"
+  # Quem escolheu o link do vídeo, só o áudio ou o vídeo principal da página não tem o que procurar.
+  # E a biblioteca do -m se organiza pelo canal e pela data, que um arquivo solto não informa.
+  if (( ! PROCURAR_ARQUIVO || MODO_CURL || SO_AUDIO || SO_PRINCIPAL || MIDIA )); then
+    exec yt-dlp "${YTDLP_ARGS[@]}" "$@" "${escolha[@]}" -- "$url"
+  fi
+
+  # O aviso de que achou um arquivo direto melhor chega por sinal: veja --procura-direto
+  site_de "$url"
+  marca="$TMP/direto-$IDX_JOB"; arq_site="$TMP/direto-site.$FMT"; fmts="$TMP/formatos-$IDX_JOB"
+  # Na tentativa passada, o arquivo escolhido não veio: esta não procura de novo
+  [[ -e $marca.falhou ]] && exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url"
+  rm -f -- "$marca" "$fmts"
+  # (no --exec, um "%" dos caminhos viraria campo do modelo do yt-dlp)
+  printf -v cmd 'bash %q --procura-direto %q %d %q %q %d' "${GRABIT_SCRIPT//%/%%}" "${marca//%/%%}" "$BASHPID" \
+    "${arq_site//%/%%}" "${fmts//%/%%}" "$lim"
+  cmd+=' %(webpage_url)q %(title|NA)q %(extractor_key|NA)q %(id|NA)q %(requested_formats.0.url,url|NA)q %(protocol|NA)q'
+  cmd+=' %(height|0)q %(width|0)q %(fps|0)q %(tbr|0)q %(duration|0)q %(dynamic_range|NA)q %(acodec|NA)q %(n_entries|NA)q'
+  cmd+=' %(http_headers.User-Agent|NA)q'
+  trap 'mata_arvore "$yt"' USR1
+  yt-dlp "${YTDLP_ARGS[@]}" "$@" \
+    --print-to-file 'after_filter:%(formats.:.{format_id,url,protocol,height,fps,tbr,vcodec})j' "${fmts//%/%%}" \
+    --exec "video:$cmd" -- "$url" &
+  yt=$!
+  wait "$yt"; rc=$?
+  trap - USR1
+  if [[ -s $marca ]]; then
+    wait "$yt" 2>/dev/null                    # (o sinal interrompe o wait lá de cima)
+    baixa_direto "$marca" "$url" "$@" && exit 0
+    # O arquivo não veio: fica o que já se sabia que funciona
+    : > "$marca.falhou"
+    exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url"
+  fi
+  # A página não abriu no yt-dlp. Antes de abrir um navegador, vale ver se ela cita um arquivo.
+  if (( rc != 0 )) && grep -aq 'Unsupported URL: ' "$TMP/$IDX_JOB.log" 2>/dev/null; then
+    bash "$GRABIT_SCRIPT" --procura-direto "$marca" 0 "$arq_site" "" "$lim" "$url" "$(titulo_da_pagina "$url")" "" "" "" - \
+      0 0 0 0 0 NA NA NA ""
+    if [[ -s $marca ]]; then
+      baixa_direto "$marca" "$url" "$@" && exit 0
+      : > "$marca.falhou"
+    fi
+  fi
+  exit "$rc"
+}
+
+titulo_da_pagina() {                          # titulo_da_pagina URL: o <title>, ou nada
+  command -v curl >/dev/null 2>&1 || return 0
+  curl -fsSL -m 15 --max-filesize 5000000 --proto =http,https --proto-redir =http,https --url "$1" 2>/dev/null |
+    head -c 500000 | tr '\r\n' '  ' | grep -aoiE '<title[^>]*>[^<]+' | head -n 1 | sed -E 's/^<[^>]*>[[:space:]]*//'
+}
+
+# baixa_direto MARCA LINK [OPÇÕES EXTRAS…]: baixa o arquivo que o --procura-direto escolheu.
+baixa_direto() {
+  local marca=$1 url=$2 media titulo chave pagina formato args=(--no-download-archive)
+  shift 2
+  { IFS= read -r media; IFS= read -r titulo; IFS= read -r chave; IFS= read -r pagina; IFS= read -r formato; } < "$marca"
+  # Da oferta do site: o mesmo download, com outro formato. Fica tudo o que o site informa.
+  if [[ -n $formato ]]; then
+    yt-dlp "${YTDLP_ARGS[@]}" "$@" -f "$formato" -- "$url"
+    return $?
+  fi
+  # Citado só na página: fica de fora do histórico, porque o nome costuma ser só "video.mp4", e o
+  # próximo "video.mp4" pareceria já baixado. Quem entra é o vídeo da página, para a próxima
+  # execução pular sem acessar o site.
+  args+=(--referer "${pagina:-$media}")
+  if [[ -n $titulo ]]; then
+    # O "%(_|)s" faz o título valer como texto: uma palavra só seria lida como nome de campo
+    titulo=${titulo//\\/\\\\}; titulo=${titulo//%/%%}; titulo=${titulo//:/\\:}
+    args+=(--parse-metadata "%(_|)s$titulo:%(title)s")
+  fi
+  yt-dlp "${YTDLP_ARGS[@]}" "$@" "${args[@]}" -- "$media" || return $?
+  (( USAR_HISTORICO )) && [[ -n $chave ]] && printf '%s\n' "$chave" >> "$ARQUIVO_HISTORICO"
+  return 0
 }
 
 # ───── Modo upgrade (-U): para cada vídeo do link, compara a melhor versão que o site tem

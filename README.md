@@ -267,6 +267,7 @@ COOKIES_NAVEGADOR=firefox
 | `USER_AGENT` | User-Agent desse navegador (veja [Sites difíceis](#sites-difíceis)) | — |
 | `OPCOES_YTDLP` | opções a mais para o yt-dlp, separadas por espaços (ex.: `--force-ipv4`) | — |
 | `USAR_NAVEGADOR` | `1` abre um navegador quando a página só funciona nele; `0` nunca abre | `1` |
+| `PROCURAR_ARQUIVO` | `1` procura um arquivo direto melhor que o stream, antes de baixar; `0` não procura | `1` |
 | `PROGRAMA_NAVEGADOR` | qual navegador abrir (ex.: `google-chrome`); vazio = o primeiro que achar | — |
 | `USAR_HISTORICO` | `0` desliga o histórico de baixados | `1` |
 | `ARQUIVO_FALHAS` | onde salvar os links que falharam | `links_falhos.txt` |
@@ -310,6 +311,14 @@ O cabeçalho mostra os limites em uso, e `-F` desliga todos eles (e a resoluçã
 
 Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_COLOR` (desliga as cores), só como variáveis de ambiente.
 
+### Qualidade: o que esperar
+
+O GrabIt baixa **a melhor versão que o site entrega**, sem recomprimir. Isso costuma ser igual ou melhor que o que o player escolhe no navegador, que baixa a qualidade conforme a conexão e o tamanho da janela.
+
+O arquivo que quem publicou enviou, quase sempre, não está disponível para ninguém: os sites grandes recomprimem o vídeo ao receber o envio, e é essa versão que todo mundo assiste. Assim, comparada ao envio original, a cópia pode ser inferior; a perda aconteceu no site, não no download.
+
+Stream não quer dizer qualidade menor: é vídeo dividido em pedaços. E `.mp4` não quer dizer original: muitas vezes é uma versão mais leve. Por isso o GrabIt mede os dois antes de escolher ([Arquivo direto](#como-funciona)). Ele não vê o que só aparece com o vídeo tocando no navegador, a não ser quando a própria página exige o navegador.
+
 ## No fim, um resumo
 
 <p align="center">
@@ -328,7 +337,8 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 
 ## Como funciona
 
-- **Formato:** `bv*+ba/b` do yt-dlp (melhor vídeo + melhor áudio) com saída em **MKV**, que aceita qualquer codec. Nada é recodificado.
+- **Formato:** `bv*+ba/b` do yt-dlp (melhor vídeo + melhor áudio) com saída em **MKV**, que aceita qualquer codec. Nada é recodificado: a imagem é a mesma que o site entrega, quadro a quadro, com um detalhe: o MKV guarda o tempo de cada quadro arredondado ao milissegundo.
+- **Arquivo direto:** antes de baixar um stream (HLS/DASH), o GrabIt procura um `.mp4`, `.webm` ou parecido na oferta do site e na própria página, inclusive em scripts e botões de baixar, e mede até 4 candidatos com o `ffprobe`. Só troca se for o mesmo vídeo (a mesma duração), tiver áudio e for melhor em resolução, fps ou bitrate, nessa ordem; com a mesma imagem, fica o arquivo, porque um arquivo só é bem menos pedidos ao site. Se a página não abrir no yt-dlp, a procura vem antes de abrir um navegador. Um arquivo citado só na página vem sem o que apenas o site informa (capa, legendas, canal). Num site onde nada aparece três vezes seguidas, a procura para até a próxima execução. `PROCURAR_ARQUIVO=0` desliga; `-x`, `-u`, `-m` e `grabit curl` não procuram.
 - **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um download que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de rede) **recomeça do zero** na próxima vez, em vez de retomar os pedaços: a retomada pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam vão para `links_falhos.txt`.
 - **Cascata de tentativas:** cada link começa pelo caminho mais rápido e só sobe se precisar: **1)** direto; **2)** com o `Referer`, imitando um navegador quando o `curl-cffi` está instalado e com o ajuste para o erro que deu (IPv4 em falha de rede, uma conexão por vez em pedaços recusados, mais devagar em 429); **3)** pelo navegador, se a página só funcionar nele. Erros que nada resolve (vídeo privado, removido, 404) param logo.
 - **A cascata lembra:** o degrau que funcionou em cada site fica guardado (em `~/.local/share/grabit/metodos.txt`), e os próximos links desse site já começam nele. Numa lista longa, isso evita repetir em todo link o caminho que já se sabe que falha. A memória vence em 30 dias e cai se o método deixar de funcionar.

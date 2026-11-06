@@ -172,6 +172,7 @@ if [ -n "${STUB_DORME:-}" ]; then                                               
     printf 'ini\n' >> "$STUB_CONC"; sleep "$STUB_DORME"; printf 'fim\n' >> "$STUB_CONC" ;;
   esac
 fi
+[ -z "${STUB_D:-}" ] || printf '%s\n' "$STUB_D"                                       # o resultado, se o teste quiser um
 [ -z "${STUB_ERRO:-}" ] && exit 0
 echo "ERROR: $STUB_ERRO"; exit 1
 EOF
@@ -927,6 +928,88 @@ for par in "firefox|--headless" "google-chrome|--headless=new --no-sandbox" "chr
     test -n "$(find "App-$prog" -name '*app index html*.mkv')"
   espera "…na melhor resolução" codigo "$(altura "$(find "App-$prog" -name '*.mkv' | head -n 1)")" 720
 done
+
+secao "O vídeo chega como o site entrega"
+D="$TMP/d7"; mkdir -p "$D"; cd "$D" || exit 1
+imagens() { ffmpeg -v error -i "$1" -map 0:v:0 -f framemd5 - | grep -v '^#' | awk -F, '{print $NF}' | cksum; }
+roda saida1 -L pt -o ./V "$B/longo.mp4" "$B/res/p720.m3u8"
+espera "arquivo direto: as imagens são idênticas, quadro a quadro" test "$(imagens "V/longo [longo].mkv")" = "$(imagens "$W/longo.mp4")"
+ffmpeg -v error -y -i "$W/res/p720.m3u8" -c copy p720.ts
+espera "stream: idem" test "$(imagens "$(find V -name '*p720*.mkv' | head -n 1)")" = "$(imagens p720.ts)"
+
+secao "Arquivo direto melhor que o stream"
+D="$TMP/d8"; mkdir -p "$D" "$W/dir"; cd "$D" || exit 1
+video "$W/dir/video720.mp4" 1280x720 2
+video "$W/dir/video180.mp4" 320x180 2
+video "$W/dir/filme_inteiro.mp4" 1280x720 9
+ffmpeg -loglevel error -y -i "$W/dir/video720.mp4" -an -c copy "$W/dir/mudo.mp4"
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=60:duration=2" -f lavfi -i "sine=duration=2" \
+  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/video60.mp4"
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=160x90:rate=10:duration=31" -f lavfi -i "sine=duration=31" \
+  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/longo31.mp4"
+pagina() {                                    # pagina NOME CORPO → $B/dir/NOME.html, com o stream de 360p
+  printf '<!doctype html><html><head><title>Titulo: %s</title></head><body>%s</body></html>\n' "$1" "$2" > "$W/dir/$1.html"
+}
+printf '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\np360.m3u8\n' > "$W/res/so360.m3u8"   # com a resolução informada
+STREAM='<video controls src="/res/so360.m3u8"></video>'
+pagina fontes '<video controls><source src="/dir/video720.mp4" type="video/mp4"><source src="/res/so360.m3u8" type="application/x-mpegURL"></video>'
+pagina script "$STREAM<script>var p={\"file\":\"http:\\/\\/127.0.0.1:$PORTA\\/dir\\/video720.mp4\"};</script>"
+pagina botao "$STREAM<a href=\"video720.mp4\" download>Baixar</a>"
+pagina fps "$STREAM<a href=\"/dir/video60.mp4\">Baixar</a>"
+pagina outro_video "$STREAM<a href=\"/dir/filme_inteiro.mp4\">Filme</a>"
+pagina sem_audio "$STREAM<a href=\"/dir/mudo.mp4\">Baixar</a>"
+pagina menor "$STREAM<a href=\"/dir/video180.mp4\">Baixar</a>"
+pagina quebrado "$STREAM<a href=\"/dir/nao-existe.mp4\">Baixar</a>"
+pagina comando "$STREAM<a href=\"/\$(touch invadiu)/\`touch invadiu\`.mp4\">Baixar</a>"
+pagina so_script '<div id="player"></div><script>carrega("/dir/longo31.mp4")</script>'
+pagina so_previa '<div id="player"></div><script>carrega("/dir/video720.mp4")</script>'
+acha() { find "$1" -name '*.mkv' -print -quit; }
+for c in fontes script botao; do
+  XDG_DATA_HOME="$TMP/dir-$c" roda "s-$c" -L pt -o "./$c" "$B/dir/$c.html"
+  espera "$c: baixa o .mp4 de 720p, não o stream de 360p" codigo "$(altura "$(acha "$c")")" 720
+done
+espera "da oferta do site: só muda o formato, e o histórico segue normal" contem fontes/.grabit-historico.txt "fontes"
+espera "…avisa o que escolheu e por quê" contem s-botao "720p · 30 fps"
+espera "…e mantém o título da página" contem s-botao "Titulo: botao"
+espera "…também nos metadados" sh -c "ffprobe -v error -show_entries format_tags=title -of csv=p=0 \"\$(find botao -name '*.mkv' | head -n 1)\" | grep -q 'Titulo: botao'"
+roda s-botao2 -L pt -o ./botao "$B/dir/botao.html"
+espera "na próxima vez, a página já conta como baixada" contem s-botao2 "já baixado antes"
+roda s-fps -L pt -o ./fps "$B/dir/fps.html"
+espera "mesma resolução e mais quadros: fica com o .mp4" test "$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "$(acha fps)")" = 60/1
+for c in outro_video sem_audio menor quebrado comando; do
+  roda "s-$c" -L pt -o "./$c" "$B/dir/$c.html"
+  case $c in
+    outro_video) d="duração diferente: é outro vídeo" ;;
+    sem_audio)   d="sem áudio: não serve" ;;
+    menor)       d="resolução menor: não serve" ;;
+    quebrado)    d="arquivo que não abre: fica o stream" ;;
+    comando)     d='um "$(…)" no link da página não vira candidato' ;;
+  esac
+  espera "$d" codigo "$(altura "$(acha "$c")")" 360
+done
+espera "…nem executa nada" test ! -e invadiu
+PROCURAR_ARQUIVO=0 roda s-desligado -L pt -o ./desligado "$B/dir/fontes.html"
+espera "PROCURAR_ARQUIVO=0 não procura" codigo "$(altura "$(acha desligado)")" 360
+roda s-midia -L pt -m -o ./midia "$B/dir/botao.html"
+espera "a biblioteca do -m não troca: um arquivo solto não informa canal e data" codigo "$(altura "$(acha midia)")" 360
+roda s-so -L pt -o ./so "$B/dir/so_script.html"
+espera "página que o yt-dlp não abre, sem <video>: acha no script" codigo "$RC" 0
+espera "…com o título da página" test -n "$(find so -name '*Titulo*so_script*.mkv')"
+roda s-previa -L pt -o ./previa "$B/dir/so_previa.html"
+espera "…mas um vídeo de poucos segundos pode ser só uma prévia: não basta" codigo "$RC" 1
+mkdir -p "$TMP/cortado"; printf 'x\nx\nx\n' > cortado.site
+bash "$G" --procura-direto "$PWD/marca" 0 "$PWD/cortado.site" "" 0 "$B/dir/botao.html" T generic a "$B/res/p360.m3u8" m3u8_native \
+  360 640 30 400 2 SDR aac NA NA >/dev/null 2>&1
+espera "site sem nada três vezes seguidas: não pede mais a página" test ! -e marca
+bash "$G" --procura-direto "$PWD/marca" 0 "$PWD/vazio.site" "" 0 "$B/dir/botao.html" T generic a "$B/res/p360.m3u8" m3u8_native \
+  360 640 30 400 2 SDR aac 5 NA >/dev/null 2>&1
+espera "um vídeo de uma lista longa: não procura (a página fala de vários)" test ! -e marca
+pronto() { printf '@@D@@360\x1f30\x1fSDR\x1fh264\x1faac\x1f%s\x1fCurto\x1fcurto\x1f%s' "$1" "$W/curto.mp4"; }
+mkdir -p "$TMP/so-ytdlp"; ln -sf "$STUB/yt-dlp" "$TMP/so-ytdlp/yt-dlp"     # o ffprobe é o de verdade: é ele quem mede o arquivo
+STUB_D=$(pronto 100) PATH="$TMP/so-ytdlp:$PATH" roda s-curto -L pt -o ./curto http://curto.invalid/1
+espera "bem mais curto que o site informa: avisa" contem s-curto "mais curto"
+STUB_D=$(pronto 2) PATH="$TMP/so-ytdlp:$PATH" roda s-igual -L pt -o ./igual http://curto.invalid/2
+espera "…e não avisa à toa" nao_contem s-igual "mais curto"
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
