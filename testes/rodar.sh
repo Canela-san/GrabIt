@@ -753,6 +753,53 @@ else
   espera "…e só você lê a pasta" false
 fi
 
+secao "Comando digitado errado"
+D="$TMP/errado"; mkdir -p "$D"; cd "$D" || exit 1
+: > "$STUB_LOG"
+falso e1 -L pt converte algo.mkv -e mp4
+espera "um comando quase certo é recusado" codigo "$RC" 2
+espera "…com a sugestão" contem e1 "grabit converter"
+espera "…e nada é baixado" nao_contem "$STUB_LOG" "-- "
+falso e2 -L pt atualisar
+espera "uma letra trocada" contem e2 "grabit atualizar"
+falso e3 -L pt instal
+espera "o começo de um comando" contem e3 "grabit instalar"
+falso e4 -L pt --atualisar
+espera "com os traços também" contem e4 "grabit atualizar"
+espera "…e sai com código 2" codigo "$RC" 2
+falso e5 -L en updat
+espera "em inglês" contem e5 "Did you mean:  grabit update"
+falso e6 -L pt abacaxi
+espera "uma palavra sem nada a ver não ganha sugestão" nao_contem e6 "quis dizer"
+printf 'http://a.invalid/x\n' > update2
+falso e7 -L pt update2
+espera "um arquivo com nome parecido continua sendo um arquivo" nao_contem e7 "quis dizer"
+
+secao "Desinstalar"
+D="$TMP/desinstala"; mkdir -p "$D/casa/.local/bin" "$D/casa/.local/share/grabit" "$D/casa/.config/fish/completions" "$D/solto" "$D/Downloads"; cd "$D" || exit 1
+cp "$G" solto/grabit.sh; ln -s "$D/solto/grabit.sh" casa/.local/bin/grabit
+printf 'x\n' > casa/.local/share/grabit/metodos.txt; printf '# GrabIt\n' > casa/.config/fish/completions/grabit.fish
+printf 'x\n' > solto/grabit.config; printf 'http://a.invalid/1\n' > solto/links.txt; printf 'v\n' > Downloads/video.mkv
+des() { HOME="$D/casa" XDG_DATA_HOME= GRABIT_CONFIG="$D/solto/grabit.config" PATH="$STUB:$PATH" bash "$D/solto/grabit.sh" "$@" > "$S" 2>&1 </dev/null; RC=$?; }
+S=d1 des -L pt desinstalar
+espera "sem confirmar, não apaga nada" test -f solto/grabit.sh -a -L casa/.local/bin/grabit -a -d casa/.local/share/grabit
+espera "…mas mostra o que apagaria" contem d1 "Vou apagar"
+espera "…e sai com código 1" codigo "$RC" 1
+S=d2 des -L pt desinstalar -y
+espera "com -y, tira o comando" test ! -e casa/.local/bin/grabit
+espera "…a memória do GrabIt" test ! -e casa/.local/share/grabit
+espera "…o autocompletar" test ! -e casa/.config/fish/completions/grabit.fish
+espera "…o próprio script e a configuração" test ! -e solto/grabit.sh -a ! -e solto/grabit.config
+espera "…mas não seus vídeos nem suas listas" test -f Downloads/video.mkv -a -f solto/links.txt
+if command -v git >/dev/null 2>&1; then
+  mkdir -p casa2/.local/bin up2; cp "$G" up2/grabit.sh; gitq init -q up2; gitq -C up2 add grabit.sh; gitq -C up2 commit -qm um
+  ln -s "$D/up2/grabit.sh" casa2/.local/bin/grabit
+  HOME="$D/casa2" XDG_DATA_HOME= PATH="$STUB:$PATH" bash up2/grabit.sh -L pt desinstalar -y > d3 2>&1
+  espera "num clone, tira o comando" test ! -e casa2/.local/bin/grabit
+  espera "…mas a pasta fica, e ele avisa" contem d3 "continua em"
+  espera "…com o script" test -f up2/grabit.sh
+fi
+
 secao "Vídeo passado por engano como lista"
 D="$TMP/nao-lista"; mkdir -p "$D"; cd "$D" || exit 1
 printf 'ftypisom\0\0\0\1dados\nhttps://site.invalid/descricao\nmais dados\0\n' > video.mkv

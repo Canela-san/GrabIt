@@ -412,6 +412,39 @@ Os links que falharam vão para `links_falhos.txt`, e o próprio GrabIt mostra o
 - **Retomar o que falhou:** `grabit -l links_falhos.txt`.
 - **Apagou um vídeo e quer baixá-lo de novo?** Rode com `-i` (ignora o histórico) ou apague a linha dele em `Downloads/.grabit-historico.txt`.
 
+## Problemas comuns
+
+| O que aparece | O que fazer |
+|---|---|
+| `HTTP Error 403` em alguns links | O GrabIt já tenta de outros jeitos. Se continuar, use os cookies do navegador em que você está logado: `-b firefox` |
+| `Sign in to confirm`, pede login ou idade | `-b firefox` (ou o navegador em que você está logado) |
+| `HTTP Error 429` ou "o site pediu calma" | O site limitou os pedidos. O GrabIt espera sozinho e vai mais devagar; numa lista enorme, use `LIMITE_POR_SITE=1` e `PAUSA_ENTRE_VIDEOS=5` |
+| Abriu uma janela do navegador | A página só funciona num navegador. Se aparecer uma verificação, é você quem faz, na janela. Para nunca abrir: `USAR_NAVEGADOR=0` |
+| Só baixa em resolução baixa | Veja se há `-r` ou `RESOLUCAO_MAXIMA` em `grabit --config`. No YouTube, falta um runtime JavaScript: `grabit install` |
+| O vídeo não toca na TV ou no celular | Troque a embalagem (`grabit converter video.mkv -e mp4`) e, se não bastar, o codec (`-k h264`) |
+| `Sem espaço no disco` | Libere espaço e rode de novo: só o que faltou é baixado. Interrompidos ficam em `Downloads/.parciais/retomar` |
+| O yt-dlp parou de funcionar num site | `grabit update`: os sites mudam o tempo todo. Se continuar, veja o log em `Downloads/logs` |
+| `grabit: comando não encontrado` | Abra outro terminal. Se continuar, ponha `~/.local/bin` no `PATH` |
+
+### Códigos de saída
+
+Para usar em scripts:
+
+| Código | Significado |
+|---|---|
+| `0` | deu tudo certo |
+| `1` | algum link ou arquivo falhou (os links ficam em `links_falhos.txt`) |
+| `2` | comando ou valor errado: nada foi feito |
+| `130` | cancelado com <kbd>Ctrl</kbd>+<kbd>C</kbd> |
+
+### Desinstalar
+
+```bash
+grabit desinstalar
+```
+
+Mostra a lista do que vai apagar e pede confirmação. Seus vídeos, listas e históricos ficam. O yt-dlp e o FFmpeg também, porque outros programas podem usá-los.
+
 ## Testes
 
 ```bash

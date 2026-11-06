@@ -1240,6 +1240,17 @@ idioma_pt() {
     [val_proxy]="%s: '%s' não é um endereço de proxy. Use http://host:porta ou socks5://host:porta (veio de: %s)."
     [proxy_socks]="Com proxy SOCKS, não há busca por arquivo direto nem várias conexões: o ffprobe e o aria2c não passam por ele."
     [kv_proxy]="Proxy"
+    [cmd_desconhecido]="Comando desconhecido: %s."
+    [cmd_sugestao]="     Você quis dizer:  grabit %s"
+    [des_titulo]="GrabIt · desinstalação"
+    [des_vai]="Vou apagar:"
+    [des_fica]="Seus vídeos, listas e históricos não são tocados."
+    [des_confirma]="Apagar? [s/N]"
+    [des_pronto]="GrabIt desinstalado."
+    [des_nada]="Nada para apagar."
+    [des_pacote]="O GrabIt foi instalado por um gerenciador de pacotes: use  %s"
+    [des_clone]="A pasta do GrabIt continua em %s: apague-a quando quiser."
+    [des_resto]="O yt-dlp, o FFmpeg e o resto continuam, porque outros programas podem usá-los. Para tirar o yt-dlp: pipx uninstall yt-dlp"
     [lista_presa]="Outro GrabIt está gravando nesta lista: tente de novo em instantes."
     [lista_binaria]="'%s' não é uma lista de links: é um arquivo binário, como um vídeo. Nada foi alterado."
     [lista_binaria2]="     Para mudar o formato de um vídeo:  %s"
@@ -1490,6 +1501,8 @@ que grabit --atualizar):
   converter, convert ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
                      muda a extensão de um vídeo já baixado (imagem e som continuam idênticos)
                      ou recomprime em outro codec; o original fica, a não ser com --substituir
+  desinstalar, uninstall
+                     tira o que o GrabIt pôs no sistema; vídeos e listas ficam
   ajuda, help        mostra esta ajuda
 
 • Um arquivo de links com o nome de um comando precisa de ./ na frente: grabit ./update
@@ -1516,6 +1529,9 @@ Configurações permanentes ficam no grabit.config, ao lado do grabit.sh (criado
 na primeira execução, com todos os padrões comentados): grabit --config
 Prioridade: grabit.config < variável de ambiente < opção do comando, ex.:
     DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
+
+Código de saída: 0 deu tudo certo · 1 algum link ou arquivo falhou · 2 comando ou
+valor errado · 130 cancelado com Ctrl+C
 EOF
 )
   T[modelo_config]=$(cat <<'EOF'
@@ -1865,6 +1881,17 @@ idioma_en() {
     [val_proxy]="%s: '%s' is not a proxy address. Use http://host:port or socks5://host:port (from: %s)."
     [proxy_socks]="With a SOCKS proxy there is no direct-file search or multiple connections: ffprobe and aria2c cannot go through it."
     [kv_proxy]="Proxy"
+    [cmd_desconhecido]="Unknown command: %s."
+    [cmd_sugestao]="     Did you mean:  grabit %s"
+    [des_titulo]="GrabIt · uninstall"
+    [des_vai]="I will delete:"
+    [des_fica]="Your videos, lists and histories are not touched."
+    [des_confirma]="Delete? [y/N]"
+    [des_pronto]="GrabIt uninstalled."
+    [des_nada]="Nothing to delete."
+    [des_pacote]="GrabIt was installed by a package manager: use  %s"
+    [des_clone]="The GrabIt folder is still in %s: delete it whenever you like."
+    [des_resto]="yt-dlp, FFmpeg and the rest stay, because other programs may use them. To remove yt-dlp: pipx uninstall yt-dlp"
     [lista_presa]="Another GrabIt is writing to this list: try again in a moment."
     [lista_binaria]="'%s' is not a list of links: it is a binary file, such as a video. Nothing was changed."
     [lista_binaria2]="     To change a video's format:  %s"
@@ -2115,6 +2142,8 @@ the same as grabit --atualizar):
   convert, converter FILE|FOLDER… -e FORMAT and/or -k CODEC
                      changes the extension of a downloaded video (picture and sound stay
                      identical) or re-encodes to another codec; the original stays, unless --replace
+  uninstall, desinstalar
+                     remove what GrabIt put on the system; videos and lists stay
   help, ajuda        show this help
 
 • A link file named like a command needs ./ in front of it: grabit ./update
@@ -2145,6 +2174,9 @@ Permanent settings live in grabit.config, next to grabit.sh (created on the
 first run, with every default commented out): grabit --config
 Priority: grabit.config < environment variable < command-line option, e.g.:
     DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
+
+Exit code: 0 all good · 1 some link or file failed · 2 wrong command or value ·
+130 cancelled with Ctrl+C
 EOF
 )
   T[modelo_config]=$(cat <<'EOF'
@@ -2315,8 +2347,37 @@ palavra_comando() {
     versao|versão|version)            COMANDO=versao ;;
     curl)                             COMANDO=curl ;;
     converter|convert)                COMANDO=converter ;;
+    desinstalar|uninstall)            COMANDO=desinstalar ;;
     *) return 1 ;;
   esac
+}
+PALAVRAS_COMANDO=(config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
+  versao version curl converter convert)
+
+# sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
+# errado ("converte") nunca é um link: melhor dizer logo do que tentar baixar.
+sugere_comando() {
+  local p=${1,,} c a=() b=() i j m custo melhor="" menor=99
+  p=${p#--}
+  (( ${#p} >= 3 )) || return 1
+  for c in "${PALAVRAS_COMANDO[@]}"; do
+    if [[ $c == "$p"* ]]; then FMT=$c; return 0; fi     # o começo de um comando
+    a=(); for (( j = 0; j <= ${#c}; j++ )); do a[j]=$j; done
+    for (( i = 1; i <= ${#p}; i++ )); do
+      b=("$i")
+      for (( j = 1; j <= ${#c}; j++ )); do
+        custo=1; [[ ${p:i-1:1} == "${c:j-1:1}" ]] && custo=0
+        m=$(( a[j] + 1 ))
+        (( b[j-1] + 1 < m )) && m=$(( b[j-1] + 1 ))
+        (( a[j-1] + custo < m )) && m=$(( a[j-1] + custo ))
+        b[j]=$m
+      done
+      a=("${b[@]}")
+    done
+    if (( a[${#c}] < menor )); then menor=${a[${#c}]}; melhor=$c; fi
+  done
+  (( menor <= 2 && menor * 2 < ${#p} )) || return 1
+  FMT=$melhor
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
@@ -2346,7 +2407,12 @@ while (( $# )); do
         *) ARGS_CURTOS+=(-e "$1") ;;
       esac
       shift ;;
-    --*) palavra_comando "${a#--}" || { t opcao_invalida "$a"; erro "$TXT"; uso; exit 2; } ;;
+    --*)
+      if ! palavra_comando "${a#--}"; then
+        t opcao_invalida "$a"; erro "$TXT"
+        if sugere_comando "$a"; then t cmd_sugestao "$FMT"; printf '%s\n' "$TXT"; else uso; fi
+        exit 2
+      fi ;;
     *)   ARGS_CURTOS+=("$a") ;;
   esac
 done
@@ -2400,8 +2466,14 @@ while (( $# )); do
 done
 # Sem os traços: "grabit update". Só a primeira palavra conta, e o getopts já separou os valores
 # das opções ("-l update" é um arquivo). Um arquivo com esse nome continua valendo como ./update.
-if [[ -z $COMANDO && ${#ARGS_LINKS[@]} -gt 0 ]] && (( ! SO_LINKS )) && palavra_comando "${ARGS_LINKS[0]}"; then
-  ARGS_LINKS=("${ARGS_LINKS[@]:1}")
+if [[ -z $COMANDO && ${#ARGS_LINKS[@]} -gt 0 ]] && (( ! SO_LINKS )); then
+  if palavra_comando "${ARGS_LINKS[0]}"; then
+    ARGS_LINKS=("${ARGS_LINKS[@]:1}")
+  elif [[ ! -e ${ARGS_LINKS[0]} && ${ARGS_LINKS[0]} != *[./:]* ]] && sugere_comando "${ARGS_LINKS[0]}"; then
+    t cmd_desconhecido "${ARGS_LINKS[0]}"; erro "$TXT"
+    t cmd_sugestao "$FMT"; printf '%s\n' "$TXT"
+    exit 2
+  fi
 fi
 # "~" num valor que não passou pelo shell (grabit.config, aspas): sem isto, PASTA_SAIDA=~/Vídeos
 # viraria uma pasta chamada "~" aqui e, para o yt-dlp, a pasta pessoal.
@@ -5557,6 +5629,46 @@ instalar() {
   printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "${T[ins_pronto]}"
 }
 
+# grabit desinstalar: tira o que o GrabIt pôs no sistema. Seus vídeos, listas e históricos ficam, e o yt-dlp e
+# o FFmpeg também, porque outros programas podem usá-los. Só apaga o que é dele, e depois de mostrar a lista.
+desinstalar() {
+  local lista=() f dados=${XDG_DATA_HOME:-$HOME/.local/share}/grabit clone=0 c
+  printf '\n  %s%s%s\n\n' "$NEG" "${T[des_titulo]}" "$R"
+  case $GRABIT_DIR in
+    */Cellar/*)  t des_pacote "brew uninstall grabit"; aviso "$TXT"; return 1 ;;
+    /usr/*)      t des_pacote "pacman -R grabit"; aviso "$TXT"; return 1 ;;
+  esac
+  for c in "$HOME/.local/bin/grabit"; do
+    if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
+  done
+  for c in "$HOME/.config/fish/completions/grabit.fish" "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/grabit" "$HOME/.zsh/completions/_grabit"; do
+    [[ -f $c ]] && grep -qs 'GrabIt' "$c" && lista+=("$c")
+  done
+  [[ -d $dados ]] && lista+=("$dados")
+  for c in "$HOME"/snap/*/common/grabit; do [[ -d $c ]] && lista+=("$c"); done
+  if eh_clone_grabit; then
+    clone=1
+  else
+    lista+=("$GRABIT_SCRIPT")
+    [[ -f $CONFIG_ARQ ]] && lista+=("$CONFIG_ARQ")
+  fi
+  if (( ${#lista[@]} )); then
+    printf '  %s\n' "${T[des_vai]}"
+    for f in "${lista[@]}"; do printf '    %s\n' "${f/#$HOME/\~}"; done
+    printf '\n  %s\n' "${T[des_fica]}"
+    if (( ! ASSUME_SIM )) && ! pergunta_nao "${T[des_confirma]}"; then
+      printf '\n  %s\n\n' "${T[ins_cancelado]}"; return 1
+    fi
+    for f in "${lista[@]}"; do rm -rf -- "$f"; done
+    printf '\n  %s✔%s %s\n' "$VERDE" "$R" "${T[des_pronto]}"
+  else
+    printf '  %s\n' "${T[des_nada]}"
+  fi
+  if (( clone )); then t des_clone "${GRABIT_DIR/#$HOME/\~}"; printf '  %s\n' "$TXT"; fi
+  printf '  %s%s%s\n\n' "$DIM" "${T[des_resto]}" "$R"
+  return 0
+}
+
 mostra_versoes() {
   local v
   printf '\n'
@@ -6314,6 +6426,7 @@ case $COMANDO in
   baixados)  gerencia_baixados; exit $? ;;
   versao)    mostra_versao; exit $? ;;
   converter) conversao; exit $? ;;
+  desinstalar) desinstalar; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM
