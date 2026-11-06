@@ -1391,6 +1391,10 @@ for passo in roteiro.split("|"):
         os.write(fd, b"\x03")
     elif tipo == "pausa":
         le(time.time() + float(valor))
+    elif tipo == "tamanho":                          # tamanho:COLUNASxLINHAS: a janela muda
+        c, l = map(int, valor.split("x"))
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", l, c, 0, 0))
+        os.kill(pid, signal.SIGWINCH)
     elif tipo == "fim":
         limite = time.time() + 30
         while time.time() < limite and le(time.time() + 0.2):
@@ -1447,6 +1451,42 @@ EOF
   espera "Ctrl+C cancela, com o código de saída certo" grep -qE 'rc (130|-2)$' p6.rc
   espera "…e diz o que faltou" contem links_falhos.txt "a.invalid/p6b"
   espera "…e devolve o cursor" contem p6 $'\e[?25h'
+  # (o painel é apagado antes do aviso: o último quadro não pode ficar na tela, em nenhum momento do Ctrl+C)
+  painel_apagado() {
+    python3 -c '
+import re, sys
+b = open(sys.argv[1], "rb").read()
+fim = b.index("Cancelado".encode())
+total = b.rfind("Total".encode(), 0, fim)
+sys.exit(0 if re.search(rb"\x1b\[[0-9]+A", b[total:fim]) else 1)' "$1"
+  }
+  for i in 1 2 3 4 5; do
+    STUB_PAINEL=30 tela p6-$i "espera:Filme de teste|pausa:0.$(( i * 7 ))|ctrlc|fim" -L pt -j 1 http://a.invalid/c$i-a http://a.invalid/c$i-b
+    espera "Ctrl+C, vez $i: o painel não fica na tela" painel_apagado p6-$i
+  done
+  # Ctrl+Z, num shell de verdade: o prompt volta com o cursor, e o fg continua de onde parou
+  TERM=xterm-256color HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" STUB_PAINEL=4 python3 "$TMP/terminal.py" z1 40 "pausa:0.5|tecla:bash '$G' -L pt http://a.invalid/z1
+|espera:Filme de teste|tecla:$(printf '\032')|espera:Stopped|pausa:0.3|tecla:fg
+|espera:Baixados|pausa:0.5|tecla:exit
+|fim" bash --norc --noprofile -i > z1.rc 2>&1
+  z_ok() {
+    python3 -c '
+import sys
+b = open(sys.argv[1], "rb").read()
+p = b.index(b"Stopped")
+antes = b[:p]
+sys.exit(0 if antes.rfind(b"\x1b[?25h") > antes.rfind(b"\x1b[?25l") and antes.rfind(b"\x1b[?7h") > antes.rfind(b"\x1b[?7l") else 1)' "$1"
+  }
+  espera "Ctrl+Z: o shell recebe o cursor e a quebra de linha de volta" z_ok z1
+  espera "…e o fg continua até o fim" grep -qE '✔ +Baixados +1' z1
+  # A janela encolhe: o painel se ajusta, em vez de empurrar linhas para o histórico
+  ult_subida() { grep -aoE $'\e\\[[0-9]+A' "$1" | tail -n 1 | tr -dc '0-9'; }
+  STUB_PAINEL=6 tela p9 'espera:Filme de teste|pausa:1|tamanho:100x8|pausa:1.5|ctrlc|fim' -L pt -j 4 http://a.invalid/w1 http://b.invalid/w2 http://c.invalid/w3 http://d.invalid/w4
+  espera "janela baixa: o painel cabe nela" test "$(ult_subida p9)" -le 7
+  espera "…e diz quantos ficaram de fora" contem p9 "fora da tela"
+  # Sem apagar a tela a cada quadro
+  STUB_PAINEL=3 tela p10 'espera:Filme de teste|fim' -L pt -j 1 http://a.invalid/q1
+  espera "os quadros não apagam a tela" test "$(grep -ac $'\e\\[J' p10)" -le 4
   unset STUB_PROG
   # as perguntas do instalador, respondidas no teclado
   RES_INS="$TMP/casa-ins"; mkdir -p "$RES_INS"

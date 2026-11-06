@@ -1184,6 +1184,7 @@ idioma_pt() {
     [k_pausado]="pausado · p continua"
     [k_parando]="terminando os downloads atuais · q de novo cancela"
     [k_simultaneos]="%d download(s) ao mesmo tempo"
+    [k_fora]="mais %d baixando, fora da tela"
     [notif_msg]="Terminou: %d baixado(s), %d já existia(m), %d com erro · %s"
     [notif_sem_curl]="Para avisar no celular (NTFY_TOPICO) é preciso o curl."
     [notif_falhou]="Não consegui enviar o aviso para %s."
@@ -1967,6 +1968,7 @@ idioma_en() {
     [k_pausado]="paused · p resumes"
     [k_parando]="finishing the current downloads · q again cancels"
     [k_simultaneos]="%d download(s) at once"
+    [k_fora]="%d more downloading, off screen"
     [notif_msg]="Done: %d downloaded, %d already there, %d failed · %s"
     [notif_sem_curl]="Phone notifications (NTFY_TOPICO) need curl."
     [notif_falhou]="Couldn't send the notification to %s."
@@ -3127,6 +3129,9 @@ LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
 TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
+LINHAS=24; LIVE_ANT=(); REDESENHA=1
+FD_SLOT=(); FD_IDX=(); ULT_LINHA=(); ETAPA_SLOT=(); RESTO_SLOT=(); REC_SLOT=()
+LOG_RECUSOU=(); LOG_LENTO=(); LOG_SONDA=(); LOG_RETOMADO=(); LOG_VIVO=()
 ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
 SALVA_A_CADA=${GRABIT_SALVA_A_CADA:-60}; PROX_MOVER=$SALVA_A_CADA
 CLIP_CMD=(); CLIP_ULTIMO=""; CLIP_PRIMEIRA=1; PROX_CLIP=0; ARQ_CAPTURA=""
@@ -3285,6 +3290,9 @@ atualiza_largura() {                          # relê o tamanho do terminal (no 
   COLS=$(tput cols 2>/dev/null) || COLS=80
   [[ $COLS =~ ^[0-9]+$ ]] || COLS=80
   (( COLS < 50 )) && COLS=50
+  LINHAS=$(tput lines 2>/dev/null) || LINHAS=24
+  [[ $LINHAS =~ ^[0-9]+$ ]] || LINHAS=24
+  REDESENHA=1
   return 0
 }
 
@@ -3407,23 +3415,62 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
   esac
 }
 
+# le_log_slot SLOT IDX: lê só o que chegou de novo no log deste download. O painel roda 4 vezes por segundo:
+# abrir um "tail" e um "grep" para cada download custaria mais do que tudo o que ele desenha. Daqui saem a última
+# linha (ULT_LINHA), a etapa (ETAPA_SLOT), as recusas recentes (REC_SLOT) e os avisos do aria2c (LOG_*).
+le_log_slot() {
+  local s=$1 i=$2 log="$TMP/$2.log" fd l seps h
+  fd=${FD_SLOT[$s]:-}
+  if [[ -z $fd || ${FD_IDX[$s]:-} != "$i" ]]; then
+    fecha_log_slot "$s"
+    [[ -r $log ]] || return 0
+    exec {fd}<"$log" || return 0
+    FD_SLOT[$s]=$fd; FD_IDX[$s]=$i
+    ULT_LINHA[$s]=""; ETAPA_SLOT[$s]=""; RESTO_SLOT[$s]=""; REC_SLOT[$s]=""
+    LOG_RECUSOU[$i]=""; LOG_LENTO[$i]=""; LOG_SONDA[$i]=""; LOG_RETOMADO[$i]=""
+  fi
+  while IFS= read -r -u "$fd" l; do
+    l=${RESTO_SLOT[$s]}$l; RESTO_SLOT[$s]=""
+    l=${l%$'\r'}
+    # (uma recusa do site é contada mesmo num aviso; as últimas 12 linhas é que dizem se ele insiste)
+    case $l in
+      *'Got error: HTTP Error 429'*) h=c ;;
+      *'Got error: HTTP Error 401'*|*'Got error: HTTP Error 403'*|*'Got error: HTTP Error 404'*|*'Got error: HTTP Error 410'*) h=r ;;
+      *) h=x ;;
+    esac
+    h=${REC_SLOT[$s]}$h; REC_SLOT[$s]=${h: -12}
+    case $l in
+      WARNING:*) continue ;;
+      @@P@@*)    seps=${l//[!$SEP]/}; (( ${#seps} == 10 )) || continue; LOG_VIVO[$i]=1 ;;
+      @@D@@*)    LOG_VIVO[$i]=1 ;;
+      '[grabit] recusou'*)  LOG_RECUSOU[$i]=1 ;;
+      '[grabit] lento'*)    LOG_LENTO[$i]=1 ;;
+      '[grabit] sonda ok'*) LOG_SONDA[$i]=1 ;;
+      '[grabit] retomado '*) LOG_RETOMADO[$i]=${l#\[grabit\] retomado } ;;
+    esac
+    ULT_LINHA[$s]=$l
+    etapa_da_linha "$l"
+    [[ -n $ETAPA ]] && ETAPA_SLOT[$s]=$ETAPA
+  done
+  [[ -n $l ]] && RESTO_SLOT[$s]+=$l            # linha ainda sendo escrita: fica para a próxima
+  return 0
+}
+
+fecha_log_slot() {                            # fecha_log_slot SLOT
+  local fd=${FD_SLOT[$1]:-}
+  if [[ -n $fd ]]; then exec {fd}<&-; fi
+  FD_SLOT[$1]=""; FD_IDX[$1]=""
+  return 0
+}
+
 bloco_job() {                                 # monta as 2 linhas de um slot (slot livre não aparece)
   local s=$1
   local idx=${SLOT_IDX[$s]}
   (( idx == 0 )) && return
 
-  local log="$TMP/$idx.log" ult=() linha="" k idxs spin titulo pre="" pre_txt="" l1 l2 seps tent
-  mapfile -t ult < <(tail -n 30 "$log" 2>/dev/null)
-  for (( k = ${#ult[@]} - 1; k >= 0; k-- )); do
-    linha=${ult[$k]}
-    [[ $linha == WARNING:* ]] && continue
-    if [[ $linha == @@P@@* ]]; then           # linha de progresso pela metade (ainda sendo escrita)? usa a anterior
-      seps=${linha//[!$SEP]/}
-      (( ${#seps} == 10 )) || continue
-    fi
-    break
-  done
-  (( k < 0 )) && linha=""
+  local linha idxs spin titulo pre="" pre_txt="" l1 l2 tent
+  le_log_slot "$s" "$idx"
+  linha=${ULT_LINHA[$s]:-}
 
   printf -v idxs "%0${#TOTAL}d/%d" "$idx" "$TOTAL"
   spin=${SPIN[$(( TICK % ${#SPIN[@]} ))]}
@@ -3506,11 +3553,7 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
     # Sem progresso agora: a linha informativa mais recente do log diz a etapa
     # (extraindo, baixando legendas, mesclando, embutindo…).
     ETA_JOB[$idx]=0
-    ETAPA=""
-    for (( k = ${#ult[@]} - 1; k >= 0; k-- )); do
-      etapa_da_linha "${ult[$k]}"
-      [[ -n $ETAPA ]] && break
-    done
+    ETAPA=${ETAPA_SLOT[$s]:-}
     [[ -z $ETAPA ]] && ETAPA=${T[et_info]}
     corta "$titulo" $(( COLS - (2 + 1 + 1 + ${#idxs} + 2) - ${#pre_txt} - 2 ))
     l1="  ${ACENTO}${spin}${R} ${DIM}${idxs}${R}  ${pre}${FMT}"
@@ -3521,10 +3564,18 @@ bloco_job() {                                 # monta as 2 linhas de um slot (sl
 
 monta_live() {
   LIVE=(); VEL_TOTAL=0
-  local s larg reg bw l w i plano partes=() cores=()
+  local s larg reg bw l w i plano partes=() cores=() max manter fora=0
   for (( s = 0; s < J; s++ )); do bloco_job "$s"; done
+  # A janela pode ter ficado mais baixa que o painel. Se ele passasse da altura, cada quadro empurraria
+  # linhas repetidas para o histórico de rolagem: ficam os downloads que couberem, e a régua conta o resto.
+  max=$(( LINHAS - 3 ))
+  if (( ${#LIVE[@]} > max )); then
+    manter=$(( max < 2 ? 0 : max / 2 * 2 ))
+    fora=$(( (${#LIVE[@]} - manter) / 2 ))
+    LIVE=("${LIVE[@]:0:manter}")
+  fi
 
-  larg=$(( COLS - 4 )); (( larg > 78 )) && larg=78
+  larg=$(( COLS - 4 ))
   # a régua entre os downloads e o total mostra o estado das teclas (pausado, parando…)
   local msg=""
   if (( PARANDO )); then msg=${T[k_parando]}
@@ -3532,7 +3583,8 @@ monta_live() {
   elif (( MSG_ATE >= SECONDS )); then msg=$MSG_PAINEL
   elif (( ATIVOS == 0 && N_PENDENTES > 0 )) && espera_restante; then t k_espera_site "$FMT" "$NUM"; msg=$TXT
   elif (( CAPTURA && ATIVOS == 0 )); then msg=${T[clip_aguardando]}
-  elif (( FILA_VIVA && ATIVOS == 0 )); then t fv_aguardando "$FONTE_LINKS"; msg=$TXT; fi
+  elif (( FILA_VIVA && ATIVOS == 0 )); then t fv_aguardando "$FONTE_LINKS"; msg=$TXT
+  elif (( fora > 0 )); then t k_fora "$fora"; msg=$TXT; fi
   if [[ -n $msg ]]; then
     corta "$msg" $(( larg - 6 )); msg=$FMT
     printf -v reg '%*s' $(( larg - 4 - LARG )) ''
@@ -3590,28 +3642,46 @@ eta_lote() {
 
 # desenha [final] — imprime as linhas permanentes pendentes e redesenha o painel
 desenha() {
-  local out="" l j
+  local out="" l i n final=0 mudou=0 j=""
+  [[ ${1:-} == final ]] && final=1
   TICK=$(( TICK + 1 ))
-  # DEC 2026 (synchronized output): terminais que suportam só mostram o quadro
-  # pronto; os que não suportam ignoram a sequência.
-  (( INTERATIVO )) && out+="${ESC}[?2026h"
-  if (( INTERATIVO && LIVE_H > 0 )); then
-    out+="${ESC}[${LIVE_H}A"$'\r'"${ESC}[J"
-    LIVE_H=0
-  fi
-  for l in "${PERM[@]}"; do out+="$l"$'\n'; done
-  PERM=()
-  if (( INTERATIVO )) && [[ ${1:-} != final ]]; then
+  LIVE=()
+  if (( INTERATIVO && ! final )); then
     monta_live
-    for l in "${LIVE[@]}"; do out+="$l"$'\n'; done
-    LIVE_H=${#LIVE[@]}
     j="${FINALIZADOS}/${TOTAL} · GrabIt"           # título da janela/aba do terminal
     (( FILA_VIVA && ATIVOS == 0 )) && j="GrabIt · ${T[fv_titulo]}"
-    if [[ $j != "$JANELA" ]]; then out+="${ESC}]0;${j}"$'\a'; JANELA=$j; fi
   fi
-  [[ ${1:-} == final ]] && (( INTERATIVO )) && out+="${ESC}[?7h"   # religa a quebra de linha
-  (( INTERATIVO )) && out+="${ESC}[?2026l"
+  n=${#LIVE[@]}
+  if (( ! INTERATIVO )); then
+    for l in "${PERM[@]}"; do out+="$l"$'\n'; done
+  elif (( ! ${#PERM[@]} && ! final && ! REDESENHA && n == LIVE_H )); then
+    # O caso de quase todos os quadros: só as linhas que mudaram são escritas de novo
+    for (( i = 0; i < n; i++ )); do
+      if [[ ${LIVE[$i]} != "${LIVE_ANT[$i]:-}" ]]; then mudou=1; break; fi
+    done
+    if (( mudou )); then
+      (( n > 0 )) && out+="${ESC}[${n}A"$'\r'
+      for (( i = 0; i < n; i++ )); do
+        if [[ ${LIVE[$i]} == "${LIVE_ANT[$i]:-}" ]]; then out+="${ESC}[B"
+        else out+="${LIVE[$i]}${ESC}[K"$'\r\n'; fi
+      done
+    fi
+  else
+    # Cada linha é escrita por cima da antiga, sem apagar antes, e só depois sai o que sobrou:
+    # a tela nunca fica em branco, mesmo num terminal sem saída sincronizada
+    (( LIVE_H > 0 )) && out+="${ESC}[${LIVE_H}A"$'\r'
+    for l in "${PERM[@]}"; do out+="${l//$'\n'/${ESC}[K$'\n'}${ESC}[K"$'\n'; done
+    for l in "${LIVE[@]}"; do out+="${l}${ESC}[K"$'\n'; done
+    out+="${ESC}[J"
+  fi
+  if (( INTERATIVO )); then
+    if [[ -n $j && $j != "$JANELA" ]]; then out+="${ESC}]0;${j}"$'\a'; JANELA=$j; fi
+    (( final )) && out+="${ESC}[?7h"                # religa a quebra de linha
+    [[ -n $out ]] && out="${ESC}[?2026h${out}${ESC}[?2026l"
+  fi
   printf '%s' "$out"
+  # (só depois de escrever: um Ctrl+C antes disso ainda precisa saber quantas linhas o painel ocupa)
+  LIVE_H=$n; LIVE_ANT=("${LIVE[@]}"); PERM=(); REDESENHA=0
 }
 
 # ───────────────────────────── Resultado de cada link ─────────────────────────
@@ -4246,22 +4316,22 @@ conexoes_do_job() {
 confere_recusa() {
   local i=$1 s=${SITE[$1]}
   (( ${CONEX_JOB[$i]:-1} > 1 )) || return 0
-  local l
-  if [[ -z ${RETOMOU[$i]:-} ]] && l=$(grep -am 1 '^\[grabit\] retomado ' "$TMP/$i.log" 2>/dev/null); then
+  local l=${LOG_RETOMADO[$i]:-}
+  if [[ -z ${RETOMOU[$i]:-} && -n $l ]]; then
     RETOMOU[$i]=1
-    l=${l#\[grabit\] retomado }; fmt_bytes "${l%% *}"
+    fmt_bytes "${l%% *}"
     t k_retomado "${l#* }" "$FMT"; PERM+=("  ${CIANO}↻${R} $TXT")
   fi
-  if [[ -z ${RECUSOU[$i]:-} ]] && grep -aqm 1 '^\[grabit\] recusou' "$TMP/$i.log" 2>/dev/null; then
+  if [[ -z ${RECUSOU[$i]:-} && -n ${LOG_RECUSOU[$i]:-} ]]; then
     RECUSOU[$i]=1
     if (( ! ${UMA_CONEXAO[$s]:-0} )); then t k_conexoes "$s"; PERM+=("  ${AMARELO}⚠${R} $TXT"); fi
     (( ${UMA_CONEXAO[$s]:-0} < 5 )) && UMA_CONEXAO[$s]=5
   fi
-  if (( ${UMA_CONEXAO[$s]:-0} < 1000000 )) && grep -aqm 1 '^\[grabit\] lento' "$TMP/$i.log" 2>/dev/null; then
+  if (( ${UMA_CONEXAO[$s]:-0} < 1000000 )) && [[ -n ${LOG_LENTO[$i]:-} ]]; then
     UMA_CONEXAO[$s]=1000000
     t k_lento "$s"; PERM+=("  ${CIANO}↗${R} $TXT")
   fi
-  if [[ -z ${ARIA_OK[$s]:-} ]] && grep -aqm 1 '^\[grabit\] sonda ok' "$TMP/$i.log" 2>/dev/null; then ARIA_OK[$s]=1; fi
+  if [[ -z ${ARIA_OK[$s]:-} && -n ${LOG_SONDA[$i]:-} ]]; then ARIA_OK[$s]=1; fi
   return 0
 }
 
@@ -4349,9 +4419,10 @@ vigia_saude() {
   local s idx
   for (( s = 0; s < J; s++ )); do
     idx=${SLOT_IDX[$s]}
-    (( idx > 0 )) && confere_recusa "$idx"
-    (( idx > 0 )) && [[ -z ${SAUDAVEL[$idx]:-} ]] || continue
-    grep -aqm 1 '^@@[PD]@@' "$TMP/$idx.log" 2>/dev/null || continue
+    (( idx > 0 )) || continue
+    le_log_slot "$s" "$idx"
+    confere_recusa "$idx"
+    [[ -z ${SAUDAVEL[$idx]:-} && -n ${LOG_VIVO[$idx]:-} ]] || continue
     SAUDAVEL[$idx]=1
     site_aceitou "${SITE[$idx]}"
   done
@@ -4470,9 +4541,8 @@ alterna_pausa() {
 }
 
 muda_simultaneos() {                          # muda_simultaneos +1|-1
-  local novo=$(( J_ALVO + $1 )) linhas max
-  linhas=$(tput lines 2>/dev/null); [[ $linhas =~ ^[0-9]+$ ]] || linhas=24
-  max=$(( (linhas - 3) / 2 )); (( max < 1 )) && max=1          # o painel precisa caber na tela
+  local novo=$(( J_ALVO + $1 )) max
+  max=$(( (LINHAS - 3) / 2 )); (( max < 1 )) && max=1          # o painel precisa caber na tela
   (( ! FILA_VIVA && max > TOTAL )) && max=$TOTAL
   (( novo > max )) && novo=$max
   (( novo < 1 )) && novo=1
@@ -4481,8 +4551,30 @@ muda_simultaneos() {                          # muda_simultaneos +1|-1
   t k_simultaneos "$J_ALVO"; MSG_PAINEL=$TXT; MSG_ATE=$(( SECONDS + 3 ))
 }
 
+modo_teclas() {                               # o terminal entrega cada tecla na hora, sem eco; o Ctrl+Z vem como tecla
+  stty -echo -icanon min 1 time 0 susp undef <&3 2>/dev/null
+}
+
+# Ctrl+Z: devolve o terminal como estava e para tudo. Parar só pelo sinal deixaria o cursor escondido e a
+# quebra de linha desligada no prompt. Na volta (fg), o painel é desenhado de novo, abaixo do que o shell escreveu.
+suspende() {
+  printf '%s' "${ESC}[?25h${ESC}[?7h"
+  [[ -n $STTY_SAVE ]] && stty "$STTY_SAVE" <&3 2>/dev/null
+  kill -s STOP 0
+  modo_teclas
+  printf '%s' "${ESC}[?25l${ESC}[?7l"
+  if (( PAUSADO )); then                      # o fg acordou todo mundo
+    local s
+    for (( s = 0; s < J; s++ )); do
+      (( SLOT_IDX[$s] > 0 )) && sinaliza_arvore "${SLOT_PID[$s]}" STOP
+    done
+  fi
+  LIVE_H=0; REDIM=1
+}
+
 trata_tecla() {
   case $1 in
+    $'\x1a') suspende ;;
     p|P|" ") alterna_pausa ;;
     q|Q)
       if (( PARANDO )); then CANCELADO=1; SINAL=INT; exit 130; fi   # q de novo = Ctrl+C
@@ -4619,9 +4711,9 @@ vigia_bloqueios() {
   for (( s = 0; s < J; s++ )); do
     idx=${SLOT_IDX[$s]}
     (( idx > 0 )) || continue
-    n=$(tail -n 12 "$TMP/$idx.log" 2>/dev/null | grep -acE 'Got error: HTTP Error (401|403|404|410)')
-    m=$(tail -n 12 "$TMP/$idx.log" 2>/dev/null | grep -ac 'Got error: HTTP Error 429')   # 429: insistir piora
-    (( ${n:-0} >= 5 || ${m:-0} >= 3 )) || continue
+    n=${REC_SLOT[$s]:-}; n=${n//[!r]/}
+    m=${REC_SLOT[$s]:-}; m=${m//[!c]/}          # 429: insistir piora
+    (( ${#n} >= 5 || ${#m} >= 3 )) || continue
     ultima=$(grep -aE 'Got error: HTTP Error (401|403|404|410|429)' "$TMP/$idx.log" | tail -n 1)
     mata_arvore "${SLOT_PID[$s]}"
     printf 'ERROR: %s\n' "$ultima" >> "$TMP/$idx.log"
@@ -7469,7 +7561,7 @@ if [[ $livre =~ ^[0-9]+$ ]] && (( livre < 2097152 )); then
 fi
 # Teclas: o terminal para de ecoar e entrega cada tecla na hora (sem esperar o Enter)
 if (( INTERATIVO )) && { exec 3</dev/tty; } 2>/dev/null; then
-  if STTY_SAVE=$(stty -g <&3 2>/dev/null) && stty -echo -icanon min 1 time 0 <&3 2>/dev/null; then TECLAS=1; fi
+  if STTY_SAVE=$(stty -g <&3 2>/dev/null) && modo_teclas; then TECLAS=1; fi
 fi
 J_ALVO=$J
 printf '  %s%s%s\n' "$DIM" "${T[dica_ctrlc]}" "$R"
@@ -7504,6 +7596,8 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     kill -0 "${SLOT_PID[$s]}" 2>/dev/null && continue
     wait "${SLOT_PID[$s]}" 2>/dev/null; rc=$?
     (( rc == 101 )) && rc=0                     # o yt-dlp parou no limite pedido (--max): não é erro
+    le_log_slot "$s" "$idx"
+    fecha_log_slot "$s"
     SLOT_IDX[$s]=0
     ATIVOS_SITE[${SITE[$idx]}]=$(( ${ATIVOS_SITE[${SITE[$idx]}]:-1} - 1 ))
     confere_recusa "$idx"
