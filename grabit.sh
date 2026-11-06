@@ -312,6 +312,7 @@ idioma_pt() {
     [links_repetidos]=" %d repetido(s)"
     [links_sem_link]=" %d linha(s) sem link"
     [links_na_secao]=" · %d já na seção BAIXADOS"
+    [links_sites]=" · %d sites"
     [fonte_stdin]="entrada padrão"
     [fonte_cli]="linha de comando"
     [av_linhas]="Terminal com só %s linhas: limitei a %d download(s) simultâneo(s)."
@@ -813,6 +814,7 @@ idioma_en() {
     [links_repetidos]=" %d duplicate(s)"
     [links_sem_link]=" %d line(s) without a link"
     [links_na_secao]=" · %d already in the DOWNLOADED section"
+    [links_sites]=" · %d sites"
     [fonte_stdin]="standard input"
     [fonte_cli]="command line"
     [av_linhas]="The terminal has only %s rows: limited to %d simultaneous download(s)."
@@ -1464,7 +1466,7 @@ ALERTA=$RESOLUCAO_ALERTA
 # ───────────────────────────── Estado global ──────────────────────────────────
 J=0; TOTAL=0; COLS=100; TICK=0; LIVE_H=0; CANCELADO=0; SINAL=""; STTY_SAVE=""; TMP=""
 N_OK=0; N_JA=0; N_ERRO=0; N_AVISOS=0; N_FATAIS=0; N_COSMETICOS=0; AVISO_CTX=""; BYTES_NOVOS=0; FINALIZADOS=0; DUPLICADOS=0; INVALIDAS=0
-VEL_TOTAL=0; EM_REPETICAO=0; PROXIMO=1; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; COMECOU=0
+VEL_TOTAL=0; EM_REPETICAO=0; REDIM=1; JANELA=""; TITULO_EMPILHADO=0; COMECOU=0
 ULTIMO_PID=0; IMPERSONATE=""; JS_RUNTIME=""; JS_PATH=""; JS_RECUSADO=""; JS_CANDIDATOS=(); AVISO_JSC=""; YTDLP_VER=""; FFMPEG_VER=""; TEM_JS_RUNTIMES=0
 S_H=0; S_FPS=0; S_HDR="SDR"; S_VC=""; S_AC=""; S_CANAIS=0; S_DUR=0; S_TAM=0
 FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0
@@ -1472,10 +1474,12 @@ AJUSTE=""; AJUSTES=(); DICA_NAVEGADOR=0; MODO_CURL=0; EXTRA_YTDLP=(); N_CAB_CURL
 NIVEL=(); NIVEL_INICIO=(); NAV_AVISADO=0; NAV_DONO=0; NAV_PROG=""; NAV_TIPO=""; NAV_NOME=""; NAV_ROTULO=""; PASTA_NAV=""
 CAB_ARGS=(); CAB_REFERER=""; SAIDA_PAGINA=""; ARQ_METODOS=""; PROX_BLOQ=0; MUITAS_REQ=0
 declare -A METODO=() METODO_QUANDO=() FREIO_SITE=()
+declare -A FILA_CAB=() FILA_RAB=() PEND_SITE=() ATIVOS_SITE=()
+SEG=(); SITES=(); N_PENDENTES=0
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
-LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=(); REPETIR=()
+LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
 TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
@@ -1911,7 +1915,7 @@ eta_lote() {
   NUM=0
   (( T_N > 0 && FINALIZADOS < TOTAL )) || return 0
   media=$(( T_SOMA / T_N )); (( media < 1 )) && media=1
-  pend=$(( TOTAL - N_INICIADOS + ${#REPETIR[@]} ))
+  pend=$N_PENDENTES
   for (( s = 0; s < J; s++ )); do
     idx=${SLOT_IDX[$s]}
     (( idx > 0 )) || continue
@@ -2196,6 +2200,7 @@ lanca_job() {                                 # lanca_job IDX
     baixa_link "$url" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
   fi
   ULTIMO_PID=$!
+  ATIVOS_SITE[${SITE[$i]}]=$(( ${ATIVOS_SITE[${SITE[$i]}]:-0} + 1 ))
   INICIO_JOB[$i]=$SECONDS; ETA_JOB[$i]=0
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
@@ -2342,48 +2347,60 @@ escolhe_principal() {
 # escolhe_proximo → ESCOLHIDO: o próximo link a começar (primeiro os novos, na ordem da
 # lista, depois as novas tentativas), pulando os de um site que já está no limite.
 escolhe_proximo() {
-  local i k
+  local s melhor="" at pend i melhor_at=0 melhor_pend=0
   ESCOLHIDO=0
-  while (( PROXIMO <= TOTAL )) && [[ -n ${INICIADO[$PROXIMO]:-} ]]; do PROXIMO=$(( PROXIMO + 1 )); done
-  for (( i = PROXIMO; i <= TOTAL; i++ )); do
-    [[ -n ${INICIADO[$i]:-} ]] && continue
-    pode_comecar "$i" || continue
-    ESCOLHIDO=$i; INICIADO[$i]=1; N_INICIADOS=$(( N_INICIADOS + 1 ))
-    return 0
+  for s in "${SITES[@]}"; do
+    pend=${PEND_SITE[$s]}
+    (( pend > 0 )) || continue
+    at=${ATIVOS_SITE[$s]:-0}
+    site_pode_comecar "$s" "$at" || continue
+    # o site com menos downloads rodando; no empate, o que tem mais links esperando
+    if [[ -z $melhor ]] || (( at < melhor_at || (at == melhor_at && pend > melhor_pend) )); then
+      melhor=$s; melhor_at=$at; melhor_pend=$pend
+    fi
   done
-  for k in "${!REPETIR[@]}"; do
-    pode_comecar "${REPETIR[$k]}" || continue
-    ESCOLHIDO=${REPETIR[$k]}; unset 'REPETIR[k]'; REPETIR=("${REPETIR[@]}")
-    return 0
-  done
-  return 1
+  [[ -n $melhor ]] || return 1
+  i=${FILA_CAB[$melhor]}
+  FILA_CAB[$melhor]=${SEG[$i]}
+  PEND_SITE[$melhor]=$(( melhor_pend - 1 )); N_PENDENTES=$(( N_PENDENTES - 1 ))
+  ESCOLHIDO=$i
+  if [[ -z ${INICIADO[$i]:-} ]]; then INICIADO[$i]=1; N_INICIADOS=$(( N_INICIADOS + 1 )); fi
+  return 0
 }
 
-site_livre() {                                # site_livre IDX: o site do link ainda tem vaga?
-  local s n=0 alvo=${SITE[$1]} limite=$LIMITE_POR_SITE freio
-  freio=${FREIO_SITE[$alvo]:-0}                # o site pediu calma nesta execução (429)
-  (( freio > 0 && (limite == 0 || freio < limite) )) && limite=$freio
-  (( limite > 0 )) || return 0
-  for (( s = 0; s < J; s++ )); do
-    (( SLOT_IDX[$s] > 0 )) && [[ ${SITE[${SLOT_IDX[$s]}]} == "$alvo" ]] && n=$(( n + 1 ))
-  done
-  (( n < limite ))
+# ───── Os links ficam em filas, uma por site, e os downloads se espalham entre os sites: com
+# ───── 4 vagas e 4 sites, é um de cada, e nenhum deles recebe uma rajada só porque os links
+# ───── dele vieram juntos na lista. Listas encadeadas: nem uma lista de milhares pesa no Bash.
+enfileira() {                                 # enfileira IDX: no fim da fila do site dele
+  local i=$1 s=${SITE[$1]}
+  SEG[$i]=0
+  if (( ${PEND_SITE[$s]:-0} == 0 )); then FILA_CAB[$s]=$i; else SEG[${FILA_RAB[$s]}]=$i; fi
+  FILA_RAB[$s]=$i
+  [[ -n ${PEND_SITE[$s]+x} ]] || SITES+=("$s")
+  PEND_SITE[$s]=$(( ${PEND_SITE[$s]:-0} + 1 )); N_PENDENTES=$(( N_PENDENTES + 1 ))
 }
 
-# pode_comecar IDX: há vaga no site e, se o link vai pelo navegador, a janela está livre?
-# Enquanto ela está ocupada, os links dos outros sites passam na frente.
-pode_comecar() {
-  site_livre "$1" || return 1
-  nivel_do_link "$1"
-  (( NIVEL[$1] < 2 )) || [[ ! -d $TMP/navegador.trava ]]
+# reenfileira IDX: na frente da fila. A nova tentativa sai antes dos outros links do site: é
+# ela que descobre o caminho certo, e eles não gastam pedidos num que já se viu que falha.
+reenfileira() {
+  local i=$1 s=${SITE[$1]}
+  if (( ${PEND_SITE[$s]:-0} == 0 )); then SEG[$i]=0; FILA_RAB[$s]=$i; else SEG[$i]=${FILA_CAB[$s]}; fi
+  FILA_CAB[$s]=$i
+  PEND_SITE[$s]=$(( ${PEND_SITE[$s]:-0} + 1 )); N_PENDENTES=$(( N_PENDENTES + 1 ))
+}
+
+# site_pode_comecar SITE ATIVOS: há vaga nesse site e, se o próximo link dele vai pelo navegador,
+# a janela está livre? Enquanto ela está ocupada, os links dos outros sites passam na frente.
+site_pode_comecar() {
+  local s=$1 at=$2
+  (( LIMITE_POR_SITE == 0 || at < LIMITE_POR_SITE )) || return 1
+  nivel_previsto "${FILA_CAB[$s]}"
+  (( NUM < 2 )) || [[ ! -d $TMP/navegador.trava ]]
 }
 
 # 429: nesta execução, no máximo metade dos downloads que estavam rodando nesse site
 freia_site() {
-  local site=$1 s n=0
-  for (( s = 0; s < J; s++ )); do
-    (( SLOT_IDX[$s] > 0 )) && [[ ${SITE[${SLOT_IDX[$s]}]} == "$site" ]] && n=$(( n + 1 ))
-  done
+  local site=$1 n=${ATIVOS_SITE[$site]:-0}
   n=$(( n / 2 )); (( n < 1 )) && n=1
   (( ${FREIO_SITE[$site]:-99} > n )) || return 0
   FREIO_SITE[$site]=$n
@@ -2427,13 +2444,20 @@ lembra_metodo() {                             # lembra_metodo SITE NÍVEL
   grava_metodos
 }
 
-# nivel_do_link IDX → NIVEL[IDX]: por onde o link começa (decidido uma vez só)
-nivel_do_link() {
+# nivel_previsto IDX → NUM: por onde o link iria agora. Só se decide de vez quando ele começa
+# (nivel_do_link): até lá, outro link do site pode ter descoberto um caminho melhor.
+nivel_previsto() {
   local i=$1 n=0 site=${SITE[$1]:-}
-  [[ -n ${NIVEL[$i]:-} ]] && return 0
+  if [[ -n ${NIVEL[$i]:-} ]]; then NUM=${NIVEL[$i]}; return 0; fi
   if [[ -n $site ]] && (( ! MODO_CURL && ! UPGRADE )); then n=${METODO[$site]:-0}; fi
   (( n == 2 )) && ! pode_navegador && n=1
-  NIVEL[$i]=$n; NIVEL_INICIO[$i]=$n
+  NUM=$n
+}
+
+nivel_do_link() {
+  [[ -n ${NIVEL[$1]:-} ]] && return 0
+  nivel_previsto "$1"
+  NIVEL[$1]=$NUM; NIVEL_INICIO[$1]=$NUM
 }
 
 # site_de URL → FMT: o site do link, para o limite por site (www.youtube.com,
@@ -2508,6 +2532,7 @@ novos_links() {
         [[ -n ${CONHECIDO[$palavra]:-} ]] && continue
         CONHECIDO[$palavra]=1; LINKS+=("$palavra"); TOTAL=$(( TOTAL + 1 ))
         site_de "$palavra"; SITE[$TOTAL]=$FMT
+        enfileira "$TOTAL"
         n=$(( n + 1 ))
       done
     done
@@ -2582,7 +2607,7 @@ vale_repetir() {
   mv -f "$TMP/$idx.log" "$TMP/$idx.t$tent.log"
   (( tent == 1 )) && EM_REPETICAO=$(( EM_REPETICAO + 1 ))
   TENTATIVA[$idx]=$(( tent + 1 ))
-  REPETIR+=("$idx")
+  reenfileira "$idx"
 }
 
 # Pedaço recusado (401, 403, 404, 410): o yt-dlp insiste em cada um, com espera crescente, e
@@ -4372,7 +4397,7 @@ if (( INTERATIVO )); then                       # o painel (2 linhas por vídeo 
   if (( J > max_j )); then LIMITE_J=$J; J=$max_j; fi
 fi
 for (( s = 0; s < J; s++ )); do SLOT_IDX[$s]=0; SLOT_PID[$s]=0; done
-for (( i = 1; i <= TOTAL; i++ )); do site_de "${LINKS[$(( i - 1 ))]}"; SITE[$i]=$FMT; done
+for (( i = 1; i <= TOTAL; i++ )); do site_de "${LINKS[$(( i - 1 ))]}"; SITE[$i]=$FMT; enfileira "$i"; done
 monta_args_ytdlp
 
 extras=""
@@ -4396,6 +4421,7 @@ if [[ -z $IMPERSONATE ]]; then txt_imp="${AMARELO}${T[imp_indisp]}${R}"
 elif (( TENTATIVAS > 1 )); then txt_imp=${T[imp_retry]}
 else txt_imp=${T[imp_off]}; fi
 
+if (( ${#SITES[@]} > 1 )); then t links_sites "${#SITES[@]}"; extras+=$TXT; fi
 kv "${T[kv_links]}"   "${NEG}${TOTAL}${R}${DIM} · ${FONTE_LINKS}${extras}${R}"
 if (( MIDIA )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_midia]}"
 elif (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
@@ -4500,6 +4526,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     kill -0 "${SLOT_PID[$s]}" 2>/dev/null && continue
     wait "${SLOT_PID[$s]}" 2>/dev/null; rc=$?
     SLOT_IDX[$s]=0
+    ATIVOS_SITE[${SITE[$idx]}]=$(( ${ATIVOS_SITE[${SITE[$idx]}]:-1} - 1 ))
     if (( NAV_DONO == idx )); then NAV_DONO=0; rmdir "$TMP/navegador.trava" 2>/dev/null; fi
     if (( rc != 0 )) && vale_repetir "$idx"; then continue; fi
     (( ${TENTATIVA[$idx]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
@@ -4510,7 +4537,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     (( BAIXOU )) && { T_SOMA=$(( T_SOMA + SECONDS - ${INICIO_JOB[$idx]:-$SECONDS} )); T_N=$(( T_N + 1 )); }
   done
 
-  # 2) ocupa os slots livres: primeiro os links novos, depois as novas tentativas
+  # 2) ocupa os slots livres, espalhando os downloads entre os sites
   ativos=0
   for (( s = 0; s < J; s++ )); do (( SLOT_IDX[$s] > 0 )) && ativos=$(( ativos + 1 )); done
   for (( s = 0; s < J; s++ )); do
