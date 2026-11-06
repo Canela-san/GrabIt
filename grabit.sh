@@ -139,17 +139,44 @@ if [[ ${1:-} == --baixa-partes ]]; then
     [[ $1 =~ ([0-9]+)s ]] && NUM=$(( NUM + 10#${BASH_REMATCH[1]} ))
     return 0
   }
-  # sonda_conexao DE → NUM: bytes por segundo de uma conexão só, com os mesmos cabeçalhos e cookies
-  sonda_conexao() {
-    local a ant="" cab=()
+  # sessao → CAB: os mesmos cabeçalhos e cookies do download, para o curl
+  sessao() {
+    local a ant=""
+    CAB=()
     for a in "${opcoes[@]}"; do
-      [[ $ant == --header ]] && cab+=(-H "$a")
-      [[ $a == --load-cookies=* ]] && cab+=(-b "${a#*=}")
+      [[ $ant == --header ]] && CAB+=(-H "$a")
+      [[ $a == --load-cookies=* ]] && CAB+=(-b "${a#*=}")
       ant=$a
     done
+  }
+  # sonda_conexao DE → NUM: bytes por segundo de uma conexão só
+  sonda_conexao() {
+    sessao
     NUM=$(curl -s -L -m 4 --proto =http,https --proto-redir =http,https -r "$1-$(( $1 + 8000000 ))" -o /dev/null \
-            -w '%{speed_download}' "${cab[@]}" --url "$link" 2>/dev/null)
+            -w '%{speed_download}' "${CAB[@]}" --url "$link" 2>/dev/null)
     NUM=${NUM%%[.,]*}; [[ $NUM =~ ^[0-9]+$ ]] || NUM=0
+  }
+  # identidade → ID_ARQ: o tamanho e a marca de versão do arquivo, pedindo 1 byte dele. Sem aceitar
+  # pedidos parciais ou sem uma marca confiável, não há como garantir que é o mesmo arquivo: nada de
+  # retomar. (Uma ETag fraca, W/…, só promete conteúdo parecido. O --max-filesize evita baixar tudo,
+  # caso o site ignore o pedido parcial.)
+  identidade() {
+    local l tam="" tag="" data="" estado=""
+    ID_ARQ=""
+    sessao
+    while IFS= read -r l; do
+      l=${l%$'\r'}
+      case ${l,,} in
+        http/*) estado=${l#* }; estado=${estado%% *}; tam=""; tag=""; data="" ;;   # (vale a última resposta)
+        content-range:*) [[ $l =~ /([0-9]+)$ ]] && tam=${BASH_REMATCH[1]} ;;
+        etag:*) tag=${l#*:}; tag=${tag# } ;;
+        last-modified:*) data=${l#*:}; data=${data# } ;;
+      esac
+    done < <(curl -s -L -m 10 --max-filesize 65536 --proto =http,https --proto-redir =http,https -r 0-0 \
+               -o /dev/null -D - "${CAB[@]}" --url "$link" 2>/dev/null)
+    [[ $tag == [Ww]/* ]] && tag=""
+    [[ $estado == 206 && -n $tam && -n $tag$data ]] || return 1
+    ID_ARQ="$tam ${tag:-$data}"
   }
   traduz() {
     local l b t v e c vistos=" " re='^\[#[0-9a-f]+ ([0-9.]+[KMGT]?i?B)/([0-9.]+[KMGT]?i?B)' soma=0 n=0 ini=$SECONDS sondar=$sonda_ligada
@@ -163,6 +190,11 @@ if [[ ${1:-} == --baixa-partes ]]; then
         if [[ $l =~ DL:([0-9.]+[KMGT]?i?B) ]]; then em_bytes "${BASH_REMATCH[1]}"; v=$NUM; fi
         if [[ $l =~ ETA:([0-9hms]+) ]]; then em_segundos "${BASH_REMATCH[1]}"; e=$NUM; fi
         printf '@@P@@%d\x1f%d\x1f%d\x1f%d\x1f\x1f\x1f?\x1f\x1f\x1f\x1f%s\n' "$b" "$t" "$v" "$e" "$nome"
+        # Só arquivo grande vale um pedido a mais ao site: o pequeno, se cair, recomeça rápido
+        if (( guardar && t >= 52428800 && SECONDS - ini >= 2 )); then
+          guardar=0
+          if identidade; then printf '%s\n' "$ID_ARQ" > "$parte.grabit" && printf '[grabit] parte %s\n' "$parte"; fi
+        fi
         # Só com várias conexões abertas, e com bastante arquivo pela frente
         if (( sondar )) && [[ $l =~ CN:([0-9]+) ]] && (( BASH_REMATCH[1] > 1 && SECONDS - ini >= 3 )); then
           soma=$(( soma + v )); n=$(( n + 1 ))
@@ -193,12 +225,35 @@ if [[ ${1:-} == --baixa-partes ]]; then
   # (antes do "--" que precede o link, e depois das opções do yt-dlp: no aria2c, vale a última)
   opcoes=(); while (( $# )) && [[ $1 != -- ]]; do opcoes+=("$1"); shift; done
   link=${2:-}
+  # Um arquivo grande interrompido continua de onde parou, se ainda for o mesmo no site: pedaços de duas
+  # versões dariam um vídeo estragado. O aria2c sabe o que já chegou pelo arquivo .aria2 que fica ao lado
+  # (sem ele, confundiria buracos com dados, e por isso os dois só andam juntos). O GrabIt principal guarda
+  # os interrompidos em .parciais/retomar (guarda_retomaveis); aqui eles voltam para a pasta desta execução.
+  parte=""; pasta=""; ant=""; guardar=0
+  for a in "${opcoes[@]}"; do
+    [[ $ant == --out ]] && parte=$a
+    [[ $ant == --dir ]] && pasta=$a
+    ant=$a
+  done
+  parte="${pasta%/}${pasta:+/}${parte##*/}"
+  if [[ -n ${GRABIT_RETOMAR:-} && -n $link && -n ${parte##*/} ]] && command -v curl >/dev/null 2>&1; then
+    guardar=1
+    g="$GRABIT_RETOMAR/${parte##*/}"
+    if [[ -f $g && -f $g.aria2 && -f $g.grabit && ! -e $parte ]]; then
+      if identidade && [[ $ID_ARQ == "$(<"$g.grabit")" ]] && mv -f -- "$g" "$g.aria2" "$g.grabit" "${parte%/*}/" 2>/dev/null; then
+        guardar=0
+        printf '[grabit] parte %s\n[grabit] retomado %s %s\n' "$parte" "$(wc -c < "$parte")" "$nome"
+      else
+        rm -f -- "$g" "$g.aria2" "$g.grabit"   # o arquivo mudou no site: recomeça
+      fi
+    fi
+  fi
   sonda_ligada=${GRABIT_SONDAR:-1}
   [[ -n $link ]] && command -v curl >/dev/null 2>&1 || sonda_ligada=0
   [[ " ${opcoes[*]} " == *" --max-overall-download-limit"* ]] && sonda_ligada=0   # o limite é da pessoa
   opcoes+=(--summary-interval=1 --enable-color=false --console-log-level=warn --download-result=hide
            --allow-overwrite=true --auto-file-renaming=false --min-split-size=20M --max-tries=3 --retry-wait=2
-           --connect-timeout=15 --timeout=30 --async-dns=false)
+           --connect-timeout=15 --timeout=30 --async-dns=false --auto-save-interval=5)
   exec > >(traduz) 2>&1
   exec aria2c "${opcoes[@]}" "$@"
 fi
@@ -1257,7 +1312,10 @@ idioma_pt() {
     [f_logs]=" — logs em %s/"
     [f_continuar]="     Para continuar:  %s"
     [c_cancelado]="Cancelado."
-    [c_descartado]=" O que estava pela metade foi descartado e recomeça do zero na próxima vez."
+    [c_descartado]=" Arquivos diretos grandes continuam de onde pararam na próxima vez; o resto recomeça do zero."
+    [k_retomado]="%s: continuou de onde parou, com %s já baixados"
+    [kv_para_retomar]="Interrompidos"
+    [kv_retomar]="%d para continuar (%s, guardados por 14 dias)"
     [tmp_falhou]="Não consegui criar a pasta temporária."
     [pasta_falhou]="Não consegui criar a pasta '%s'."
   )
@@ -1337,9 +1395,10 @@ que grabit --atualizar):
   fim da fila, imitando um navegador (--impersonate) se houver curl_cffi.
 • Links que falharem vão para links_falhos.txt, prontos para reexecutar:
       grabit -l links_falhos.txt
-• Download que não terminou (Ctrl+C, erro) recomeça do zero na próxima vez:
-  retomar pedaços não garante a qualidade. A pasta Downloads/.parciais só existe
-  enquanto o GrabIt roda.
+• Download que não terminou (Ctrl+C, erro, queda de energia): um arquivo direto de
+  50 MiB ou mais continua de onde parou, se ainda for o mesmo no site (com aria2c). O
+  resto recomeça do zero: retomar pedaços de um stream não garante a qualidade. Só os
+  interrompidos ficam em Downloads/.parciais/retomar, por até 14 dias.
 
 Configurações permanentes ficam no grabit.config, ao lado do grabit.sh (criado
 na primeira execução, com todos os padrões comentados): grabit --config
@@ -1850,7 +1909,10 @@ idioma_en() {
     [f_logs]=" — logs in %s/"
     [f_continuar]="     To continue:  %s"
     [c_cancelado]="Canceled."
-    [c_descartado]=" Anything half-done was discarded and will start over next time."
+    [c_descartado]=" Large direct files pick up where they stopped next time; everything else starts over."
+    [k_retomado]="%s: picked up where it stopped, with %s already downloaded"
+    [kv_para_retomar]="Interrupted"
+    [kv_retomar]="%d to continue (%s, kept for 14 days)"
     [tmp_falhou]="Couldn't create the temporary folder."
     [pasta_falhou]="Couldn't create folder '%s'."
   )
@@ -1933,9 +1995,11 @@ the same as grabit --atualizar):
   is installed.
 • Failed links go to links_falhos.txt, ready to run again:
       grabit -l links_falhos.txt
-• A download that didn't finish (Ctrl+C, error) starts over from scratch next
-  time: resuming pieces doesn't guarantee quality. The Downloads/.parciais
-  folder only exists while GrabIt runs.
+• A download that didn't finish (Ctrl+C, error, power cut): a direct file of 50 MiB
+  or more picks up where it stopped, if it is still the same on the site (with
+  aria2c). Everything else starts over: resuming pieces of a stream doesn't
+  guarantee quality. Only the interrupted ones stay in Downloads/.parciais/retomar,
+  for up to 14 days.
 
 Permanent settings live in grabit.config, next to grabit.sh (created on the
 first run, with every default commented out): grabit --config
@@ -2380,7 +2444,7 @@ NIVEL=(); NIVEL_INICIO=(); NAV_AVISADO=0; NAV_DONO=0; NAV_PROG=""; NAV_TIPO=""; 
 CAB_ARGS=(); CAB_REFERER=""; SAIDA_PAGINA=""; ARQ_METODOS=""; PROX_BLOQ=0; MUITAS_REQ=0
 declare -A METODO=() METODO_QUANDO=() ESPERA_ATE=()
 declare -A CONEX_SITE=() UMA_CONEXAO=() ARIA_OK=()
-ARIA=""; CONEX_JOB=(); RECUSOU=(); SEM_ARIA=(); CONVERTER=(); CV_OK=0; CV_PULADOS=0; CV_ERROS=0; CONV_DUR=0
+ARIA=""; CONEX_JOB=(); RECUSOU=(); RETOMOU=(); SEM_ARIA=(); CONVERTER=(); CV_OK=0; CV_PULADOS=0; CV_ERROS=0; CONV_DUR=0
 declare -A FILA_CAB=() FILA_RAB=() PEND_SITE=() ATIVOS_SITE=()
 declare -A LIM_SITE=() CREDITO_SITE=() BLOQ_SITE=() ESPERA_SITE=() PROX_INICIO_SITE=() FALHAS_SITE=() PARADO_SITE=() CALMA_ATE=()
 SEG=(); SITES=(); SAUDAVEL=(); N_PENDENTES=0; N_ADIADOS=0; BLOQUEIO=0
@@ -3155,7 +3219,9 @@ lanca_job() {                                 # lanca_job IDX
   if (( n > 1 && NIVEL[$i] == 0 && ! MODO_CURL )) && [[ -n $ARIA && ${SITE[$i]} != youtube.com ]]; then
     extra+=(--downloader "http:$ARIA" --downloader-args "aria2c:-x$n -s$n")
     GRABIT_SONDAR=1; [[ -n ${ARIA_OK[${SITE[$i]}]:-} ]] && GRABIT_SONDAR=0
-    export GRABIT_SONDAR
+    GRABIT_RETOMAR="$PASTA_SAIDA/.parciais/retomar"
+    (( ${REBAIXAR[$i]:-0} )) && GRABIT_RETOMAR=""   # o que veio da última vez estava estragado
+    export GRABIT_SONDAR GRABIT_RETOMAR
   fi
   read -ra ajuste <<<"${AJUSTES[$i]:-}"
   extra+=("${ajuste[@]}")
@@ -3493,6 +3559,12 @@ conexoes_do_job() {
 confere_recusa() {
   local i=$1 s=${SITE[$1]}
   (( ${CONEX_JOB[$i]:-1} > 1 )) || return 0
+  local l
+  if [[ -z ${RETOMOU[$i]:-} ]] && l=$(grep -am 1 '^\[grabit\] retomado ' "$TMP/$i.log" 2>/dev/null); then
+    RETOMOU[$i]=1
+    l=${l#\[grabit\] retomado }; fmt_bytes "${l%% *}"
+    t k_retomado "${l#* }" "$FMT"; PERM+=("  ${CIANO}↻${R} $TXT")
+  fi
   if [[ -z ${RECUSOU[$i]:-} ]] && grep -aqm 1 '^\[grabit\] recusou' "$TMP/$i.log" 2>/dev/null; then
     RECUSOU[$i]=1
     if (( ! ${UMA_CONEXAO[$s]:-0} )); then t k_conexoes "$s"; PERM+=("  ${AMARELO}⚠${R} $TXT"); fi
@@ -3504,6 +3576,16 @@ confere_recusa() {
   fi
   if [[ -z ${ARIA_OK[$s]:-} ]] && grep -aqm 1 '^\[grabit\] sonda ok' "$TMP/$i.log" 2>/dev/null; then ARIA_OK[$s]=1; fi
   return 0
+}
+
+# esquece_parte IDX: o que este download já tinha baixado não serve mais: veio estragado, ou o próximo
+# vai pelo yt-dlp, que escreveria por cima das partes do aria2c e deixaria o .aria2 mentindo.
+esquece_parte() {
+  local l
+  while IFS= read -r l; do
+    l=${l#\[grabit\] parte }
+    rm -f -- "$l" "$l.aria2" "$l.grabit"
+  done < <(grep -a '^\[grabit\] parte ' "$TMP/$1.log" 2>/dev/null)
 }
 
 # site_aceitou SITE: um download dele começou de verdade (ou terminou bem)
@@ -3820,7 +3902,7 @@ vale_repetir() {
   elif (( REPETE && NIVEL[$idx] == 0 && ! ${SEM_ARIA[$idx]:-0} )) && grep -aq 'aria2c exited with code' "$TMP/$idx.log" 2>/dev/null; then
     # Quem falhou foi o aria2c, não o método: repete igual, só que pelo yt-dlp. Sem gastar tentativa e
     # sem subir na cascata, que lembraria desse site como difícil por 30 dias.
-    SEM_ARIA[$idx]=1; UMA_CONEXAO[$site]=5
+    SEM_ARIA[$idx]=1; UMA_CONEXAO[$site]=5; esquece_parte "$idx"
   elif (( NIVEL[$idx] < 2 && REPETE && tent < TENTATIVAS + ${SEM_ARIA[$idx]:-0} )); then
     (( NIVEL[$idx] == 0 )) && NIVEL[$idx]=1     # o próximo degrau da cascata
   elif vai_ao_navegador "$idx"; then            # se a página só funciona num navegador, é a vez dele
@@ -3834,7 +3916,7 @@ vale_repetir() {
     fi
     return 1
   fi
-  (( ARQUIVO_RUIM )) && REBAIXAR[$idx]=1
+  if (( ARQUIVO_RUIM )); then REBAIXAR[$idx]=1; esquece_parte "$idx"; fi
   AJUSTES[$idx]=$AJUSTE
   mv -f "$TMP/$idx.log" "$TMP/$idx.t$tent.log"
   (( tent == 1 )) && EM_REPETICAO=$(( EM_REPETICAO + 1 ))
@@ -4025,26 +4107,44 @@ limpa() {                                     # trap EXIT: sempre devolve o term
   exit "$rc"
 }
 
-# Pasta temporária desta execução: .parciais/<pid>-<data>. Como nada é retomado entre
-# execuções, o que sobrou de execuções anteriores é lixo e vai embora — menos a pasta de
-# outro GrabIt que esteja rodando agora na mesma pasta de destino.
+# guarda_retomaveis PASTA: os arquivos grandes que ficaram pela metade, com o que é preciso para continuar.
+# Um stream fica de fora: retomar pedaços pode deixar buracos no vídeo.
+guarda_retomaveis() {
+  local f p dest="$PASTA_SAIDA/.parciais/retomar"
+  while IFS= read -r -d '' f; do
+    p=${f%.grabit}
+    [[ -f $p && -f $p.aria2 ]] && mkdir -p "$dest" && mv -f -- "$p" "$p.aria2" "$f" "$dest/" 2>/dev/null
+  done < <(find "$1" -type f -name '*.grabit' -print0 2>/dev/null)
+  return 0
+}
+
+# Pasta temporária desta execução: .parciais/<pid>-<data>. O que sobrou de execuções anteriores vai
+# embora, menos a pasta de outro GrabIt que esteja rodando agora na mesma pasta de destino e os arquivos
+# grandes interrompidos, que ficam guardados por 14 dias para continuar de onde pararam.
 prepara_parciais() {
   local raiz="$PASTA_SAIDA/.parciais" item
   if [[ -d $raiz ]]; then
     for item in "$raiz"/* "$raiz"/.[!.]*; do
-      [[ -e $item ]] || continue
+      [[ -e $item && ${item##*/} != retomar ]] || continue
       if [[ -d $item && ${item##*/} =~ ^([0-9]+)- ]] && kill -0 "${BASH_REMATCH[1]}" 2>/dev/null; then
         continue
       fi
+      [[ -d $item ]] && guarda_retomaveis "$item"
       rm -rf -- "$item"
     done
+    # (o .aria2 é o que muda sempre que o download anda: é ele que diz há quanto tempo parou)
+    while IFS= read -r -d '' item; do
+      item=${item%.aria2}
+      rm -f -- "$item" "$item.aria2" "$item.grabit"
+    done < <(find "$raiz/retomar" -type f -name '*.aria2' -mtime +14 -print0 2>/dev/null)
   fi
   printf -v TEMP_REL '.parciais/%s-%(%Y%m%d%H%M%S)T' "$$" -1
   DIR_TEMP="$PASTA_SAIDA/$TEMP_REL"
 }
 
 descarta_parciais() {                         # apaga a pasta temporária desta execução
-  [[ -n $TEMP_REL && -d $DIR_TEMP ]] && rm -rf -- "$DIR_TEMP"
+  if [[ -n $TEMP_REL && -d $DIR_TEMP ]]; then guarda_retomaveis "$DIR_TEMP"; rm -rf -- "$DIR_TEMP"; fi
+  rmdir -- "$PASTA_SAIDA/.parciais/retomar" 2>/dev/null
   rmdir -- "$PASTA_SAIDA/.parciais" 2>/dev/null
   return 0
 }
@@ -5947,6 +6047,13 @@ elif [[ -n $txt_ign ]]; then
   t lim_desligados "$AMARELO" "$R" "$txt_ign"; kv "${T[kv_limites]}" "$TXT"
 fi
 if [[ -n $PROXY ]]; then sem_senha "$PROXY"; kv "${T[kv_proxy]}" "$FMT"; fi
+if [[ -d $PASTA_SAIDA/.parciais/retomar ]]; then
+  n_ret=$(find "$PASTA_SAIDA/.parciais/retomar" -type f -name '*.grabit' 2>/dev/null | grep -c '')
+  if (( n_ret )); then
+    k_ret=$(du -sk -- "$PASTA_SAIDA/.parciais/retomar" 2>/dev/null); fmt_bytes $(( ${k_ret%%[[:space:]]*} * 1024 ))
+    t kv_retomar "$n_ret" "$FMT"; kv "${T[kv_para_retomar]}" "$TXT"
+  fi
+fi
 if (( CONFIG_CRIADO )); then
   t kv_config_criado "$VERDE" "$R" "${CONFIG_ARQ/#$HOME/\~}"; kv "${T[kv_config]}" "$TXT"
 elif [[ -f $CONFIG_ARQ ]]; then

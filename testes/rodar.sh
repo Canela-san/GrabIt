@@ -1440,6 +1440,47 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "…e o download sai sem elas" test "$(imagens "$(so_um l mp4)")" = "$REF"
   espera "…sem erro" codigo "$RC" 0
   espera "…e sem marcar o site como difícil" nao_contem "$XDG_DATA_HOME/grabit/metodos.txt" "127.0.0.1"
+
+  secao "Retomar um arquivo direto"
+  ln -sfn . "$W/lento"
+  tem_marca() { test -n "$(find "$1" -name '*.grabit' -print -quit 2>/dev/null)"; }
+  interrompe() {                              # interrompe PASTA: começa a baixar e para no meio
+    bash "$G" -L pt -O -o "$1" "$B/lento/grande.mp4" >"$1.log" 2>&1 &
+    local pid=$!
+    ate tem_marca "$1"
+    sleep 1
+    kill -TERM "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+  }
+  interrompe ./i1
+  G1=i1/.parciais/retomar
+  espera "interrompido no meio: o que chegou fica guardado" test -n "$(find "$G1" -name '*.mp4.part' -size +1M -print -quit 2>/dev/null)"
+  espera "…com o que o aria2c precisa para continuar" test -n "$(find "$G1" -name '*.aria2' -print -quit 2>/dev/null)"
+  espera "…e sem sobrar a pasta temporária" test "$(find i1/.parciais -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+  : > "$W/pedidos.log"
+  roda r1 -L pt -O -o ./i1 "$B/calmo/grande.mp4"
+  espera "na próxima vez, avisa que há o que continuar" contem r1 "1 para continuar"
+  espera "…continua de onde parou" contem r1 "continuou de onde parou"
+  espera "…sem pedir de novo o começo do arquivo" test "$(grep -c '^/calmo/grande.mp4 bytes=0-$' "$W/pedidos.log")" -eq 0
+  espera "…e sai idêntico ao do site" test "$(imagens "$(so_um i1 mp4)")" = "$REF"
+  espera "…sem sobrar nada para continuar" test ! -e i1/.parciais
+  interrompe ./i2
+  # o arquivo muda no site: outra data de modificação, e os pedaços velhos não podem entrar
+  touch -d 2020-01-02T03:04:05 "$W/grande.mp4"
+  : > "$W/pedidos.log"
+  roda r2 -L pt -O -o ./i2 "$B/calmo/grande.mp4"
+  espera "o arquivo mudou no site: não continua" nao_contem r2 "continuou de onde parou"
+  espera "…baixa de novo, inteiro" test "$(imagens "$(so_um i2 mp4)")" = "$REF"
+  interrompe ./i3
+  find i3/.parciais -name '*.aria2' -exec touch -d 2020-01-02T03:04:05 {} +
+  roda r3 -L pt -O -o ./i3 "$B/curto.mp4"
+  espera "guardado há mais de 14 dias: libera o espaço" test ! -e i3/.parciais
+  interrompe ./i4
+  mkdir -p i4/.parciais/99999-20200101
+  mv i4/.parciais/retomar/* i4/.parciais/99999-20200101/
+  rmdir i4/.parciais/retomar
+  roda r4 -L pt -O -o ./i4 "$B/calmo/grande.mp4"
+  espera "falta de luz: o que sobrou na pasta da execução que morreu também continua" contem r4 "continuou de onde parou"
 fi
 
 secao "Proxy, de verdade"
