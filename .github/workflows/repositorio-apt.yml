@@ -1,0 +1,66 @@
+name: Repositório APT
+
+# Publica o repositório APT no GitHub Pages, com a versão publicada mais nova. Quem dispara é o
+# "Publicar versão", ao terminar, e dá para disparar à mão. Roda a partir da main porque o ambiente
+# do Pages só aceita a branch padrão, não uma etiqueta.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: A chave de assinatura existe
+        env:
+          CHAVE: ${{ secrets.APT_GPG_KEY }}
+        run: |
+          if [ -z "$CHAVE" ]; then
+            echo "::error::Falta a chave de assinatura: rode bash packaging/apt/criar-chave.sh"
+            exit 1
+          fi
+      - name: Baixa a versão publicada e confere a soma
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --json tagName --jq .tagName)
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSAO=${tag#v}" >> "$GITHUB_ENV"
+          mkdir -p /tmp/versao
+          gh release download "$tag" --dir /tmp/versao --pattern grabit.sh --pattern grabit.sh.sha256
+          (cd /tmp/versao && sha256sum -c grabit.sh.sha256)
+      - name: Ferramentas
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt-utils
+      - name: Monta o pacote e o repositório
+        env:
+          CHAVE: ${{ secrets.APT_GPG_KEY }}
+        run: |
+          printf '%s\n' "$CHAVE" | gpg --batch --import
+          id=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ { print $10; exit }')
+          bash packaging/apt/construir.sh /tmp/versao/grabit.sh "$VERSAO" /tmp/apt "$id"
+      - name: Anexa o .deb à versão
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "/tmp/apt/grabit_${VERSAO}_all.deb" --clobber
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: /tmp/apt/site
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -26,6 +26,15 @@ jobs:
       - name: Testes
         run: bash testes/rodar.sh
 
+  pacote-apt:
+    name: Pacote .deb e repositório APT
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Instala, atualiza e remove pelo apt
+        run: docker run --rm -v "$PWD:/grabit:ro" -w /grabit ubuntu:24.04 bash packaging/apt/testar.sh
+
   versoes-do-bash:
     name: Bash ${{ matrix.bash }}
     runs-on: ubuntu-latest

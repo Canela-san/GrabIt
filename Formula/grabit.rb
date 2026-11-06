@@ -3,7 +3,7 @@ class Grabit < Formula
   homepage "https://github.com/Canela-san/GrabIt"
   url "https://github.com/Canela-san/GrabIt/releases/download/v1.0.0/grabit.sh"
   version "1.0.0"
-  sha256 "cd6c8d668b7ef2af621b8aad5ce700682a1e1111a26f9ef523dd0603346cb084"
+  sha256 "cea2005435dba8832b9aa39f869d2bea563826507ceeb77877014d79ea2f7504"
   license "MIT"
 
   depends_on "aria2"

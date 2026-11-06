@@ -17,7 +17,7 @@ pkgbase = grabit
 	optdepends = firefox: pages that only work in a browser
 	source = grabit-1.0.0.sh::https://github.com/Canela-san/GrabIt/releases/download/v1.0.0/grabit.sh
 	source = LICENSE-1.0.0::https://raw.githubusercontent.com/Canela-san/GrabIt/v1.0.0/LICENSE
-	sha256sums = cd6c8d668b7ef2af621b8aad5ce700682a1e1111a26f9ef523dd0603346cb084
+	sha256sums = cea2005435dba8832b9aa39f869d2bea563826507ceeb77877014d79ea2f7504
 	sha256sums = a8c15790dc9fd32deddb389200e1554ad5ad6b151ecc79883140323f2c021be2
 
 pkgname = grabit

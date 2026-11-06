@@ -71,6 +71,18 @@ jobs:
           git commit -am "Pacotes: $TAG"
           git push origin HEAD:main
 
+  apt:
+    needs: pacotes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispara a publicação do repositório APT
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run repositorio-apt.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   homebrew:
     needs: pacotes
     runs-on: macos-latest

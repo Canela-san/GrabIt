@@ -1404,7 +1404,10 @@ for passo in roteiro.split("|"):
             break
         lido = achou + len(valor.encode())
     elif tipo == "tecla":
-        os.write(fd, valor.encode())
+        try:
+            os.write(fd, valor.encode())
+        except OSError:                              # o programa já terminou
+            break
     elif tipo == "ctrlc":
         os.write(fd, b"\x03")
     elif tipo == "pausa":
@@ -1960,15 +1963,17 @@ espera "o MKV arredonda o tempo de cada quadro (é o que motiva o resto)" test "
 roda c1 -L pt converter "v [x].mkv" -e mp4
 espera "troca a extensão" test -f "v [x].mp4"
 espera "…com as mesmas imagens" test "$(imagens "v [x].mp4")" = "$REF"
-espera "…com o tempo exato de cada quadro de volta" test "$(intervalos "v [x].mp4")" = "33.3 "
-espera "…e diz que restaurou" contem c1 "tempo de cada quadro restaurado"
-if [[ $(intervalos "v [x].mp4" 2>/dev/null) != "33.3 " ]]; then   # para entender a falha, quando houver
+if contem c1 "continua arredondado"; then    # (o ffmpeg 9 não aceita: o resultado sai com a duração errada)
+  espera "…este ffmpeg não restaura o tempo: diz isso" contem c1 "este ffmpeg não o restaura"
   ffmpeg -version | head -n 1
-  sed 's/^/    /' c1 | tail -n 12
-  ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate,avg_frame_rate,time_base -of csv=p=0 "v [x].mkv"
   ffmpeg -v error -y -fflags +genpts -i "v [x].mkv" -map 0:V -map 0:a -c copy \
     -bsf:v:0 "setts=time_base=1/90000:pts=(STARTPTS*TB+round((PTS-STARTPTS)*TB*30/1)*1/30)/TB_OUT:dts=(STARTPTS*TB+round((DTS-STARTPTS)*TB*30/1)*1/30)/TB_OUT:duration=1/30/TB_OUT" \
     -video_track_timescale 90000 -f mp4 diag.mp4 2>&1 | head -n 5
+  ffprobe -v error -show_entries format=duration,start_time:stream=codec_type,duration,start_time,time_base,nb_frames -of compact diag.mp4 2>&1 | head -n 6
+  ffprobe -v error -select_streams v:0 -show_entries packet=pts,dts,duration -of csv=p=0 diag.mp4 2>&1 | head -n 6
+else
+  espera "…com o tempo exato de cada quadro de volta" test "$(intervalos "v [x].mp4")" = "33.3 "
+  espera "…e diz que restaurou" contem c1 "tempo de cada quadro restaurado"
 fi
 espera "…com a capa" tem_capa "v [x].mp4"
 espera "…e avisa o que o .mp4 não guarda" contem c1 ".mp4 não guarda: dados do site"
@@ -1986,6 +1991,7 @@ PATH="$TMP/ff-sem-setts:$PATH" roda c1b -L pt converter "v [x].mkv" -e mp4
 espera "sem como restaurar o tempo, troca o formato do mesmo jeito" test -f "v [x].mp4"
 espera "…com as mesmas imagens" test "$(imagens "v [x].mp4")" = "$REF"
 espera "…e sem dizer que restaurou" nao_contem c1b "tempo de cada quadro restaurado"
+espera "…e diz que não restaurou" contem c1b "continua arredondado"
 cd .. || exit 1
 espera "o original fica" test -f "v [x].mkv"
 roda c2 -L pt converter "v [x].mkv" -e mp4

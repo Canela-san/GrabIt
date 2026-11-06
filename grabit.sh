@@ -912,7 +912,7 @@ GRABIT_DIR=${GRABIT_SCRIPT%/*}
 GRABIT_PACOTE=""
 case $GRABIT_DIR in
   */Cellar/*)   GRABIT_PACOTE=brew ;;
-  /usr/bin|/usr/local/bin|/usr/bin/*) GRABIT_PACOTE=sistema ;;
+  /usr/bin)     if command -v apt-get >/dev/null 2>&1; then GRABIT_PACOTE=apt; else GRABIT_PACOTE=sistema; fi ;;
 esac
 if [[ -n $GRABIT_PACOTE && -z ${GRABIT_CONFIG:-} ]]; then
   CONFIG_ARQ="${XDG_CONFIG_HOME:-$HOME/.config}/grabit/grabit.config"
@@ -1542,7 +1542,7 @@ idioma_pt() {
     [cv_sem_placa]="Nenhuma placa de vídeo que este ffmpeg saiba usar para esse codec: recomprimindo na CPU, mais devagar."
     [cv_placa_falhou]="A placa de vídeo (%s) não conseguiu recomprimir este vídeo: de novo, na CPU."
     [cv_pela_placa]="recomprimido pela placa de vídeo (%s)"
-    [cv_sem_exato]="o tempo de cada quadro ficou arredondado, como no original: %s"
+    [cv_sem_exato]="o tempo de cada quadro continua arredondado, como no MKV: este ffmpeg não o restaura"
     [cv_tom]="o vídeo era HDR: as cores foram convertidas para SDR, para aparecerem certas em qualquer tela"
     [cv_dica_codec]="o formato não aceita este vídeo ou áudio: com -k, dá para recomprimir"
     [cv_exato]="tempo de cada quadro restaurado (o MKV arredonda ao milissegundo)"
@@ -2333,7 +2333,7 @@ idioma_en() {
     [cv_sem_placa]="No graphics card this ffmpeg can use for that codec: recompressing on the CPU, more slowly."
     [cv_placa_falhou]="The graphics card (%s) couldn't recompress this video: again, on the CPU."
     [cv_pela_placa]="recompressed by the graphics card (%s)"
-    [cv_sem_exato]="each frame's time stayed rounded, as in the original: %s"
+    [cv_sem_exato]="each frame's time stays rounded, as in the MKV: this ffmpeg doesn't restore it"
     [cv_tom]="the video was HDR: colors were converted to SDR, so they look right on any screen"
     [cv_dica_codec]="the format doesn't accept this video or audio: with -k, it can be re-encoded"
     [cv_exato]="each frame's time restored (MKV rounds it to the millisecond)"
@@ -3344,11 +3344,18 @@ linha_resultado() {
 atualiza_largura() {                          # relê o tamanho do terminal (no início e a cada SIGWINCH)
   (( INTERATIVO && REDIM )) || return 0
   REDIM=0
-  COLS=$(tput cols 2>/dev/null) || COLS=80
-  [[ $COLS =~ ^[0-9]+$ ]] || COLS=80
+  # (o stty pergunta ao próprio terminal; o tput, com a saída num cano, pode responder só um padrão)
+  local tam
+  tam=$(stty size </dev/tty 2>/dev/null) || tam=""
+  if [[ $tam =~ ^([1-9][0-9]*)\ ([1-9][0-9]*)$ ]]; then
+    LINHAS=${BASH_REMATCH[1]}; COLS=${BASH_REMATCH[2]}
+  else
+    COLS=$(tput cols 2>/dev/null) || COLS=80
+    [[ $COLS =~ ^[0-9]+$ ]] || COLS=80
+    LINHAS=$(tput lines 2>/dev/null) || LINHAS=24
+    [[ $LINHAS =~ ^[0-9]+$ ]] || LINHAS=24
+  fi
   (( COLS < 50 )) && COLS=50
-  LINHAS=$(tput lines 2>/dev/null) || LINHAS=24
-  [[ $LINHAS =~ ^[0-9]+$ ]] || LINHAS=24
   REDESENHA=1
   return 0
 }
@@ -6316,7 +6323,8 @@ desinstalar() {
   printf '\n  %s%s%s\n\n' "$NEG" "${T[des_titulo]}" "$R"
   case $GRABIT_PACOTE in
     brew)    t des_pacote "brew uninstall grabit"; aviso "$TXT"; return 1 ;;
-    sistema) t des_pacote "pacman -R grabit"; aviso "$TXT"; return 1 ;;
+    apt)     t des_pacote "sudo apt remove grabit"; aviso "$TXT"; return 1 ;;
+    sistema) t des_pacote "sudo pacman -R grabit"; aviso "$TXT"; return 1 ;;
   esac
   c="$HOME/.local/bin/grabit"
   if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
@@ -6474,7 +6482,8 @@ atualiza_grabit() {
   local antes depois tmp modo notas estavel=0
   case $GRABIT_PACOTE in
     brew)    t atu_pacote_grabit "brew upgrade grabit"; printf '    %s\n' "$TXT"; return 1 ;;
-    sistema) t atu_pacote_grabit "pacman -Syu"; printf '    %s\n' "$TXT"; return 1 ;;
+    apt)     t atu_pacote_grabit "sudo apt update && sudo apt upgrade"; printf '    %s\n' "$TXT"; return 1 ;;
+    sistema) t atu_pacote_grabit "sudo pacman -Syu"; printf '    %s\n' "$TXT"; return 1 ;;
   esac
   [[ $CANAL_ATUALIZACAO == estavel ]] && estavel=1
   if eh_clone_grabit; then
@@ -6844,9 +6853,7 @@ converte_um() {
   montar_meta "$S_H" "$S_FPS" "$S_HDR" "$S_VC" "$S_AC" "$S_CANAIS" "$S_DUR" "$S_TAM"
   linha_resultado "✔" "$VERDE" "$idxs" "${novo##*/}" "$META"; printf '%s\n' "$LINHA"
   (( TR_EXATO )) && printf '         %s↳ %s%s\n' "$DIM" "${T[cv_exato]}" "$R"
-  if [[ -n $TR_SEM_EXATO ]]; then
-    t cv_sem_exato "$TR_SEM_EXATO"; corta "$TXT" $(( COLS - 13 )); printf '         %s↳ %s%s\n' "$DIM" "$FMT" "$R"
-  fi
+  [[ -n $TR_SEM_EXATO ]] && printf '         %s↳ %s%s\n' "$DIM" "${T[cv_sem_exato]}" "$R"
   if [[ -n $ENC_PLACA ]]; then nome_da_placa "$ENC_PLACA"; t cv_pela_placa "$FMT"; printf '         %s↳ %s%s\n' "$DIM" "$TXT" "$R"; fi
   if (( TR_TOM )); then printf '         %s↳ %s%s\n' "$DIM" "${T[cv_tom]}" "$R"
   elif (( era_hdr )) && [[ $cod == h264 || $cod == mpeg4 ]]; then aviso "${T[cv_hdr]}"; fi
@@ -7339,6 +7346,7 @@ gera_completar() {
 # instala_completar: deixa o autocompletar em dia para os shells que existem aqui, sem perguntar: são
 # arquivos pequenos, na sua pasta pessoal, que o "grabit desinstalar" tira.
 instala_completar() {
+  [[ -z $GRABIT_PACOTE ]] || return 0         # o pacote já traz o dele
   local dados=${XDG_DATA_HOME:-$HOME/.local/share} f novo=0
   if command -v fish >/dev/null 2>&1; then
     f="$HOME/.config/fish/completions/grabit.fish"
@@ -7510,8 +7518,7 @@ J=$DOWNLOADS_SIMULTANEOS
 (( ! FILA_VIVA && J > TOTAL )) && J=$TOTAL
 LIMITE_J=0
 if (( INTERATIVO )); then                       # o painel (2 linhas por vídeo + 2) precisa caber na tela
-  linhas=$(tput lines 2>/dev/null); [[ $linhas =~ ^[0-9]+$ ]] || linhas=24
-  max_j=$(( (linhas - 3) / 2 )); (( max_j < 1 )) && max_j=1
+  max_j=$(( (LINHAS - 3) / 2 )); (( max_j < 1 )) && max_j=1
   if (( J > max_j )); then LIMITE_J=$J; J=$max_j; fi
 fi
 for (( s = 0; s < J; s++ )); do SLOT_IDX[$s]=0; SLOT_PID[$s]=0; done

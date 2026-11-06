@@ -42,7 +42,7 @@ Primeira versão publicada.
 - O `grabit update` vai para a versão publicada mais nova, que já passou por todos os testes, e confere o arquivo baixado. Para seguir o repositório direto: `CANAL_ATUALIZACAO=main`.
 - Autocompletar para fish, bash e zsh, instalado junto.
 - `grabit desinstalar` tira o que o GrabIt pôs no sistema. Vídeos e listas ficam.
-- Instalação pelo Homebrew e `PKGBUILD` para o AUR.
+- Instalação pelo `apt` no Debian, no Ubuntu e no Pop!_OS, com atualização por `apt update && apt upgrade`. Também pelo Homebrew, e há um `PKGBUILD` para o AUR.
 - Um comando digitado errado ganha uma sugestão, em vez de virar uma tentativa de baixar.
 
 ### Segurança e privacidade

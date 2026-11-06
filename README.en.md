@@ -43,6 +43,18 @@ cd GrabIt
 bash grabit.sh --install
 ```
 
+On Debian, Ubuntu, Pop!_OS and derivatives, with `apt`:
+
+```bash
+curl -fsSL https://canela-san.github.io/GrabIt/grabit.gpg | sudo tee /usr/share/keyrings/grabit.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/grabit.gpg] https://canela-san.github.io/GrabIt stable main" | sudo tee /etc/apt/sources.list.d/grabit.list
+sudo apt update
+sudo apt install grabit
+grabit install
+```
+
+After that, GrabIt updates along with the rest of the system: `sudo apt update && sudo apt upgrade`. `grabit install` brings the newest yt-dlp, since apt's tends to lag behind, and `grabit update` keeps taking care of it, Deno and FFmpeg.
+
 Or, without Git, just the newest published version:
 
 ```bash
