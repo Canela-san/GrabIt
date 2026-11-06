@@ -1495,7 +1495,7 @@ LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=()
 TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
 TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
-ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
+ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0; PROX_MOVER=60
 CLIP_CMD=(); CLIP_ULTIMO=""; CLIP_PRIMEIRA=1; PROX_CLIP=0; ARQ_CAPTURA=""
 declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=()
 declare -A TITULO=() CACHE_CORTA=()
@@ -4678,6 +4678,9 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   if (( CAPTURA && SECONDS >= PROX_CLIP )); then captura_clip; PROX_CLIP=$(( SECONDS + 1 )); fi
   if (( FILA_VIVA && SECONDS >= PROX_VIGIA )); then novos_links; PROX_VIGIA=$(( SECONDS + 2 )); fi
   if (( SECONDS >= PROX_BLOQ )); then vigia_saude; vigia_bloqueios; PROX_BLOQ=$(( SECONDS + 1 )); fi
+  # Numa lista longa, o que já foi baixado não pode depender de a execução chegar ao fim: se a
+  # luz acabar, a lista recomeça de onde parou, sem abrir o yt-dlp para cada link que já foi.
+  if (( MOVER && SECONDS >= PROX_MOVER )); then move_baixados; MOVER=0; PROX_MOVER=$(( SECONDS + 60 )); fi
 
   # 1) recolhe quem terminou (e devolve à fila quem merece outra tentativa)
   for (( s = 0; s < J; s++ )); do
