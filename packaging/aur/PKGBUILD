@@ -15,8 +15,8 @@ optdepends=('aria2: direct files over several connections'
             'firefox: pages that only work in a browser')
 source=("grabit-$pkgver.sh::https://github.com/Canela-san/GrabIt/releases/download/v$pkgver/grabit.sh"
         "LICENSE-$pkgver::https://raw.githubusercontent.com/Canela-san/GrabIt/v$pkgver/LICENSE")
-sha256sums=('0000000000000000000000000000000000000000000000000000000000000000'
-            '0000000000000000000000000000000000000000000000000000000000000001')
+sha256sums=('cd6c8d668b7ef2af621b8aad5ce700682a1e1111a26f9ef523dd0603346cb084'
+            'a8c15790dc9fd32deddb389200e1554ad5ad6b151ecc79883140323f2c021be2')
 
 package() {
   install -Dm755 "grabit-$pkgver.sh" "$pkgdir/usr/bin/grabit"
