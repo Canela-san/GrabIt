@@ -273,12 +273,12 @@ com_runtime() { grep -F -- "$1" "$STUB_LOG" | grep -qF -- "--js-runtimes $2"; }
 secao "Runtime JavaScript"
 D="$TMP/js"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
-STUB_JS="node-18.19.1 (unsupported)" falso s1 -L pt http://a.invalid/velho
+STUB_JS="node-18.19.1 (unsupported)" falso s1 -L pt --detalhes http://a.invalid/velho
 espera "runtime velho não aparece como bom" contem s1 "js: nenhum"
 espera "…ganha um aviso com a versão" contem s1 "O yt-dlp não aceita o node-18.19.1"
 espera "…e não é passado ao yt-dlp" sem_runtime a.invalid/velho
 espera "programa sem permissão de execução não é candidato" nao_contem "$STUB_LOG" "bun:$STUB/bun"
-STUB_JS="node-22.1.0" falso s2 -L pt http://a.invalid/novo
+STUB_JS="node-22.1.0" falso s2 -L pt --detalhes http://a.invalid/novo
 espera "runtime aceito aparece no cabeçalho" contem s2 "js: node"
 espera "…sem aviso" nao_contem s2 "não aceita"
 espera "…e é passado ao yt-dlp" com_runtime a.invalid/novo "node:$STUB/node"
@@ -808,6 +808,7 @@ espera "lista sem nenhum link: explica, com um exemplo" contem d6 "grabit https:
 secao "Títulos com emoji"
 largura() {
   (
+    # shellcheck disable=SC2034  # (usados pelo corta, que vem do script)
     SEP=$'\x1f'; declare -A CACHE_CORTA=()
     eval "$(sed -n '/^corta() {/,/^}/p' "$G")"
     corta "$1" 200; printf '%s' "$LARG"
@@ -1523,6 +1524,7 @@ sys.exit(0 if antes.rfind(b"\x1b[?25h") > antes.rfind(b"\x1b[?25l") and antes.rf
 |pausa:1|tecla:n
 |fim' "$BASH" "$G" -L pt --instalar > p8.rc 2>&1
   espera "o instalador pergunta no terminal" contem p8 "[S/n]"
+  contem p8 "[S/n]" || { cat p8.rc; head -c 1500 p8 2>/dev/null; }
 fi
 
 secao "Contrato com o yt-dlp"
@@ -1959,6 +1961,8 @@ espera "…com o tempo exato de cada quadro de volta" test "$(intervalos "v [x].
 espera "…e diz que restaurou" contem c1 "tempo de cada quadro restaurado"
 if [[ $(intervalos "v [x].mp4" 2>/dev/null) != "33.3 " ]]; then   # para entender a falha, quando houver
   ffmpeg -version | head -n 1
+  sed 's/^/    /' c1 | tail -n 12
+  ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate,avg_frame_rate,time_base -of csv=p=0 "v [x].mkv"
   ffmpeg -v error -y -fflags +genpts -i "v [x].mkv" -map 0:V -map 0:a -c copy \
     -bsf:v:0 "setts=time_base=1/90000:pts=(STARTPTS*TB+round((PTS-STARTPTS)*TB*30/1)*1/30)/TB_OUT:dts=(STARTPTS*TB+round((DTS-STARTPTS)*TB*30/1)*1/30)/TB_OUT:duration=1/30/TB_OUT" \
     -video_track_timescale 90000 -f mp4 diag.mp4 2>&1 | head -n 5

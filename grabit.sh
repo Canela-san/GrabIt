@@ -464,7 +464,7 @@ converte() {
   local ent=$1 sai=$2 cod=${3:-} ext=${2##*.} mux pasta tmp capa="" capa_fonte=${TR_CAPA_FORA:-} tipo_capa=image/jpeg
   local e_vid e_aud e_sub e_capa e_anexo e_cap e_tags e_dur e_subcod e_r t0=$SECONDS feito=0 rc=1 d k v pos=0 vel=""
   local args exato=() sub=() enc=() pre_enc=() filtro="" audio=() cabe_capa=0 cabe_sub=0 modo tent c_capa c_sub usa_exato=0
-  TR_PERDEU=""; TR_ERRO=""; TR_EXATO=0; TR_TOM=0; ENC_PLACA=""
+  TR_PERDEU=""; TR_ERRO=""; TR_EXATO=0; TR_TOM=0; TR_SEM_EXATO=""; ENC_PLACA=""
   muxer_de "$ext" || { TR_ERRO=formato; return 1; }
   mux=$MUX
   faixas "$ent"
@@ -580,7 +580,7 @@ converte() {
     done
   done
   (( feito || ! usa_exato || rc == 255 || SECONDS - t0 > 60 )) && break
-  usa_exato=0
+  usa_exato=0; TR_SEM_EXATO=${TR_ERRO:-?}
   done
   rm -f -- "$pasta/erros" "$pasta/capa.jpg" "$pasta/capa.png"
   rmdir -- "$pasta" 2>/dev/null
@@ -1542,6 +1542,7 @@ idioma_pt() {
     [cv_sem_placa]="Nenhuma placa de vídeo que este ffmpeg saiba usar para esse codec: recomprimindo na CPU, mais devagar."
     [cv_placa_falhou]="A placa de vídeo (%s) não conseguiu recomprimir este vídeo: de novo, na CPU."
     [cv_pela_placa]="recomprimido pela placa de vídeo (%s)"
+    [cv_sem_exato]="o tempo de cada quadro ficou arredondado, como no original: %s"
     [cv_tom]="o vídeo era HDR: as cores foram convertidas para SDR, para aparecerem certas em qualquer tela"
     [cv_dica_codec]="o formato não aceita este vídeo ou áudio: com -k, dá para recomprimir"
     [cv_exato]="tempo de cada quadro restaurado (o MKV arredonda ao milissegundo)"
@@ -2332,6 +2333,7 @@ idioma_en() {
     [cv_sem_placa]="No graphics card this ffmpeg can use for that codec: recompressing on the CPU, more slowly."
     [cv_placa_falhou]="The graphics card (%s) couldn't recompress this video: again, on the CPU."
     [cv_pela_placa]="recompressed by the graphics card (%s)"
+    [cv_sem_exato]="each frame's time stayed rounded, as in the original: %s"
     [cv_tom]="the video was HDR: colors were converted to SDR, so they look right on any screen"
     [cv_dica_codec]="the format doesn't accept this video or audio: with -k, it can be re-encoded"
     [cv_exato]="each frame's time restored (MKV rounds it to the millisecond)"
@@ -3228,7 +3230,7 @@ fmt_dur() {                                   # 125 → 02:05 · 3725 → 1:02:0
 # FMT ocupa). Mede colunas, não caracteres: emoji e CJK ocupam 2, acentos
 # combinantes 0 — senão títulos como "🔥 测试" empurram o fim da linha para fora.
 corta() {
-  local s=$1 n=$2 i c cp cw w=0 corte=0 w_corte=0 chave junta=0 ant=0
+  local s=$1 n=$2 i c cp cw w=0 corte=0 w_corte=0 chave junta=0 cw_ant=0
   if (( n < 1 )); then FMT=""; LARG=0; return; fi
   if [[ $s != *[![:ascii:]]* ]]; then         # só ASCII: 1 caractere = 1 coluna
     if (( ${#s} > n )); then FMT="${s:0:n-1}…"; else FMT=$s; fi
@@ -3258,8 +3260,8 @@ corta() {
     # transforma o símbolo anterior, de 1 coluna, num emoji, de 2
     if (( junta )); then cw=0; junta=0
     elif (( cp == 0x200D )); then junta=1
-    elif (( cp == 0xFE0F && ant == 1 )); then cw=1; fi
-    (( cp == 0x200D || cp == 0xFE0F )) || ant=$cw
+    elif (( cp == 0xFE0F && cw_ant == 1 )); then cw=1; fi
+    (( cp == 0x200D || cp == 0xFE0F )) || cw_ant=$cw
     if (( w + cw > n - 1 && corte == 0 )); then corte=$i; w_corte=$w; fi
     w=$(( w + cw ))
     (( w > n )) && break
@@ -3493,10 +3495,12 @@ le_log_slot() {
       *'Got error: HTTP Error 401'*|*'Got error: HTTP Error 403'*|*'Got error: HTTP Error 404'*|*'Got error: HTTP Error 410'*) h=r ;;
       *) h=x ;;
     esac
-    h=${REC_SLOT[$s]}$h; REC_SLOT[$s]=${h: -12}
+    h=${REC_SLOT[$s]}$h
+    (( ${#h} > 12 )) && h=${h: -12}
+    REC_SLOT[$s]=$h
     case $l in
       WARNING:*) continue ;;
-      @@P@@*)    seps=${l//[!$SEP]/}; (( ${#seps} == 10 )) || continue; LOG_VIVO[$i]=1 ;;
+      @@P@@*)    LOG_VIVO[$i]=1; seps=${l//[!$SEP]/}; (( ${#seps} == 10 )) || continue ;;
       @@D@@*)    LOG_VIVO[$i]=1 ;;
       '[grabit] recusou'*)  LOG_RECUSOU[$i]=1 ;;
       '[grabit] lento'*)    LOG_LENTO[$i]=1 ;;
@@ -6840,6 +6844,9 @@ converte_um() {
   montar_meta "$S_H" "$S_FPS" "$S_HDR" "$S_VC" "$S_AC" "$S_CANAIS" "$S_DUR" "$S_TAM"
   linha_resultado "✔" "$VERDE" "$idxs" "${novo##*/}" "$META"; printf '%s\n' "$LINHA"
   (( TR_EXATO )) && printf '         %s↳ %s%s\n' "$DIM" "${T[cv_exato]}" "$R"
+  if [[ -n $TR_SEM_EXATO ]]; then
+    t cv_sem_exato "$TR_SEM_EXATO"; corta "$TXT" $(( COLS - 13 )); printf '         %s↳ %s%s\n' "$DIM" "$FMT" "$R"
+  fi
   if [[ -n $ENC_PLACA ]]; then nome_da_placa "$ENC_PLACA"; t cv_pela_placa "$FMT"; printf '         %s↳ %s%s\n' "$DIM" "$TXT" "$R"; fi
   if (( TR_TOM )); then printf '         %s↳ %s%s\n' "$DIM" "${T[cv_tom]}" "$R"
   elif (( era_hdr )) && [[ $cod == h264 || $cod == mpeg4 ]]; then aviso "${T[cv_hdr]}"; fi
