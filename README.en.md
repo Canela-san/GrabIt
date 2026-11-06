@@ -174,6 +174,8 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-O`, `--original` | keeps the site's format: `.mp4` stays `.mp4` | — |
 | `-e FORMAT`, `--format` | saves in this format: `mkv`, `mp4`, `webm`, `mov`… | `mkv` |
 | `-k CODEC`, `--codec` | re-encodes if the video comes in another one: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
+| `-q VALUE`, `--quality` | when re-encoding: `high`, `medium`, `low` or the CRF number (lower is better) | `high` |
+| `--gpu[=NAME]`, `--placa` | when re-encoding, use the graphics card: `nvenc`, `vaapi`, `qsv`, `videotoolbox`; with no name, whichever there is | CPU |
 | `-r HEIGHT` | maximum resolution (`720`, `1080`, `2160` or `4k`…) | no limit |
 | `-F` | force: ignore the `grabit.config` limits and the automatic per-site pace for this run | — |
 | `-y` | with `install`: install everything without asking | — |
@@ -277,6 +279,8 @@ COOKIES_NAVEGADOR=firefox
 | `PROCURAR_ARQUIVO` | `1` looks for a direct file better than the stream before downloading; `0` doesn't | `1` |
 | `FORMATO_SAIDA` | file format: `mkv`, `mp4`, `webm`, `mov`…, or `original` (as the site delivers it) | `mkv` |
 | `CODEC_VIDEO` | re-encodes if the video comes in another codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
+| `QUALIDADE_VIDEO` | quality when re-encoding: `alta` (high), `media` (medium), `baixa` (low) or the CRF number | `alta` |
+| `ACELERACAO_VIDEO` | who re-encodes: `cpu`, `auto`, `nvenc`, `vaapi`, `qsv`, `videotoolbox` | `cpu` |
 | `PROGRAMA_NAVEGADOR` | which browser to open (e.g. `google-chrome`); empty = the first one found | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
 | `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
@@ -351,11 +355,15 @@ With `-k`, GrabIt prefers the site's version already in that codec, at the highe
 grabit convert video.mkv -e mp4             # changes the extension, without re-encoding
 grabit convert Downloads -e mp4 --replace   # the whole folder, without keeping the originals
 grabit convert video.mp4 -k h264            # re-encodes: becomes video.h264.mp4
+grabit convert video.mkv -k hevc -q medium       # smaller file, slightly less quality
+grabit convert video.mkv -k h264 --gpu           # on the graphics card: much faster, larger file
 ```
 
 **Changing the extension doesn't touch the quality**, however many times you do it: picture and sound are copied, bit by bit. What changes is what each format can hold. GrabIt keeps all that fits, removes only what is strictly necessary and reports what was left out. Going from MKV to `.mp4` or `.mov`, it also restores each frame's exact time, if the video has a constant frame rate. Some pairs don't exist without re-encoding, such as H.264 in `.webm`: it explains that, and `-k` solves it.
 
 **Re-encoding always loses a little quality** and can take a long time, but sometimes it is the only way to play the video on a certain device. The original only goes away with `--replace`, and never before the new file is checked. A video already in the requested codec is left alone.
+
+The **graphics card** (`--gpu`) is much faster, but for the same quality the file comes out larger. Before using it, GrabIt runs a brief test: with no card, or if it can't do that codec, it warns and carries on with the CPU. An **HDR** video re-encoded to H.264 or MPEG-4 has its colors converted to SDR, so they don't look washed out.
 
 ## A summary at the end
 

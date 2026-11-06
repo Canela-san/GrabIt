@@ -341,21 +341,102 @@ tempo_exato() {
       END { exit (ruim || c < 2) }'
 }
 
-codificador() {                               # codificador CODEC → ENC: as opções do ffmpeg; 1 se ele não tiver
-  local lista
-  lista=$(ffmpeg -hide_banner -encoders 2>/dev/null)
-  ENC=()
+# q_de ALTA MÉDIA BAIXA → NUM: o valor do codificador para a qualidade pedida (um número vale direto)
+q_de() {
+  case $QUALIDADE_VIDEO in
+    alta)  NUM=$1 ;;
+    media) NUM=$2 ;;
+    baixa) NUM=$3 ;;
+    *)     NUM=$QUALIDADE_VIDEO ;;
+  esac
+}
+
+# codificador_placa PLACA CODEC → ENC ENC_ANTES ENC_FILTRO: a placa de vídeo é bem mais rápida, mas gasta
+# mais espaço para a mesma qualidade. Ter o nome na lista do ffmpeg não quer dizer que a placa exista, nem
+# que ela faça esse codec: quem responde é um teste de verdade, de um instante.
+declare -A PLACA_TESTADA=()
+codificador_placa() {
+  local placa=$1 cod=$2 nome=${2}_$1 erro_teste
+  ENC=(); ENC_ANTES=(); ENC_FILTRO=""
+  case $placa:$cod in
+    nvenc:h264)  q_de 19 23 28; ENC=(-c:v:0 "$nome" -preset p6 -tune hq -rc vbr -cq "$NUM" -b:v:0 0 -pix_fmt:v:0 yuv420p) ;;
+    nvenc:hevc)  q_de 21 25 30; ENC=(-c:v:0 "$nome" -preset p6 -tune hq -rc vbr -cq "$NUM" -b:v:0 0 -tag:v:0 hvc1) ;;
+    nvenc:av1)   q_de 28 33 40; ENC=(-c:v:0 "$nome" -preset p6 -tune hq -rc vbr -cq "$NUM" -b:v:0 0) ;;
+    vaapi:h264|vaapi:hevc|vaapi:av1|vaapi:vp9)
+      q_de 20 24 29; ENC=(-c:v:0 "$nome" -qp:v:0 "$NUM")
+      [[ $cod == hevc ]] && ENC+=(-tag:v:0 hvc1)
+      ENC_ANTES=(-vaapi_device "${GRABIT_VAAPI:-/dev/dri/renderD128}")
+      ENC_FILTRO=format=nv12,hwupload
+      (( ${F_HDR:-0} )) && [[ $cod != h264 ]] && ENC_FILTRO=format=p010,hwupload ;;
+    qsv:h264|qsv:hevc|qsv:av1|qsv:vp9)
+      q_de 20 24 29; ENC=(-c:v:0 "$nome" -global_quality:v:0 "$NUM")
+      [[ $cod == hevc ]] && ENC+=(-tag:v:0 hvc1) ;;
+    videotoolbox:h264|videotoolbox:hevc)
+      q_de 70 55 40
+      [[ $QUALIDADE_VIDEO =~ ^[0-9]+$ ]] && NUM=$(( QUALIDADE_VIDEO * 2 > 100 ? 0 : 100 - QUALIDADE_VIDEO * 2 ))
+      ENC=(-c:v:0 "$nome" -q:v:0 "$NUM")
+      [[ $cod == hevc ]] && ENC+=(-tag:v:0 hvc1) ;;
+    *) return 1 ;;
+  esac
+  [[ $LISTA_ENC == *" $nome "* ]] || return 1
+  case ${PLACA_TESTADA[$nome]:-} in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
+  # (só com -v error: sem nada na saída e sem erro é que o quadro saiu mesmo)
+  if erro_teste=$(ffmpeg -nostdin -hide_banner -v error "${ENC_ANTES[@]}" -f lavfi -i color=black:s=640x360:r=10:d=0.2 \
+                    ${ENC_FILTRO:+-filter:v:0 "$ENC_FILTRO"} "${ENC[@]}" -f null - 2>&1) && [[ -z $erro_teste ]]; then
+    PLACA_TESTADA[$nome]=1
+    return 0
+  fi
+  PLACA_TESTADA[$nome]=0
+  return 1
+}
+
+nome_da_placa() {                             # nome_da_placa PLACA → FMT
   case $1 in
-    # (CRF baixo: a perda é pequena; quem recomprime já está pagando o preço para poder tocar o vídeo)
-    h264)  [[ $lista == *" libx264 "* ]] && ENC=(-c:v:0 libx264 -preset medium -crf 18 -pix_fmt:v:0 yuv420p) ;;
-    hevc)  [[ $lista == *" libx265 "* ]] && ENC=(-c:v:0 libx265 -preset medium -crf 20 -tag:v:0 hvc1 -x265-params log-level=error) ;;
-    av1)   if [[ $lista == *" libsvtav1 "* ]]; then ENC=(-c:v:0 libsvtav1 -preset 6 -crf 28)
-           elif [[ $lista == *" libaom-av1 "* ]]; then ENC=(-c:v:0 libaom-av1 -cpu-used 5 -row-mt 1 -crf 28 -b:v:0 0); fi ;;
-    vp9)   [[ $lista == *" libvpx-vp9 "* ]] && ENC=(-c:v:0 libvpx-vp9 -row-mt 1 -cpu-used 2 -crf 28 -b:v:0 0) ;;
-    mpeg4) [[ $lista == *" mpeg4 "* ]] && ENC=(-c:v:0 mpeg4 -q:v:0 3) ;;
+    nvenc) FMT=NVENC ;; vaapi) FMT=VAAPI ;; qsv) FMT="Quick Sync" ;; videotoolbox) FMT=VideoToolbox ;; *) FMT=$1 ;;
+  esac
+}
+
+# codificador CODEC → ENC ENC_ANTES ENC_FILTRO ENC_PLACA: as opções do ffmpeg; 1 se ele não tiver
+codificador() {
+  local p candidatas=()
+  LISTA_ENC=$(ffmpeg -hide_banner -encoders 2>/dev/null)
+  ENC=(); ENC_ANTES=(); ENC_FILTRO=""; ENC_PLACA=""
+  case $ACELERACAO_VIDEO in
+    cpu)  ;;
+    auto) candidatas=(videotoolbox nvenc qsv vaapi) ;;
+    *)    candidatas=("$ACELERACAO_VIDEO") ;;
+  esac
+  for p in "${candidatas[@]}"; do
+    if codificador_placa "$p" "$1"; then ENC_PLACA=$p; return 0; fi
+  done
+  ENC=(); ENC_ANTES=(); ENC_FILTRO=""
+  if (( ${#candidatas[@]} && ! ${SEM_PLACA_AVISADO:-0} )); then SEM_PLACA_AVISADO=1; aviso "${T[cv_sem_placa]}"; fi
+  case $1 in
+    # (o padrão é a qualidade alta: a perda é pequena; quem recomprime já está pagando o preço para poder tocar o vídeo)
+    h264)  q_de 18 21 25; [[ $LISTA_ENC == *" libx264 "* ]] && ENC=(-c:v:0 libx264 -preset medium -crf "$NUM" -pix_fmt:v:0 yuv420p) ;;
+    hevc)  q_de 20 24 28; [[ $LISTA_ENC == *" libx265 "* ]] && ENC=(-c:v:0 libx265 -preset medium -crf "$NUM" -tag:v:0 hvc1 -x265-params log-level=error) ;;
+    av1)   q_de 28 32 38
+           if [[ $LISTA_ENC == *" libsvtav1 "* ]]; then ENC=(-c:v:0 libsvtav1 -preset 6 -crf "$NUM")
+           elif [[ $LISTA_ENC == *" libaom-av1 "* ]]; then ENC=(-c:v:0 libaom-av1 -cpu-used 5 -row-mt 1 -crf "$NUM" -b:v:0 0); fi ;;
+    vp9)   q_de 28 32 38; [[ $LISTA_ENC == *" libvpx-vp9 "* ]] && ENC=(-c:v:0 libvpx-vp9 -row-mt 1 -cpu-used 2 -crf "$NUM" -b:v:0 0) ;;
+    mpeg4) q_de 3 5 8; (( NUM > 31 )) && NUM=31; (( NUM < 1 )) && NUM=1
+           [[ $LISTA_ENC == *" mpeg4 "* ]] && ENC=(-c:v:0 mpeg4 -q:v:0 "$NUM") ;;
   esac
   (( ${#ENC[@]} ))
 }
+
+# Um vídeo HDR recomprimido em H.264 ou MPEG-4, de 8 bits, ficaria com as cores lavadas e apagadas: as cores
+# são convertidas para SDR, o que qualquer tela sabe mostrar. É preciso o zscale no ffmpeg.
+TOM_HDR='zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p'
+tem_tonemap() {
+  local f
+  f=$(ffmpeg -hide_banner -filters 2>/dev/null)
+  [[ $f == *" zscale "* && $f == *" tonemap "* ]]
+}
+
 
 # converte ENTRADA SAÍDA [CODEC] → TR_PERDEU, TR_ERRO e TR_EXATO. Sem CODEC, copia a imagem e o som.
 # TR_CAPA_FORA: uma capa que está fora do arquivo. TR_PROG: função que recebe POSIÇÃO e VELOCIDADE.
@@ -363,15 +444,23 @@ codificador() {                               # codificador CODEC → ENC: as op
 converte() {
   local ent=$1 sai=$2 cod=${3:-} ext=${2##*.} mux pasta tmp capa="" capa_fonte=${TR_CAPA_FORA:-} tipo_capa=image/jpeg
   local e_vid e_aud e_sub e_capa e_anexo e_cap e_tags e_dur e_subcod e_r t0=$SECONDS feito=0 rc=1 d k v pos=0 vel=""
-  local args exato=() sub=() enc=() audio=() cabe_capa=0 cabe_sub=0 modo tent c_capa c_sub usa_exato=0
-  TR_PERDEU=""; TR_ERRO=""; TR_EXATO=0
+  local args exato=() sub=() enc=() antes=() filtro="" audio=() cabe_capa=0 cabe_sub=0 modo tent c_capa c_sub usa_exato=0
+  TR_PERDEU=""; TR_ERRO=""; TR_EXATO=0; TR_TOM=0; ENC_PLACA=""
   muxer_de "$ext" || { TR_ERRO=formato; return 1; }
   mux=$MUX
   faixas "$ent"
   e_vid=$F_VID; e_aud=$F_AUD; e_sub=$F_SUB; e_capa=$F_CAPA; e_anexo=$F_ANEXO; e_cap=$F_CAP; e_tags=$F_TAGS; e_dur=$F_DUR
   e_subcod=$F_SUBCOD; e_r=$F_R
   (( e_vid + e_aud > 0 )) || { TR_ERRO=ilegivel; return 1; }
-  if [[ -n $cod ]]; then codificador "$cod" || { TR_ERRO=codificador; return 1; }; enc=("${ENC[@]}"); fi
+  if [[ -n $cod ]]; then
+    codificador "$cod" || { TR_ERRO=codificador; return 1; }
+    enc=("${ENC[@]}"); antes=("${ENC_ANTES[@]}"); filtro=$ENC_FILTRO
+    if (( F_HDR )) && [[ $cod == h264 || $cod == mpeg4 ]] && tem_tonemap; then
+      filtro="$TOM_HDR${filtro:+,$filtro}"; TR_TOM=1
+      enc+=(-colorspace:v:0 bt709 -color_primaries:v:0 bt709 -color_trc:v:0 bt709)
+    fi
+    [[ -n $filtro ]] && enc+=(-filter:v:0 "$filtro")
+  fi
   pasta=$(mktemp -d "${TMPDIR:-/tmp}/grabit-conv.XXXXXX") || { TR_ERRO=temporario; return 1; }
   tmp="${sai%.*}.grabit-tmp.$ext"
   [[ $tmp == -* ]] && tmp=./$tmp
@@ -427,7 +516,7 @@ converte() {
       c_capa=${tent% *}; c_sub=${tent#* }
       (( c_capa )) && [[ -z $capa ]] && continue
       (( c_sub && ( ! cabe_sub || e_sub == 0 ) )) && continue
-      args=(-nostdin -hide_banner -v error -y -fflags +genpts -i "file:$ent")
+      args=(-nostdin -hide_banner -v error -y "${antes[@]}" -fflags +genpts -i "file:$ent")
       (( c_capa )) && [[ $mux != matroska ]] && args+=(-i "$capa")
       args+=(-map '0:V?' -map '0:a?')
       (( c_sub )) && args+=(-map '0:s?')
@@ -807,7 +896,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP PROXY CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP PROXY CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -839,6 +928,8 @@ USAR_NAVEGADOR=1                              # 0 = nunca abrir um navegador par
 PROCURAR_ARQUIVO=1                            # 0 = não procurar um arquivo direto melhor que o stream
 FORMATO_SAIDA=mkv                             # mkv, mp4, webm, mov…, ou original: como o site entrega
 CODEC_VIDEO=                                  # h264, hevc, av1, vp9 ou mpeg4: recomprime se o vídeo vier em outro
+QUALIDADE_VIDEO=alta                          # ao recomprimir: alta, media, baixa ou o número (CRF)
+ACELERACAO_VIDEO=cpu                          # ao recomprimir: cpu, auto, nvenc, vaapi, qsv ou videotoolbox
 PROGRAMA_NAVEGADOR=                           # vazio = procura Firefox, Chrome, Chromium, Brave, Edge…
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
@@ -901,7 +992,7 @@ for (( i = 1; i <= $#; i++ )); do
     case ${a:c:1} in
       L)         j=$(( i + 1 )); IDIOMA=${a:c+1}; [[ -z $IDIOMA ]] && { IDIOMA=${!j:-}; i=$j; }
                  ORIGEM[IDIOMA]=opção; break ;;
-      [lojcbrA]) [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
+      [lojcbrAekq]) [[ -z ${a:c+1} ]] && i=$(( i + 1 )); break ;;   # o valor é o próximo argumento
     esac
   done
 done
@@ -1286,10 +1377,16 @@ idioma_pt() {
     [cv_ilegivel]="não consegui ler este arquivo"
     [cv_sem_enc]="este ffmpeg não tem o codificador de %s"
     [cv_verificacao]="o arquivo novo não passou na conferência, e o original ficou como está"
+    [val_qualidade]="%s: use alta, media, baixa ou um número de 0 a 63 (veio '%s', de: %s)."
+    [val_aceleracao]="%s: use cpu, auto, nvenc, vaapi, qsv ou videotoolbox (veio '%s', de: %s)."
+    [cv_sem_placa]="Nenhuma placa de vídeo que este ffmpeg saiba usar para esse codec: recomprimindo na CPU, mais devagar."
+    [cv_placa_falhou]="A placa de vídeo (%s) não conseguiu recomprimir este vídeo: de novo, na CPU."
+    [cv_pela_placa]="recomprimido pela placa de vídeo (%s)"
+    [cv_tom]="o vídeo era HDR: as cores foram convertidas para SDR, para aparecerem certas em qualquer tela"
     [cv_dica_codec]="o formato não aceita este vídeo ou áudio: com -k, dá para recomprimir"
     [cv_exato]="tempo de cada quadro restaurado (o MKV arredonda ao milissegundo)"
     [cv_perdeu]=".%s não guarda: %s"
-    [cv_hdr]="Vídeo HDR em H.264: as cores podem ficar lavadas, porque o H.264 fica em SDR."
+    [cv_hdr]="Vídeo HDR em H.264: as cores podem ficar lavadas, porque este ffmpeg não tem o zscale para convertê-las."
     [cv_s_titulo]="Resumo da conversão"
     [cv_s_ok]="Convertidos"
     [cv_s_pulados]="Pulados"
@@ -1343,6 +1440,8 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
                 quando o formato aceita; o que não couber é avisado  (--original)
   -e FORMATO    salva neste formato: mkv, mp4, webm, mov…        (padrão: mkv)  (--formato)
   -k CODEC      recomprime se o vídeo vier em outro: h264, hevc, av1, vp9, mpeg4
+  -q QUALIDADE  ao recomprimir: alta, media, baixa ou o CRF               (--qualidade)
+  --gpu[=NOME]  ao recomprimir, usa a placa de vídeo: mais rápido, arquivo maior
                 (prefere a versão do site que já está nele; perde qualidade)  (--codec)
   -r ALTURA     resolução máxima: 720, 1080, 2160, 4k…       (padrão: sem limite)
   -F            força: ignora os limites do grabit.config (resolução, sites, pausa…)
@@ -1465,6 +1564,12 @@ EOF
 # Codec do vídeo: vazio, ou h264, hevc, av1, vp9, mpeg4 (-k). Se o vídeo vier em outro, recomprime
 # depois de baixar. Perde qualidade e pode demorar: só para aparelhos que não tocam o original.
 #CODEC_VIDEO=
+
+# Ao recomprimir: a qualidade (-q): alta, media, baixa ou o número do codificador (CRF: menor é melhor)
+# e quem faz o trabalho (--gpu): cpu, mais lenta e com arquivos menores; auto, a placa de vídeo que houver;
+# ou nvenc, vaapi, qsv, videotoolbox. Se a placa não der conta, volta para a CPU.
+#QUALIDADE_VIDEO=alta
+#ACELERACAO_VIDEO=cpu
 
 # Tentativas por link quando a falha é passageira (1 = não tentar de novo)
 #TENTATIVAS=2
@@ -1897,10 +2002,16 @@ idioma_en() {
     [cv_ilegivel]="couldn't read this file"
     [cv_sem_enc]="this ffmpeg doesn't have the %s encoder"
     [cv_verificacao]="the new file failed the check, and the original stayed as it was"
+    [val_qualidade]="%s: use alta (high), media (medium), baixa (low) or a number from 0 to 63 (got '%s', from: %s)."
+    [val_aceleracao]="%s: use cpu, auto, nvenc, vaapi, qsv or videotoolbox (got '%s', from: %s)."
+    [cv_sem_placa]="No graphics card this ffmpeg can use for that codec: recompressing on the CPU, more slowly."
+    [cv_placa_falhou]="The graphics card (%s) couldn't recompress this video: again, on the CPU."
+    [cv_pela_placa]="recompressed by the graphics card (%s)"
+    [cv_tom]="the video was HDR: colors were converted to SDR, so they look right on any screen"
     [cv_dica_codec]="the format doesn't accept this video or audio: with -k, it can be re-encoded"
     [cv_exato]="each frame's time restored (MKV rounds it to the millisecond)"
     [cv_perdeu]=".%s can't hold: %s"
-    [cv_hdr]="HDR video as H.264: the colors may look washed out, because H.264 stays SDR."
+    [cv_hdr]="HDR video as H.264: the colors may look washed out, because this ffmpeg has no zscale to convert them."
     [cv_s_titulo]="Conversion summary"
     [cv_s_ok]="Converted"
     [cv_s_pulados]="Skipped"
@@ -1954,6 +2065,8 @@ Usage:  grabit [options] [LINK or FILE ...]
                 when the format accepts them; what doesn't fit is reported  (--original)
   -e FORMAT     saves in this format: mkv, mp4, webm, mov…       (default: mkv)  (--format)
   -k CODEC      re-encodes if the video comes in another one: h264, hevc, av1, vp9, mpeg4
+  -q QUALITY    when re-encoding: high, medium, low or the CRF              (--quality)
+  --gpu[=NAME]  when re-encoding, use the graphics card: faster, larger file
                 (prefers the site's version already in it; loses quality)  (--codec)
   -r HEIGHT     maximum resolution: 720, 1080, 4k…   (default: no limit)
   -F            force: ignore the grabit.config limits (resolution, sites, pause…)
@@ -2081,6 +2194,12 @@ EOF
 # Video codec: empty, or h264, hevc, av1, vp9, mpeg4 (-k). If the video comes in another one, it is
 # re-encoded after downloading. It loses quality and can take long: only for devices that can't play it.
 #CODEC_VIDEO=
+
+# When re-encoding: the quality (-q): alta (high), media (medium), baixa (low) or the encoder's number (CRF:
+# lower is better) and who does the work (--gpu): cpu, slower and with smaller files; auto, whichever graphics
+# card there is; or nvenc, vaapi, qsv, videotoolbox. If the card can't do it, it goes back to the CPU.
+#QUALIDADE_VIDEO=alta
+#ACELERACAO_VIDEO=cpu
 
 # Attempts per link when the failure is temporary (1 = don't retry)
 #TENTATIVAS=2
@@ -2210,15 +2329,22 @@ while (( $# )); do
     --yes|--sim) ASSUME_SIM=1 ;;
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
+    --gpu|--placa) ACELERACAO_VIDEO=auto; ORIGEM[ACELERACAO_VIDEO]=opção ;;
+    --gpu=*|--placa=*) ACELERACAO_VIDEO=${a#*=}; ORIGEM[ACELERACAO_VIDEO]=opção ;;
+    --qualidade=*|--quality=*) ARGS_CURTOS+=(-q "${a#*=}") ;;
     --proxy=*) PROXY=${a#*=}; ORIGEM[PROXY]=opção ;;
     --proxy)
       (( $# )) || { t opcao_valor "$a"; erro "$TXT"; exit 2; }
       PROXY=$1; ORIGEM[PROXY]=opção; shift ;;
     --formato=*|--format=*|--extensao=*|--extension=*) ARGS_CURTOS+=(-e "${a#*=}") ;;
     --codec=*) ARGS_CURTOS+=(-k "${a#*=}") ;;
-    --formato|--format|--extensao|--extension|--codec)
+    --formato|--format|--extensao|--extension|--codec|--qualidade|--quality)
       (( $# )) || { t opcao_valor "$a"; erro "$TXT"; exit 2; }
-      if [[ $a == --codec ]]; then ARGS_CURTOS+=(-k "$1"); else ARGS_CURTOS+=(-e "$1"); fi
+      case $a in
+        --codec) ARGS_CURTOS+=(-k "$1") ;;
+        --qualidade|--quality) ARGS_CURTOS+=(-q "$1") ;;
+        *) ARGS_CURTOS+=(-e "$1") ;;
+      esac
       shift ;;
     --*) palavra_comando "${a#--}" || { t opcao_invalida "$a"; erro "$TXT"; uso; exit 2; } ;;
     *)   ARGS_CURTOS+=("$a") ;;
@@ -2231,7 +2357,7 @@ OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTU
 # O getopts para no primeiro link; aqui ele o guarda e continua. Depois de "--", só há links.
 while (( $# )); do
   OPTIND=1
-  while getopts ":l:o:j:c:b:r:L:A:e:k:pausivxdmfCUFhyO" op; do
+  while getopts ":l:o:j:c:b:r:L:A:e:k:q:pausivxdmfCUFhyO" op; do
     case $op in
       l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
       o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -2243,6 +2369,7 @@ while (( $# )); do
       e) FORMATO_SAIDA=$OPTARG;          ORIGEM[FORMATO_SAIDA]=opção ;;
       O) FORMATO_SAIDA=original;         ORIGEM[FORMATO_SAIDA]=opção ;;
       k) CODEC_VIDEO=$OPTARG;            ORIGEM[CODEC_VIDEO]=opção ;;
+      q) QUALIDADE_VIDEO=$OPTARG;        ORIGEM[QUALIDADE_VIDEO]=opção ;;
       F) FORCAR=1 ;;
       L) ;;                              # já tratado acima, antes de carregar os textos
       p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
@@ -2370,6 +2497,23 @@ if (( SO_AUDIO )) && [[ $COMANDO != converter ]]; then
   [[ ${ORIGEM[FORMATO_SAIDA]:-} == opção || ${ORIGEM[CODEC_VIDEO]:-} == opção ]] && aviso "${T[saida_so_video]}"
   FORMATO_SAIDA=mkv; CODEC_VIDEO=""
 fi
+case ${QUALIDADE_VIDEO,,} in
+  alta|high|"")          QUALIDADE_VIDEO=alta ;;
+  media|média|medium)    QUALIDADE_VIDEO=media ;;
+  baixa|low)             QUALIDADE_VIDEO=baixa ;;
+  *)
+    if ! [[ $QUALIDADE_VIDEO =~ ^[0-9]+$ ]] || (( 10#$QUALIDADE_VIDEO > 63 )); then
+      origem_txt QUALIDADE_VIDEO; t val_qualidade QUALIDADE_VIDEO "$QUALIDADE_VIDEO" "$FMT"; erro "$TXT"
+      exit 2
+    fi
+    QUALIDADE_VIDEO=$(( 10#$QUALIDADE_VIDEO )) ;;
+esac
+case ${ACELERACAO_VIDEO,,} in
+  cpu|"")                         ACELERACAO_VIDEO=cpu ;;
+  auto|gpu|placa)                 ACELERACAO_VIDEO=auto ;;
+  nvenc|vaapi|qsv|videotoolbox)   ACELERACAO_VIDEO=${ACELERACAO_VIDEO,,} ;;
+  *) origem_txt ACELERACAO_VIDEO; t val_aceleracao ACELERACAO_VIDEO "$ACELERACAO_VIDEO" "$FMT"; erro "$TXT"; exit 2 ;;
+esac
 # Quem pediu um codec quer aquele codec: a busca escolheria pelo que parece melhor em números
 [[ -n $CODEC_VIDEO ]] && PROCURAR_ARQUIVO=0
 # O proxy vale para tudo o que sai para a rede, não só para o yt-dlp: a busca por arquivo direto, a
@@ -5871,11 +6015,17 @@ converte_um() {
     CV_PULADOS=$(( CV_PULADOS + 1 )); t cv_existe "${novo##*/}"; linha_resultado "↷" "$AMARELO" "$idxs" "$nome" "$TXT"; printf '%s\n' "$LINHA"
     return 0
   fi
-  (( F_HDR )) && [[ $cod == h264 ]] && aviso "${T[cv_hdr]}"
+  local era_hdr=$F_HDR
   CONV_DUR=$F_DUR; TR_CAPA_FORA=""; TR_PROG=""
   corta "$idxs  $nome" $(( COLS - 30 )); CONV_ROTULO=$FMT
   (( INTERATIVO )) && TR_PROG=prog_conversao
   converte "$f" "$novo" "$cod"; rc=$?
+  if (( rc != 0 && ! CANCELADO )) && [[ -n $ENC_PLACA ]]; then   # a placa disse que sabia, mas não deu
+    (( INTERATIVO )) && printf '\r%s[K' "$ESC"
+    nome_da_placa "$ENC_PLACA"; t cv_placa_falhou "$FMT"; aviso "$TXT"
+    ACELERACAO_VIDEO=cpu
+    converte "$f" "$novo" "$cod"; rc=$?
+  fi
   (( INTERATIVO )) && printf '\r%s[K' "$ESC"
   (( CANCELADO )) && return 0
   if (( rc != 0 )); then
@@ -5897,6 +6047,9 @@ converte_um() {
   montar_meta "$S_H" "$S_FPS" "$S_HDR" "$S_VC" "$S_AC" "$S_CANAIS" "$S_DUR" "$S_TAM"
   linha_resultado "✔" "$VERDE" "$idxs" "${novo##*/}" "$META"; printf '%s\n' "$LINHA"
   (( TR_EXATO )) && printf '         %s↳ %s%s\n' "$DIM" "${T[cv_exato]}" "$R"
+  if [[ -n $ENC_PLACA ]]; then nome_da_placa "$ENC_PLACA"; t cv_pela_placa "$FMT"; printf '         %s↳ %s%s\n' "$DIM" "$TXT" "$R"; fi
+  if (( TR_TOM )); then printf '         %s↳ %s%s\n' "$DIM" "${T[cv_tom]}" "$R"
+  elif (( era_hdr )) && [[ $cod == h264 || $cod == mpeg4 ]]; then aviso "${T[cv_hdr]}"; fi
   if [[ -n $TR_PERDEU ]]; then
     tok=""
     for l in $TR_PERDEU; do tok+="${tok:+, }${T[tok_${l}_conv]:-${T[tok_$l]:-$l}}"; done

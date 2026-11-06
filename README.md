@@ -174,6 +174,8 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-O`, `--original` | mantém o formato do site: `.mp4` fica `.mp4` | — |
 | `-e FORMATO`, `--formato` | salva neste formato: `mkv`, `mp4`, `webm`, `mov`… | `mkv` |
 | `-k CODEC`, `--codec` | recomprime se o vídeo vier em outro: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
+| `-q VALOR`, `--qualidade` | ao recomprimir: `alta`, `media`, `baixa` ou o número do CRF (menor é melhor) | `alta` |
+| `--gpu[=NOME]`, `--placa` | ao recomprimir, usa a placa de vídeo: `nvenc`, `vaapi`, `qsv`, `videotoolbox`; sem nome, a que houver | CPU |
 | `-r ALTURA` | resolução máxima (`720`, `1080`, `2160` ou `4k`…) | sem limite |
 | `-F` | força: ignora os limites do `grabit.config` e o ritmo automático por site nesta execução | — |
 | `-y` | com `install`: instala tudo sem perguntar | — |
@@ -276,6 +278,8 @@ COOKIES_NAVEGADOR=firefox
 | `PROCURAR_ARQUIVO` | `1` procura um arquivo direto melhor que o stream, antes de baixar; `0` não procura | `1` |
 | `FORMATO_SAIDA` | formato do arquivo: `mkv`, `mp4`, `webm`, `mov`…, ou `original` (como o site entrega) | `mkv` |
 | `CODEC_VIDEO` | recomprime se o vídeo vier em outro codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
+| `QUALIDADE_VIDEO` | qualidade ao recomprimir: `alta`, `media`, `baixa` ou o número do CRF | `alta` |
+| `ACELERACAO_VIDEO` | quem recomprime: `cpu`, `auto`, `nvenc`, `vaapi`, `qsv`, `videotoolbox` | `cpu` |
 | `PROGRAMA_NAVEGADOR` | qual navegador abrir (ex.: `google-chrome`); vazio = o primeiro que achar | — |
 | `USAR_HISTORICO` | `0` desliga o histórico de baixados | `1` |
 | `ARQUIVO_FALHAS` | onde salvar os links que falharam | `links_falhos.txt` |
@@ -348,11 +352,15 @@ Com `-k`, o GrabIt prefere a versão do site que já está naquele codec, na mai
 grabit converter video.mkv -e mp4               # troca a extensão, sem recomprimir
 grabit converter Downloads -e mp4 --substituir  # a pasta inteira, sem deixar os originais
 grabit converter video.mp4 -k h264              # recomprime: vira video.h264.mp4
+grabit converter video.mkv -k hevc -q media      # arquivo menor, com um pouco menos de qualidade
+grabit converter video.mkv -k h264 --gpu         # pela placa de vídeo: bem mais rápido, arquivo maior
 ```
 
 **Trocar a extensão não mexe na qualidade**, quantas vezes for: a imagem e o som são copiados, bit a bit. O que muda é o que cada formato sabe guardar. O GrabIt mantém tudo o que couber, só tira o que for estritamente necessário e avisa o que ficou de fora. Saindo de um MKV para `.mp4` ou `.mov`, também restaura o tempo exato de cada quadro, se o vídeo tiver ritmo constante. Alguns pares não existem sem recomprimir, como H.264 em `.webm`: aí ele explica, e `-k` resolve.
 
 **Recomprimir sempre perde um pouco de qualidade** e pode demorar muito, mas às vezes é o único jeito de tocar o vídeo em certo aparelho. O original só sai com `--substituir`, e nunca antes de o arquivo novo ser conferido. Num vídeo que já está no codec pedido, nada é feito.
+
+A **placa de vídeo** (`--gpu`) é bem mais rápida, mas para a mesma qualidade o arquivo sai maior. Antes de usá-la, o GrabIt faz um teste de um instante: sem placa, ou se ela não fizer esse codec, avisa e segue na CPU. Um vídeo **HDR** recomprimido em H.264 ou MPEG-4 tem as cores convertidas para SDR, para não ficarem lavadas.
 
 ## No fim, um resumo
 

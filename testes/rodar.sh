@@ -1659,6 +1659,48 @@ espera "recomprime na mesma embalagem: o original fica, e o novo leva o nome do 
 roda c12 -L pt converter ./base -e mp4
 espera "uma pasta inteira" contem c12 "Convertidos"
 
+roda q0 -L pt converter m.mp4 -k hevc -q abc
+espera "-q inválido é recusado" codigo "$RC" 2
+ACELERACAO_VIDEO=talvez roda q0 -L pt converter m.mp4 -k hevc
+espera "aceleração inválida é recusada" codigo "$RC" 2
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=24:duration=3" -f lavfi -i "sine=duration=3" -c:v libx264 -preset ultrafast -crf 10 -c:a aac -shortest q.mp4
+roda q1 -L pt converter q.mp4 -k hevc -q baixa; mv q.hevc.mp4 q-baixa.mp4
+roda q2 -L pt converter q.mp4 -k hevc -q alta; mv q.hevc.mp4 q-alta.mp4
+tam() { wc -c < "$1"; }
+espera "-q baixa faz um arquivo menor que -q alta" test "$(tam q-baixa.mp4)" -lt "$(tam q-alta.mp4)"
+roda q3 -L pt converter q.mp4 -k hevc -q 45; mv q.hevc.mp4 q-45.mp4
+espera "…e um número vale direto" test "$(tam q-45.mp4)" -lt "$(tam q-baixa.mp4)"
+roda q4 -L pt converter q.mp4 -k hevc --gpu
+espera "--gpu: sem placa, avisa e segue; com ela, diz qual usou" grep -qE 'placa de vídeo \((NVENC|VAAPI|Quick Sync|VideoToolbox)\)|Nenhuma placa de vídeo' q4
+espera "…e o vídeo sai no codec pedido" sh -c "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 q.hevc.mp4 | grep -q hevc"
+rm -f q.hevc.mp4
+# a placa passa no teste de um instante, mas não dá conta do vídeo de verdade
+mkdir -p "$TMP/ff-placa"
+cat > "$TMP/ff-placa/ffmpeg" <<EOF
+#!/bin/sh
+case "\$*" in
+  *-encoders*) echo ' V....D hevc_nvenc   NVENC'; exec "$(command -v ffmpeg)" "\$@" ;;
+  *color=black*) exit 0 ;;
+  *hevc_nvenc*) echo 'erro da placa' >&2; exit 1 ;;
+esac
+exec "$(command -v ffmpeg)" "\$@"
+EOF
+chmod +x "$TMP/ff-placa/ffmpeg"
+PATH="$TMP/ff-placa:$PATH" roda q5 -L pt converter q.mp4 -k hevc --gpu=nvenc
+espera "a placa falhou no meio: avisa" contem q5 "não conseguiu recomprimir"
+espera "…e faz na CPU" sh -c "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 q.hevc.mp4 | grep -q hevc"
+if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' zscale ' && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q ' libx265 '; then
+  ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=320x180:rate=24:duration=1" -vf format=yuv420p10le -c:v libx265 \
+    -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:log-level=error" \
+    -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc hdr.mp4
+  roda h1 -L pt converter hdr.mp4 -k h264
+  espera "HDR em H.264: as cores viram SDR" test "$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=p=0 hdr.h264.mp4)" = bt709
+  espera "…em 8 bits" test "$(ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 hdr.h264.mp4)" = yuv420p
+  espera "…e avisa" contem h1 "as cores foram convertidas para SDR"
+  roda h2 -L pt converter hdr.mp4 -k vp9
+  espera "HDR em VP9, que aguenta: continua HDR" test "$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=p=0 hdr.vp9.mp4)" = smpte2084
+fi
+
 if command -v aria2c >/dev/null 2>&1; then
   secao "Várias conexões, de verdade"
   D="$TMP/d11"; mkdir -p "$D"; cd "$D" || exit 1
