@@ -142,7 +142,7 @@ FORMATO_AUDIO=original                        # original (sem recomprimir), mp3,
 DOWNLOADS_SIMULTANEOS=4                       # vídeos ao mesmo tempo
 CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
 TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
-LIMITE_POR_SITE=0                             # downloads ao mesmo tempo do mesmo site (0 = livre)
+LIMITE_POR_SITE=0                             # downloads ao mesmo tempo do mesmo site (0 = automático)
 PAUSA_ENTRE_VIDEOS=0                          # segundos de espera antes de cada vídeo
 LIMITE_VELOCIDADE=0                           # por download, ex.: 5M ou 500K (0 = livre)
 IDIOMAS_LEGENDAS='pt.*,en.*'                  # "all" para todas
@@ -514,7 +514,12 @@ idioma_pt() {
     [clip_wayland]="No Wayland, ler a área de transferência precisa do wl-clipboard. Para instalar:  %s"
     [et_navegador]="no navegador · faça a verificação ou dê play, se precisar"
     [nav_abrindo]="Este site precisa de um navegador: vou abrir o %s. Se aparecer uma verificação, é só fazê-la na janela."
-    [k_freio]="%s pediu para ir mais devagar: no máximo %d download(s) ao mesmo tempo desse site"
+    [k_freio]="%s pediu para ir mais devagar: no máximo %d download(s) ao mesmo tempo desse site, e o próximo daqui a %d s"
+    [k_parado]="%s está recusando os pedidos: os links que faltam dele ficam para depois, e os outros sites continuam"
+    [k_espera_site]="aguardando %s liberar (%d s) · q sai"
+    [k_espera_ant]="%s pediu calma há pouco: os links dele começam daqui a %d s (-F não espera)"
+    [s_adiados]="Adiados"
+    [s_adiados_det]="(o site estava recusando: tente mais tarde)"
     [ins_q_curlcffi]="Instalar o curl-cffi? Ajuda quando um site bloqueia downloads automáticos. [S/n]"
     [ins_q_deno]="Instalar o Deno? O YouTube exige um runtime JavaScript para liberar as melhores resoluções. [S/n]"
     [ins_q_clip]="Instalar o %s? Serve para capturar links copiados (-C) e ler o cURL copiado. [S/n]"
@@ -1016,7 +1021,12 @@ idioma_en() {
     [clip_wayland]="On Wayland, reading the clipboard needs wl-clipboard. To install it:  %s"
     [et_navegador]="in the browser · do the check or press play, if needed"
     [nav_abrindo]="This site needs a browser: I'll open %s. If a check shows up, just do it in the window."
-    [k_freio]="%s asked to slow down: at most %d download(s) at once from that site"
+    [k_freio]="%s asked to slow down: at most %d download(s) at once from that site, and the next one in %d s"
+    [k_parado]="%s is refusing requests: its remaining links are left for later, and the other sites carry on"
+    [k_espera_site]="waiting for %s to clear (%d s) · q quits"
+    [k_espera_ant]="%s asked for a break recently: its links start in %d s (-F doesn't wait)"
+    [s_adiados]="Postponed"
+    [s_adiados_det]="(the site was refusing: try again later)"
     [ins_q_curlcffi]="Install curl-cffi? It helps when a site blocks automated downloads. [Y/n]"
     [ins_q_deno]="Install Deno? YouTube requires a JavaScript runtime to unlock the best resolutions. [Y/n]"
     [ins_q_clip]="Install %s? It's for capturing copied links (-C) and reading the copied cURL. [Y/n]"
@@ -1473,9 +1483,11 @@ FMT=""; LARG=0; LINHA=""; BARRA=""; META=""; NUM=0; ETAPA=""; MOTIVO=""; DICA=""
 AJUSTE=""; AJUSTES=(); DICA_NAVEGADOR=0; MODO_CURL=0; EXTRA_YTDLP=(); N_CAB_CURL=0; N_COOK_CURL=0; ROTULO_CURL=""
 NIVEL=(); NIVEL_INICIO=(); NAV_AVISADO=0; NAV_DONO=0; NAV_PROG=""; NAV_TIPO=""; NAV_NOME=""; NAV_ROTULO=""; PASTA_NAV=""
 CAB_ARGS=(); CAB_REFERER=""; SAIDA_PAGINA=""; ARQ_METODOS=""; PROX_BLOQ=0; MUITAS_REQ=0
-declare -A METODO=() METODO_QUANDO=() FREIO_SITE=()
+declare -A METODO=() METODO_QUANDO=() ESPERA_ATE=()
 declare -A FILA_CAB=() FILA_RAB=() PEND_SITE=() ATIVOS_SITE=()
-SEG=(); SITES=(); N_PENDENTES=0
+declare -A LIM_SITE=() CREDITO_SITE=() BLOQ_SITE=() ESPERA_SITE=() PROX_INICIO_SITE=() FALHAS_SITE=() PARADO_SITE=()
+SEG=(); SITES=(); SAUDAVEL=(); N_PENDENTES=0; N_ADIADOS=0; BLOQUEIO=0
+ESPERA_BASE=${GRABIT_ESPERA_BASE:-30}         # segundos de espera no primeiro 429 de um site
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
 FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
@@ -1673,7 +1685,12 @@ analisa_log() {
 # DISCO_CHEIO (1 = os próximos downloads também não vão caber), AJUSTE (opções do yt-dlp que
 # podem resolver esse erro na nova tentativa) e DICA_NAVEGADOR (1 = no navegador daria certo)
 classifica_erro() {
-  DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0; AJUSTE=""; MUITAS_REQ=0
+  DICA=""; REPETE=1; ARQUIVO_RUIM=0; DISCO_CHEIO=0; AJUSTE=""; MUITAS_REQ=0; BLOQUEIO=0
+  # O site está recusando quem pede? (MUITAS_REQ: e diz para esperar)
+  case ${1,,} in
+    *"http error 429"*|*"too many requests"*|*"rate-limit"*|*"rate limit"*) BLOQUEIO=1; MUITAS_REQ=1 ;;
+    *"http error 403"*|*"anti-bot"*|*"not a bot"*|*"access denied"*)        BLOQUEIO=1 ;;
+  esac
   case ${1,,} in
     *"[verify]"*)                                           t d_verificacao "${T[sufixo_ruim]}"; DICA=$TXT ;;
     *"private video"*)                                      DICA=${T[d_privado]}; REPETE=0 ;;
@@ -1708,7 +1725,8 @@ classifica_erro() {
                                                             DICA=${T[d_invalido]}; ARQUIVO_RUIM=1 ;;
     *"fragment"*"not found"*|*"unable to download fragment"*) DICA=${T[d_fragmento]}; AJUSTE="-N 1" ;;
     *"http error 403"*)                                     DICA=${T[d_403]}; [[ ${1,,} == *fragment* ]] && AJUSTE="-N 1" ;;
-    *"http error 429"*|*"too many requests"*)               DICA=${T[d_429]}; MUITAS_REQ=1; AJUSTE="-N 1 --sleep-requests 2 --sleep-interval 5" ;;
+    *"http error 429"*|*"too many requests"*|*"rate-limit"*|*"rate limit"*)
+                                                            DICA=${T[d_429]}; AJUSTE="-N 1 --sleep-requests 2 --sleep-interval 5" ;;
     *"timed out"*|*"connection reset"*|*"name resolution"*|*"name or service not known"*|*"network is unreachable"*)
                                                             DICA=${T[d_rede]}; AJUSTE="--force-ipv4" ;;
   esac
@@ -1871,6 +1889,7 @@ monta_live() {
   if (( PARANDO )); then msg=${T[k_parando]}
   elif (( PAUSADO )); then msg=${T[k_pausado]}
   elif (( MSG_ATE >= SECONDS )); then msg=$MSG_PAINEL
+  elif (( ATIVOS == 0 && N_PENDENTES > 0 )) && espera_restante; then t k_espera_site "$FMT" "$NUM"; msg=$TXT
   elif (( CAPTURA && ATIVOS == 0 )); then msg=${T[clip_aguardando]}
   elif (( FILA_VIVA && ATIVOS == 0 )); then t fv_aguardando "$FONTE_LINKS"; msg=$TXT; fi
   if [[ -n $msg ]]; then
@@ -2170,7 +2189,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
 
 # ───────────────────────────── Execução dos jobs ──────────────────────────────
 lanca_job() {                                 # lanca_job IDX
-  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs
+  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs s e
   # A cascata vai do método mais rápido ao mais caro: 0 é direto; 1 manda o Referer, que os
   # vídeos protegidos contra links de fora costumam exigir, força a imitação de navegador (o
   # próprio yt-dlp avisa que forçá-la sempre pode deixar os downloads mais lentos e instáveis)
@@ -2179,13 +2198,25 @@ lanca_job() {                                 # lanca_job IDX
   if (( NIVEL[$i] == 1 )); then
     (( MODO_CURL )) || extra+=(--referer "$url")
     [[ -n $IMPERSONATE ]] && extra+=(--impersonate "$IMPERSONATE")
-    read -ra ajuste <<<"${AJUSTES[$i]:-}"
-    extra+=("${ajuste[@]}")
   fi
+  read -ra ajuste <<<"${AJUSTES[$i]:-}"
+  extra+=("${ajuste[@]}")
   # Playlist e canal viram dezenas de pedidos seguidos ao mesmo site, num processo só
   case $url in
     *[?\&]list=*|*/playlist*|*/channel/*|*/c/*|*/@*|*/user/*|*/videos) extra+=(--sleep-requests 0.5) ;;
   esac
+  # O intervalo até o próximo download deste site. Quem já pediu calma vai com menos conexões
+  # e com pausas entre os pedidos, e com um intervalo maior.
+  s=${SITE[$i]}
+  if (( ${BLOQ_SITE[$s]:-0} )); then
+    extra+=(-N 1 --sleep-requests 1)
+    e=$(( ESPERA_BASE > 0 ? SECONDS + 2 + RANDOM % 3 : SECONDS ))
+  elif (( FORCAR || PAUSA_ENTRE_VIDEOS > 0 )); then
+    e=$SECONDS
+  else
+    e=$(( SECONDS + 1 ))
+  fi
+  (( e > ${PROX_INICIO_SITE[$s]:-0} )) && PROX_INICIO_SITE[$s]=$e
   # O arquivo da tentativa anterior veio corrompido: sem isso o yt-dlp o reaproveitaria
   # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
   # histórico e continuam sendo pulados.
@@ -2389,22 +2420,116 @@ reenfileira() {
   PEND_SITE[$s]=$(( ${PEND_SITE[$s]:-0} + 1 )); N_PENDENTES=$(( N_PENDENTES + 1 ))
 }
 
-# site_pode_comecar SITE ATIVOS: há vaga nesse site e, se o próximo link dele vai pelo navegador,
-# a janela está livre? Enquanto ela está ocupada, os links dos outros sites passam na frente.
+# ───── Cada site tem o seu ritmo, como o TCP: começa com um download só e sobe um a cada um que
+# ───── o site aceita. Se ele pedir calma (429), o limite cai pela metade e ele fica um tempo sem
+# ───── novos pedidos, cada vez mais longo; os outros sites seguem. Se continuar recusando, os
+# ───── links que faltam dele ficam para depois, em vez de gastar tentativas contra um bloqueio.
+# ───── -F dispensa o começo devagar e o intervalo, mas um 429 continua valendo.
+
+# site_pode_comecar SITE ATIVOS: chegou a hora desse site, há vaga nele e, se o próximo link dele
+# vai pelo navegador, a janela está livre? (Enquanto ela está ocupada, os outros sites passam.)
 site_pode_comecar() {
-  local s=$1 at=$2
-  (( LIMITE_POR_SITE == 0 || at < LIMITE_POR_SITE )) || return 1
+  local s=$1 at=$2 lim=${LIM_SITE[$s]:-1}
+  if (( ${PARADO_SITE[$s]:-0} )); then adia_site "$s"; return 1; fi
+  (( SECONDS >= ${PROX_INICIO_SITE[$s]:-0} )) || return 1
+  (( FORCAR && ! ${BLOQ_SITE[$s]:-0} )) && lim=$J_ALVO
+  (( LIMITE_POR_SITE > 0 && LIMITE_POR_SITE < lim )) && lim=$LIMITE_POR_SITE
+  (( at < lim )) || return 1
   nivel_previsto "${FILA_CAB[$s]}"
   (( NUM < 2 )) || [[ ! -d $TMP/navegador.trava ]]
 }
 
-# 429: nesta execução, no máximo metade dos downloads que estavam rodando nesse site
-freia_site() {
-  local site=$1 n=${ATIVOS_SITE[$site]:-0}
-  n=$(( n / 2 )); (( n < 1 )) && n=1
-  (( ${FREIO_SITE[$site]:-99} > n )) || return 0
-  FREIO_SITE[$site]=$n
-  t k_freio "$site" "$n"; PERM+=("  ${AMARELO}⚠${R} $TXT")
+# site_aceitou SITE: um download dele começou de verdade (ou terminou bem)
+site_aceitou() {
+  local s=$1 falta=1 c
+  FALHAS_SITE[$s]=0
+  (( ${BLOQ_SITE[$s]:-0} )) && falta=5         # depois de um 429, sobe bem mais devagar
+  c=$(( ${CREDITO_SITE[$s]:-0} + 1 ))
+  if (( c >= falta )); then
+    c=0
+    (( ${LIM_SITE[$s]:-1} < 16 )) && LIM_SITE[$s]=$(( ${LIM_SITE[$s]:-1} + 1 ))
+    if (( ${BLOQ_SITE[$s]:-0} )); then BLOQ_SITE[$s]=$(( ${BLOQ_SITE[$s]} - 1 )); ESPERA_SITE[$s]=$(( ${ESPERA_SITE[$s]:-0} / 2 )); fi
+  fi
+  CREDITO_SITE[$s]=$c
+}
+
+# site_pediu_calma SITE: 429 ou parecido. Vários downloads do site recebem o aviso ao mesmo tempo:
+# dentro da mesma espera, conta uma vez só.
+site_pediu_calma() {
+  local s=$1 e lim
+  (( SECONDS >= ${PROX_INICIO_SITE[$s]:-0} )) || return 0
+  e=${ESPERA_SITE[$s]:-0}
+  if (( e == 0 )); then e=$ESPERA_BASE; else e=$(( e * 2 )); fi
+  (( e > 600 )) && e=600
+  ESPERA_SITE[$s]=$e
+  BLOQ_SITE[$s]=$(( ${BLOQ_SITE[$s]:-0} + 1 ))
+  lim=$(( ${LIM_SITE[$s]:-1} / 2 )); (( lim < 1 )) && lim=1
+  LIM_SITE[$s]=$lim; CREDITO_SITE[$s]=0
+  PROX_INICIO_SITE[$s]=$(( SECONDS + e + RANDOM % (e / 4 + 1) ))
+  t k_freio "$s" "$lim" "$e"; PERM+=("  ${AMARELO}⚠${R} $TXT")
+  lembra_espera "$s" "$e"
+  (( ${BLOQ_SITE[$s]} >= 4 )) && para_site "$s"
+  return 0
+}
+
+para_site() {
+  local s=$1
+  (( ${PARADO_SITE[$s]:-0} )) && return 0
+  PARADO_SITE[$s]=1
+  t k_parado "$s"; PERM+=("  ${AMARELO}⚠${R} $TXT")
+}
+
+# adia_site SITE: os links que faltavam dele vão para a lista de falhas, para outra hora
+adia_site() {
+  local s=$1 i
+  while (( ${PEND_SITE[$s]:-0} > 0 )); do
+    i=${FILA_CAB[$s]}
+    FILA_CAB[$s]=${SEG[$i]}
+    PEND_SITE[$s]=$(( ${PEND_SITE[$s]} - 1 )); N_PENDENTES=$(( N_PENDENTES - 1 ))
+    (( ${TENTATIVA[$i]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
+    FALHAS+=("${LINKS[$(( i - 1 ))]}")
+    FEITO[$i]=1; FINALIZADOS=$(( FINALIZADOS + 1 )); N_ADIADOS=$(( N_ADIADOS + 1 ))
+  done
+}
+
+# vigia_saude: o download já está chegando? Então o site aceitou, e dá para abrir mais uma vaga
+# nele sem esperar o vídeo inteiro terminar.
+vigia_saude() {
+  local s idx
+  for (( s = 0; s < J; s++ )); do
+    idx=${SLOT_IDX[$s]}
+    (( idx > 0 )) && [[ -z ${SAUDAVEL[$idx]:-} ]] || continue
+    grep -aqm 1 '^@@[PD]@@' "$TMP/$idx.log" 2>/dev/null || continue
+    SAUDAVEL[$idx]=1
+    site_aceitou "${SITE[$idx]}"
+  done
+  return 0
+}
+
+# aplica_esperas: quem pediu calma numa execução recente continua com a espera dela, e sem pressa
+aplica_esperas() {
+  local s agora resto
+  (( ! FORCAR )) || return 0
+  printf -v agora '%(%s)T' -1
+  for s in "${SITES[@]}"; do
+    resto=$(( ${ESPERA_ATE[$s]:-0} - agora ))
+    (( resto > 0 )) || continue
+    PROX_INICIO_SITE[$s]=$(( SECONDS + resto )); BLOQ_SITE[$s]=1
+    t k_espera_ant "$s" "$resto"; PERM+=("  ${AMARELO}⚠${R} $TXT")
+  done
+}
+
+# espera_restante → FMT (o site) e NUM (segundos): o site cuja espera termina primeiro
+espera_restante() {
+  local s r
+  FMT=""; NUM=0
+  for s in "${SITES[@]}"; do
+    (( ${PEND_SITE[$s]:-0} > 0 )) || continue
+    r=$(( ${PROX_INICIO_SITE[$s]:-0} - SECONDS ))
+    (( r > 1 )) || continue
+    if [[ -z $FMT ]] || (( r < NUM )); then FMT=$s; NUM=$r; fi
+  done
+  [[ -n $FMT ]]
 }
 
 # ───── A cascata lembra: numa lista longa, repetir em todo link o caminho que já se sabe que
@@ -2412,24 +2537,37 @@ freia_site() {
 # ───── pasta do projeto) e os próximos links já começam nele. A memória vence em 30 dias, para
 # ───── o site ter a chance de voltar ao caminho rápido, e cai se o método deixar de funcionar.
 carrega_metodos() {
-  local site n quando agora
+  local site n quando ate agora
   ARQ_METODOS="${XDG_DATA_HOME:-$HOME/.local/share}/grabit/metodos.txt"
   [[ -r $ARQ_METODOS ]] || return 0
   printf -v agora '%(%s)T' -1
-  while read -r site n quando; do
-    [[ -n $site && $n =~ ^[12]$ && $quando =~ ^[0-9]+$ ]] || continue
-    (( agora - quando < 2592000 )) || continue
-    METODO[$site]=$n; METODO_QUANDO[$site]=$quando
+  while read -r site n quando ate; do
+    [[ $site =~ ^[a-z0-9._?-]+$ && $n =~ ^[012]$ && $quando =~ ^[0-9]+$ ]] || continue
+    if (( n > 0 && agora - quando < 2592000 )); then METODO[$site]=$n; METODO_QUANDO[$site]=$quando; fi
+    [[ $ate =~ ^[0-9]+$ ]] && (( ate > agora )) && ESPERA_ATE[$site]=$ate
   done < "$ARQ_METODOS"
 }
 
+# Uma linha por site: o site, o nível que funcionou, desde quando, e até quando ele pediu calma
 grava_metodos() {
-  local site
+  local site agora
   [[ -n $ARQ_METODOS ]] || return 0
   mkdir -p "${ARQ_METODOS%/*}" 2>/dev/null || return 0
+  printf -v agora '%(%s)T' -1
   for site in "${!METODO[@]}"; do
-    printf '%s %s %s\n' "$site" "${METODO[$site]}" "${METODO_QUANDO[$site]:-0}"
-  done > "$ARQ_METODOS.tmp" 2>/dev/null && mv -f -- "$ARQ_METODOS.tmp" "$ARQ_METODOS"
+    printf '%s %s %s %s\n' "$site" "${METODO[$site]}" "${METODO_QUANDO[$site]:-0}" "${ESPERA_ATE[$site]:-0}"
+  done > "$ARQ_METODOS.tmp" 2>/dev/null || return 0
+  for site in "${!ESPERA_ATE[@]}"; do
+    [[ -z ${METODO[$site]:-} ]] && (( ${ESPERA_ATE[$site]} > agora )) && printf '%s 0 %s %s\n' "$site" "$agora" "${ESPERA_ATE[$site]}"
+  done >> "$ARQ_METODOS.tmp"
+  mv -f -- "$ARQ_METODOS.tmp" "$ARQ_METODOS"
+}
+
+lembra_espera() {                             # lembra_espera SITE SEGUNDOS
+  local agora
+  printf -v agora '%(%s)T' -1
+  ESPERA_ATE[$1]=$(( agora + $2 ))
+  grava_metodos
 }
 
 lembra_metodo() {                             # lembra_metodo SITE NÍVEL
@@ -2465,6 +2603,9 @@ nivel_do_link() {
 site_de() {
   local h=${1#*://}
   h=${h%%[/?#]*}; h=${h##*@}; h=${h%%:*}; h=${h,,}
+  # Vira chave de tabelas do Bash: um link de fora (a captura -C lê o que vier) não pode levar
+  # nada além de um nome de site, ou "$(…)" num link acabaria executado.
+  h=${h//[!a-z0-9.-]/_}
   [[ $h == youtu.be ]] && h=youtube.com
   if [[ $h =~ ([^.]+\.(com|co|net|org|gov|edu|ac)\.[a-z]{2})$ ]]; then h=${BASH_REMATCH[1]}
   elif [[ $h =~ ([^.]+\.[^.]+)$ ]]; then h=${BASH_REMATCH[1]}; fi
@@ -2587,19 +2728,33 @@ captura_clip() {
 # vale_repetir IDX: falhou por algo passageiro e ainda há tentativas? Se sim,
 # guarda o log desta tentativa e põe o link no fim da fila.
 vale_repetir() {
-  local idx=$1 tent=${TENTATIVA[$1]:-1}
+  local idx=$1 tent=${TENTATIVA[$1]:-1} site e
   analisa_log "$TMP/$idx.log"
   (( N_FATAIS == 0 && N_COSMETICOS > 0 )) && return 1   # o vídeo saiu inteiro: repetir não muda nada
   classifica_erro "$MOTIVO"
-  (( MUITAS_REQ )) && freia_site "${SITE[$idx]:-}"
+  site=${SITE[$idx]}
   nivel_do_link "$idx"
-  if (( NIVEL[$idx] < 2 && REPETE && tent < TENTATIVAS )); then
+  # Depois de uma recusa, nada de voltar ao site no mesmo instante
+  if (( BLOQUEIO && ESPERA_BASE > 0 )); then
+    e=$(( SECONDS + ESPERA_BASE / 10 + RANDOM % 3 ))
+    (( e > ${PROX_INICIO_SITE[$site]:-0} )) && PROX_INICIO_SITE[$site]=$e
+  fi
+  if (( MUITAS_REQ )); then
+    # Pediu calma: o link espera junto com o site, e isso não conta como tentativa. Quantas vezes
+    # pode acontecer quem limita é o site_pediu_calma, que acaba parando o site.
+    site_pediu_calma "$site"
+    (( ${PARADO_SITE[$site]:-0} )) && return 1
+  elif (( NIVEL[$idx] < 2 && REPETE && tent < TENTATIVAS )); then
     (( NIVEL[$idx] == 0 )) && NIVEL[$idx]=1     # o próximo degrau da cascata
   elif vai_ao_navegador "$idx"; then            # se a página só funciona num navegador, é a vez dele
     NIVEL[$idx]=2
   else
     # O método lembrado não serve mais: na próxima vez, a cascata recomeça do início
-    if (( ${NIVEL_INICIO[$idx]:-0} > 0 && REPETE )); then lembra_metodo "${SITE[$idx]:-}" 0; fi
+    if (( ${NIVEL_INICIO[$idx]:-0} > 0 && REPETE )); then lembra_metodo "$site" 0; fi
+    if (( BLOQUEIO )); then                     # recusas seguidas: o problema é o site, não o link
+      FALHAS_SITE[$site]=$(( ${FALHAS_SITE[$site]:-0} + 1 ))
+      (( ${FALHAS_SITE[$site]} >= 3 )) && para_site "$site"
+    fi
     return 1
   fi
   (( ARQUIVO_RUIM )) && REBAIXAR[$idx]=1
@@ -2615,13 +2770,14 @@ vale_repetir() {
 # tempo: depois de algumas seguidas, a tentativa acaba e a cascata segue. Só contam as linhas
 # recentes: num download de horas, um erro passageiro aqui e outro ali não quer dizer nada.
 vigia_bloqueios() {
-  local s idx n ultima
+  local s idx n m ultima
   for (( s = 0; s < J; s++ )); do
     idx=${SLOT_IDX[$s]}
     (( idx > 0 )) || continue
     n=$(tail -n 12 "$TMP/$idx.log" 2>/dev/null | grep -acE 'Got error: HTTP Error (401|403|404|410)')
-    (( ${n:-0} >= 5 )) || continue
-    ultima=$(grep -aE 'Got error: HTTP Error (401|403|404|410)' "$TMP/$idx.log" | tail -n 1)
+    m=$(tail -n 12 "$TMP/$idx.log" 2>/dev/null | grep -ac 'Got error: HTTP Error 429')   # 429: insistir piora
+    (( ${n:-0} >= 5 || ${m:-0} >= 3 )) || continue
+    ultima=$(grep -aE 'Got error: HTTP Error (401|403|404|410|429)' "$TMP/$idx.log" | tail -n 1)
     mata_arvore "${SLOT_PID[$s]}"
     printf 'ERROR: %s\n' "$ultima" >> "$TMP/$idx.log"
   done
@@ -2704,8 +2860,8 @@ salva_falhas() {                              # grava links_falhos.txt (+ o que 
     t f_nao_gravou "$ARQUIVO_FALHAS"; erro "$TXT"
     return 0
   fi
-  (( n_pend > 0 && N_ERRO > 0 )) && o_que=${T[f_erro_pend]}
-  (( n_pend > 0 && N_ERRO == 0 )) && o_que=${T[f_pend]}
+  (( n_pend + N_ADIADOS > 0 && N_ERRO > 0 )) && o_que=${T[f_erro_pend]}
+  (( n_pend + N_ADIADOS > 0 && N_ERRO == 0 )) && o_que=${T[f_pend]}
   t f_salvos "${#lista[@]}" "$o_que" "${NEG}${ARQUIVO_FALHAS}${R}"
   printf '\n  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
   if (( ${#antigos[@]} )); then t f_antes "${#antigos[@]}"; printf '%s' "$TXT"; fi
@@ -2733,6 +2889,9 @@ resumo() {
   linha_resumo "✔" "$VERDE"    "${T[s_baixados]}" "${NEG}${N_OK}${R}"
   linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"       "${NEG}${N_JA}${R}"
   linha_resumo "✖" "$VERMELHO" "${T[s_erro]}"     "${NEG}${N_ERRO}${R}"
+  if (( N_ADIADOS > 0 )); then
+    linha_resumo "‖" "$AMARELO" "${T[s_adiados]}" "${NEG}${N_ADIADOS}${R}  ${DIM}${T[s_adiados_det]}${R}"
+  fi
   if (( N_AVISOS > 0 )); then
     t s_aviso_det "$LOG_DIR"; linha_resumo "⚠" "$AMARELO" "${T[s_aviso]}" "${NEG}${N_AVISOS}${R}  ${DIM}${TXT}${R}"
   fi
@@ -4508,6 +4667,7 @@ REDIM=1
 trap 'REDIM=1' WINCH
 COMECOU=1
 SECONDS=0
+aplica_esperas
 if (( INTERATIVO )); then
   printf '%s' "${ESC}[?25l${ESC}[?7l${ESC}[22;0t"   # esconde o cursor, desliga a quebra de linha, guarda o título
   TITULO_EMPILHADO=1
@@ -4517,7 +4677,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   atualiza_largura
   if (( CAPTURA && SECONDS >= PROX_CLIP )); then captura_clip; PROX_CLIP=$(( SECONDS + 1 )); fi
   if (( FILA_VIVA && SECONDS >= PROX_VIGIA )); then novos_links; PROX_VIGIA=$(( SECONDS + 2 )); fi
-  if (( SECONDS >= PROX_BLOQ )); then vigia_bloqueios; PROX_BLOQ=$(( SECONDS + 2 )); fi
+  if (( SECONDS >= PROX_BLOQ )); then vigia_saude; vigia_bloqueios; PROX_BLOQ=$(( SECONDS + 1 )); fi
 
   # 1) recolhe quem terminou (e devolve à fila quem merece outra tentativa)
   for (( s = 0; s < J; s++ )); do
@@ -4528,6 +4688,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     SLOT_IDX[$s]=0
     ATIVOS_SITE[${SITE[$idx]}]=$(( ${ATIVOS_SITE[${SITE[$idx]}]:-1} - 1 ))
     if (( NAV_DONO == idx )); then NAV_DONO=0; rmdir "$TMP/navegador.trava" 2>/dev/null; fi
+    if (( rc == 0 )) && [[ -z ${SAUDAVEL[$idx]:-} ]]; then SAUDAVEL[$idx]=1; site_aceitou "${SITE[$idx]}"; fi
     if (( rc != 0 )) && vale_repetir "$idx"; then continue; fi
     (( ${TENTATIVA[$idx]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
     BAIXOU=0
@@ -4577,5 +4738,5 @@ descarta_parciais
 move_baixados
 resumo
 (( FILA_VIVA )) || notifica
-(( N_ERRO > 0 || FINALIZADOS < TOTAL )) && exit 1
+(( N_ERRO > 0 || N_ADIADOS > 0 || FINALIZADOS < TOTAL )) && exit 1
 exit 0
