@@ -1678,6 +1678,7 @@ classifica_erro() {
     *"not a bot"*)                                          DICA=${T[d_bot]}; REPETE=0 ;;
     *"members-only"*|*"join this channel"*)                 DICA=${T[d_membros]}; REPETE=0 ;;
     *"drm protected"*)                                      DICA=${T[d_drm]}; REPETE=0 ;;
+    *"unable to download video subtitles"*)                 AJUSTE="--sleep-subtitles 5" ;;
     *"anti-bot"*)                                           DICA=${T[d_antirobo]}; DICA_NAVEGADOR=1 ;;
     *"--cookies"*|*"log in"*|*"login required"*|*"sign in"*|*"registered users"*|*"requires authentication"*)
                                                             DICA=${T[d_login]}; REPETE=0 ;;
@@ -2177,6 +2178,10 @@ lanca_job() {                                 # lanca_job IDX
     read -ra ajuste <<<"${AJUSTES[$i]:-}"
     extra+=("${ajuste[@]}")
   fi
+  # Playlist e canal viram dezenas de pedidos seguidos ao mesmo site, num processo só
+  case $url in
+    *[?\&]list=*|*/playlist*|*/channel/*|*/c/*|*/@*|*/user/*|*/videos) extra+=(--sleep-requests 0.5) ;;
+  esac
   # O arquivo da tentativa anterior veio corrompido: sem isso o yt-dlp o reaproveitaria
   # ("has already been downloaded") e falharia igual. Itens já concluídos estão no
   # histórico e continuam sendo pulados.
@@ -3176,12 +3181,14 @@ monta_args_ytdlp() {
     # Velocidade e resiliência (com espera crescente entre as repetições)
     -N "$CONEXOES_POR_VIDEO"
     --retries 10 --fragment-retries 10 --extractor-retries 3
-    --retry-sleep exp=1:30 --retry-sleep fragment:exp=1:30
+    --retry-sleep exp=1:30 --retry-sleep fragment:exp=1:30 --retry-sleep extractor:exp=2:30
     # Qualidade garantida: nunca pula um fragmento que falhou (por padrão o yt-dlp pula
     # em silêncio e entrega o vídeo com um salto) e nunca retoma pedaços de um download
     # interrompido (a retomada pode deixar buracos); nesses casos, recomeça do zero.
     --abort-on-unavailable-fragments --no-continue
-    --socket-timeout 30 --throttled-rate 100K
+    # Sem --throttled-rate: abaixo do limite, o yt-dlp refaz a extração e, com o --no-continue,
+    # recomeça do zero, sem limite de vezes. Numa conexão lenta, seria um laço sem fim de pedidos.
+    --socket-timeout 30
   )
   # Com --write-auto-subs o yt-dlp para de pedir as legendas manuais sozinho:
   # pede as duas (a manual tem prioridade) e apaga os .vtt depois de embutir.
