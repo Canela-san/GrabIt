@@ -1713,8 +1713,7 @@ ate python3 -c "import socket; socket.create_connection(('127.0.0.1', $PORTA_P),
 roda x1 -L pt -o ./a --proxy "http://127.0.0.1:$PORTA_P" http://so-pelo-proxy.invalid/dir/botao.html
 espera "o vídeo vem pelo proxy" test -n "$(find a -name '*.mkv' -print -quit)"
 espera "…a página é lida por ele" grep -qE '^GET so-pelo-proxy.invalid /dir/botao.html' "$TMP/proxy.log"
-espera "…a medição do arquivo direto também" grep -qE 'so-pelo-proxy.invalid /dir/video720.mp4 Lavf' "$TMP/proxy.log"
-espera "…e nada foi baixado do stream de 360p em vez dele" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
+espera "…e a medição do arquivo direto também: sem ela, ficaria o stream de 360p" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
 kill "$SRV_P" 2>/dev/null
 
 secao "Verificação da coleção (--verificar)"
@@ -1743,6 +1742,23 @@ espera "outros formatos também são conferidos" grep -qE "✔ .*outro" saida2
 espera "sem terminal, não baixa nada sozinho" test ! -e "Col/longo [longo].com-erros.mkv"
 roda saida3 -L pt --verificar ./nao-existe
 espera "pasta inexistente sai com código 1" codigo "$RC" 1
+# Fora do MKV não há info.json: o que vale são as tags
+roda m0 -L pt -O -o ./ColO "$B/curto.mp4"
+F=$(so_um ColO mp4)
+espera "em .mp4, a duração e a chave ficam na tag" sh -c "ffprobe -v error -show_entries format_tags=grouping -of csv=p=0 '$F' | grep -q '^grabit [0-9]* Generic curto'"
+ffmpeg -v error -y -i "$F" -map 0 -c copy -metadata grouping='grabit 60 Generic curto' ColO/novo.mp4 && mv ColO/novo.mp4 "$F"
+roda m1 -L pt --verificar ColO
+espera "acha o .mp4 incompleto" grep -qE "curto .*incompleto" m1
+espera "…e diz quanto falta" contem m1 "tem 00:02 de 01:00"
+cp "$F" ColO/copia.bak
+TERM=xterm-256color python3 "$TMP/terminal.py" m2 40 'espera:[S/n]|tecla:s
+|fim' bash "$G" -L pt -O --verificar ColO > m2.rc 2>&1
+espera "oferece baixar de novo, pelo link do comentário" contem m2 "1/1"
+espera "…guarda o que estava ruim" test -f "ColO/curto [curto].com-erros.mp4"
+espera "…e baixa de novo, mesmo estando no histórico" test -f "$F"
+ffmpeg -v error -y -i "$F" -map 0 -c copy -metadata grouping= ColO/novo.mp4 && mv ColO/novo.mp4 "$F"
+roda m3 -L pt --verificar ColO
+espera "sem a tag, só o comentário: o vídeo passa, por falta de com o que comparar" grep -qE "✔ .*curto" m3
 
 # ───────────────────────────── Resultado ───────────────────────────────────────
 printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"

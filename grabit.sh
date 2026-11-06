@@ -4593,6 +4593,9 @@ monta_args_ytdlp() {
     # o erro prenderia o que já chegou na pasta temporária. Quem troca a embalagem e embute a capa
     # é o --acabamento, que avisa o que não coube. Antes, dá preferência às versões que já cabem.
     qualidade=(-f "$FORMATO" --embed-subs --sub-langs "$langs")
+    # Fora do MKV não cabe o info.json. O link já vai no comentário; a duração que o site informa e a
+    # chave do histórico vão aqui, para o "grabit verificar" saber se o vídeo chegou inteiro.
+    qualidade+=(--parse-metadata 'grabit %(duration|0)s %(extractor_key|)s %(id|)s:%(meta_grouping)s')
     capa=(--write-thumbnail)
     case $FORMATO_SAIDA in
       original) ;;
@@ -5612,12 +5615,26 @@ atualizar() {
 # decodificado inteiro (defeitos) e tem a duração comparada com a registrada no
 # info.json que o GrabIt embute nos MKV (incompletos). No fim, oferece baixar de novo
 # os que tiverem problema, pelo link guardado nesse mesmo info.json.
-le_info() {                                   # le_info ARQUIVO → I_DUR I_URL I_CHAVE (do info.json embutido)
-  local j="$TMP/info.json"
+# le_info ARQUIVO → I_DUR I_URL I_CHAVE: do info.json embutido ou, fora do MKV, das tags comment e grouping
+le_info() {
+  local j="$TMP/info.json" k v
   I_DUR=0; I_URL=""; I_CHAVE=""
   rm -f -- "$j"
   ffmpeg -v quiet -y -dump_attachment:m:filename:info.json "$j" -i "$1" >/dev/null 2>&1
-  [[ -s $j ]] || return 1
+  if [[ ! -s $j ]]; then
+    while IFS='=' read -r k v; do
+      case ${k,,} in
+        tag:comment|tag:purl) [[ -z $I_URL && $v =~ ^https?:// ]] && I_URL=$v ;;
+        tag:grouping)
+          if [[ $v =~ ^grabit\ ([0-9]+)(\.[0-9]+)?\ ([^\ ]*)\ (.+)$ ]]; then
+            I_DUR=${BASH_REMATCH[1]}; k=${BASH_REMATCH[3]}; v=${BASH_REMATCH[4]}
+            [[ -n $k ]] && I_CHAVE="${k,,} $v"
+          fi ;;
+      esac
+    done < <(ffprobe -v error -show_entries format_tags -of default=nw=1 -- "$1" 2>/dev/null)
+    [[ -n $I_URL$I_CHAVE ]]
+    return
+  fi
   if command -v python3 >/dev/null 2>&1; then
     IFS=$'\t' read -r I_DUR I_URL I_CHAVE < <(python3 -c '
 import json, sys
@@ -5731,6 +5748,12 @@ verifica_colecao() {
   # O arquivo ruim fica guardado à parte, o vídeo sai do histórico e o link volta a ser
   # baixado — com -m ou -d se o arquivo estava nesse tipo de pasta.
   if [[ -n $HIST_DO_AMBIENTE ]]; then hist=$ARQUIVO_HISTORICO; else hist="$pasta/.grabit-historico.txt"; fi
+  # Sem a chave (arquivo mais antigo que a tag): o id está no nome do arquivo, e o resto, no histórico
+  for i in "${!ruins[@]}"; do
+    if [[ -z ${chaves[$i]} && -f $hist && ${ruins[$i]##*/} =~ \[([^]]+)\]\.[^.]+$ ]]; then
+      chaves[$i]=$(awk -v id="${BASH_REMATCH[1]}" '{ k = $1; sub(/^[^ ]+ /, ""); if ($0 == id) { print k " " id; exit } }' "$hist")
+    fi
+  done
   printf '%s\n' "${chaves[@]}" | grep -v '^$' > "$TMP/chaves"
   if [[ -s $TMP/chaves && -f $hist ]]; then
     grep -vxF -f "$TMP/chaves" "$hist" > "$TMP/hist"; cat "$TMP/hist" > "$hist"
