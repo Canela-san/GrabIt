@@ -204,11 +204,6 @@ if [[ ${1:-} == --baixa-partes ]]; then
         if [[ $l =~ DL:([0-9.]+[KMGT]?i?B) ]]; then em_bytes "${BASH_REMATCH[1]}"; v=$NUM; fi
         if [[ $l =~ ETA:([0-9hms]+) ]]; then em_segundos "${BASH_REMATCH[1]}"; e=$NUM; fi
         printf '@@P@@%d\x1f%d\x1f%d\x1f%d\x1f\x1f\x1f?\x1f\x1f\x1f\x1f%s\n' "$b" "$t" "$v" "$e" "$nome"
-        # O aria2c não conhece o limite de tamanho: para aqui, e a nova tentativa, pelo yt-dlp, pula o arquivo
-        if (( ${GRABIT_MAX_BYTES:-0} > 0 && t > GRABIT_MAX_BYTES )); then
-          printf '[grabit] lento\n@@R@@%s\n' "aria2c: maior que o limite de tamanho"
-          kill "$$" 2>/dev/null
-        fi
         # Só arquivo grande vale um pedido a mais ao site: o pequeno, se cair, recomeça rápido
         if (( guardar && t >= 52428800 && SECONDS - ini >= 2 )); then
           guardar=0
@@ -971,15 +966,6 @@ CONFIG_CRIADO=0; AVISOS_CONFIG=(); N_AJUSTES_CONFIG=0
 # Perfis por site: uma seção [youtube.com] no grabit.config vale só para os links desse site
 declare -A PERFIL=()
 CHAVES_SITE=" RESOLUCAO_MAXIMA COOKIES_NAVEGADOR USER_AGENT LIMITE_VELOCIDADE CONEXOES_POR_VIDEO LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS IDIOMAS_LEGENDAS OPCOES_YTDLP "
-
-# em_bytes_filtro 2G → NUM
-em_bytes_filtro() {
-  local v=$1 m=1
-  case $v in
-    *K) m=1024; v=${v%K} ;; *M) m=1048576; v=${v%M} ;; *G) m=1073741824; v=${v%G} ;; *T) m=1099511627776; v=${v%T} ;;
-  esac
-  NUM=$(awk -v v="$v" -v m="$m" 'BEGIN { printf "%d", v * m }')
-}
 
 site_de() {
   local h=${1#*://}
@@ -3830,7 +3816,8 @@ lanca_job() {                                 # lanca_job IDX
   CONEX_JOB[$i]=$n; CONEX_SITE[${SITE[$i]}]=$(( ${CONEX_SITE[${SITE[$i]}]:-0} + n ))
   (( n != CONEXOES_POR_VIDEO )) && extra+=(-N "$n")
   # (o YouTube limita quem pede pedaços grandes: o yt-dlp, que pede pedaços curtos, é bem mais rápido)
-  if (( n > 1 && NIVEL[$i] == 0 && ! MODO_CURL )) && [[ -n $ARIA && ${SITE[$i]} != youtube.com ]]; then
+  # (com limite de tamanho, também: o aria2c não o conhece, e só o yt-dlp pula o arquivo antes de baixar)
+  if (( n > 1 && NIVEL[$i] == 0 && ! MODO_CURL )) && [[ -n $ARIA && ${SITE[$i]} != youtube.com && $FILTRO_TAMANHO == 0 ]]; then
     extra+=(--downloader "http:$ARIA" --downloader-args "aria2c:-x$n -s$n")
     GRABIT_SONDAR=1; [[ -n ${ARIA_OK[${SITE[$i]}]:-} ]] && GRABIT_SONDAR=0
     GRABIT_RETOMAR="$PASTA_SAIDA/.parciais/retomar"
@@ -5180,7 +5167,6 @@ regrava_lista() {
 
 # O aria2c que o yt-dlp vai chamar: veja --baixa-partes. Sem ele, cada arquivo direto usa uma conexão.
 prepara_aria() {
-  if [[ $FILTRO_TAMANHO != 0 ]]; then em_bytes_filtro "$FILTRO_TAMANHO"; export GRABIT_MAX_BYTES=$NUM; fi
   (( CONEXOES_POR_VIDEO > 1 && ! PROXY_SOCKS )) && command -v aria2c >/dev/null 2>&1 && mkdir -p "$TMP/aria" || return 0
   printf '#!/usr/bin/env bash\nexec bash %q --baixa-partes "$@"\n' "$GRABIT_SCRIPT" > "$TMP/aria/aria2c" &&
     chmod +x "$TMP/aria/aria2c" && ARIA="$TMP/aria/aria2c"

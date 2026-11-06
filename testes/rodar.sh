@@ -2056,7 +2056,7 @@ espera "…e avisa" contem g2 "fora dos filtros"
 espera "…sem arquivo nenhum" test -z "$(find p -maxdepth 1 -name '*.mkv' -print -quit)"
 if command -v aria2c >/dev/null 2>&1; then
   roda g3 -L pt -O --max-tamanho 5M -o ./p2 "$B/grande.mp4"
-  espera "com o aria2c também: ele não conhece o limite, mas o GrabIt sim" contem g3 "fora dos filtros"
+  espera "num arquivo grande também" contem g3 "fora dos filtros"
   espera "…sem o arquivo" test -z "$(find p2 -maxdepth 1 -name '*.mp4' -print -quit)"
 fi
 
