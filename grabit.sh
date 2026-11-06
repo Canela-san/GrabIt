@@ -486,6 +486,7 @@ if [[ ${1:-} == --procura-direto ]]; then
   vcodec_s=${22:-NA}
   [[ $ua == NA ]] && ua=""
   command -v ffprobe >/dev/null 2>&1 || exit 0
+  case ${http_proxy:-} in socks*) exit 0 ;; esac      # o ffprobe iria direto ao site, sem passar pelo proxy
   case $entradas in NA|0|1) ;; *) exit 0 ;; esac      # um vídeo de uma lista: a página fala de vários
   [[ $dr == SDR || $dr == NA ]] || exit 0             # HDR: nenhuma medida daqui compara com ele
 
@@ -749,7 +750,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP PROXY USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -775,6 +776,7 @@ VERIFICAR=0                                   # 1 = decodifica cada vídeo intei
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
+PROXY=                                        # ex.: http://host:8080 ou socks5://host:1080; vale para tudo
 USAR_NAVEGADOR=1                              # 0 = nunca abrir um navegador para achar o vídeo
 PROCURAR_ARQUIVO=1                            # 0 = não procurar um arquivo direto melhor que o stream
 FORMATO_SAIDA=mkv                             # mkv, mp4, webm, mov…, ou original: como o site entrega
@@ -1077,6 +1079,9 @@ idioma_pt() {
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
     [sem_arquivo2]="     Crie-o com um link por linha, use  -l CAMINHO  ou passe os links no próprio comando."
+    [val_proxy]="%s: '%s' não é um endereço de proxy. Use http://host:porta ou socks5://host:porta (veio de: %s)."
+    [proxy_socks]="Com proxy SOCKS, não há busca por arquivo direto nem várias conexões: o ffprobe e o aria2c não passam por ele."
+    [kv_proxy]="Proxy"
     [lista_binaria]="'%s' não é uma lista de links: é um arquivo binário, como um vídeo. Nada foi alterado."
     [lista_binaria2]="     Para mudar o formato de um vídeo:  %s"
     [lista_utf16]="'%s' está em UTF-16. Salve a lista em UTF-8 para usá-la. Nada foi alterado."
@@ -1274,6 +1279,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -y            com install: instala tudo sem perguntar
   -b NAVEGADOR  usa os cookies do navegador (firefox, chrome, brave…)
   -A AGENTE     usa o User-Agent do navegador, junto com -b, em sites com verificação
+  --proxy URL   passa tudo por um proxy: http://host:8080 ou socks5://host:1080
   -p            só o vídeo, se o link tiver vídeo + playlist
   -u            só o vídeo principal (o mais longo) de páginas com vários vídeos
   -x            só o áudio (a melhor faixa, sem recomprimir)
@@ -1426,6 +1432,11 @@ EOF
 
 # Opções a mais para o yt-dlp, separadas por espaços. Ex.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
+
+# Proxy para tudo o que o GrabIt acessa, inclusive a busca por arquivo direto e o navegador
+# (--proxy): http://host:8080 ou socks5://host:1080. Um proxy SOCKS desliga a busca por arquivo
+# direto e as várias conexões, porque o ffprobe e o aria2c não passam por ele.
+#PROXY=
 
 # Quando a página só funciona num navegador (player em JavaScript, verificação anti-robô), abrir
 # um, num perfil só do GrabIt, para achar o vídeo. Uma verificação, se aparecer, é você quem faz
@@ -1661,6 +1672,9 @@ idioma_en() {
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
     [sem_arquivo2]="     Create it with one link per line, use  -l PATH  or pass the links on the command line."
+    [val_proxy]="%s: '%s' is not a proxy address. Use http://host:port or socks5://host:port (from: %s)."
+    [proxy_socks]="With a SOCKS proxy there is no direct-file search or multiple connections: ffprobe and aria2c cannot go through it."
+    [kv_proxy]="Proxy"
     [lista_binaria]="'%s' is not a list of links: it is a binary file, such as a video. Nothing was changed."
     [lista_binaria2]="     To change a video's format:  %s"
     [lista_utf16]="'%s' is in UTF-16. Save the list as UTF-8 to use it. Nothing was changed."
@@ -1858,6 +1872,7 @@ Usage:  grabit [options] [LINK or FILE ...]
   -y            with install: install everything without asking
   -b BROWSER    use the browser's cookies (firefox, chrome, brave…)
   -A AGENT      use the browser's User-Agent, along with -b, on sites with a check
+  --proxy URL   send everything through a proxy: http://host:8080 or socks5://host:1080
   -p            only the video, when the link is video + playlist
   -u            only the main video (the longest) of pages with several videos
   -x            audio only (the best track, no re-encoding)
@@ -2015,6 +2030,11 @@ EOF
 # Extra options for yt-dlp, separated by spaces. E.g.: --force-ipv4 --no-check-certificates
 #OPCOES_YTDLP=
 
+# Proxy for everything GrabIt accesses, including the direct-file search and the browser
+# (--proxy): http://host:8080 or socks5://host:1080. A SOCKS proxy turns off the direct-file search
+# and multiple connections, because ffprobe and aria2c cannot go through it.
+#PROXY=
+
 # When a page only works in a browser (JavaScript player, anti-bot check), open one, in a
 # profile just for GrabIt, to find the video. A check, if one shows up, is yours to do in the
 # window. 0 = never open it. Whatever is already installed works: Firefox, Chrome, Chromium,
@@ -2095,6 +2115,10 @@ while (( $# )); do
     --yes|--sim) ASSUME_SIM=1 ;;
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
+    --proxy=*) PROXY=${a#*=}; ORIGEM[PROXY]=opção ;;
+    --proxy)
+      (( $# )) || { t opcao_valor "$a"; erro "$TXT"; exit 2; }
+      PROXY=$1; ORIGEM[PROXY]=opção; shift ;;
     --formato=*|--format=*|--extensao=*|--extension=*) ARGS_CURTOS+=(-e "${a#*=}") ;;
     --codec=*) ARGS_CURTOS+=(-k "${a#*=}") ;;
     --formato|--format|--extensao|--extension|--codec)
@@ -2253,6 +2277,48 @@ if (( SO_AUDIO )) && [[ $COMANDO != converter ]]; then
 fi
 # Quem pediu um codec quer aquele codec: a busca escolheria pelo que parece melhor em números
 [[ -n $CODEC_VIDEO ]] && PROCURAR_ARQUIVO=0
+# O proxy vale para tudo o que sai para a rede, não só para o yt-dlp: a busca por arquivo direto, a
+# sonda de velocidade, o aria2c e o navegador também acessam o site. Por isso ele vai pelo ambiente, que
+# todos eles leem, e nunca pela linha de comando, onde uma senha apareceria no "ps". Também conta um
+# --proxy em OPCOES_YTDLP e o *_proxy que já estiver no ambiente, que nem todo programa lê igual.
+if [[ -z $PROXY ]]; then
+  opcoes_lidas=(); read -ra opcoes_lidas <<<"$OPCOES_YTDLP"
+  for (( i = 0; i < ${#opcoes_lidas[@]}; i++ )); do
+    case ${opcoes_lidas[$i]} in
+      --proxy=*) PROXY=${opcoes_lidas[$i]#*=} ;;
+      --proxy)   PROXY=${opcoes_lidas[$(( i + 1 ))]:-} ;;
+    esac
+  done
+  unset opcoes_lidas i
+  [[ -n $PROXY ]] && ORIGEM[PROXY]=config
+fi
+if [[ -z $PROXY ]]; then
+  for nome in ALL_PROXY all_proxy HTTPS_PROXY https_proxy HTTP_PROXY http_proxy; do
+    if [[ -n ${!nome:-} ]]; then PROXY=${!nome}; ORIGEM[PROXY]=ambiente; break; fi
+  done
+fi
+if [[ -n $PROXY ]]; then
+  [[ $PROXY == *://* ]] || PROXY="http://$PROXY"
+  if ! [[ ${PROXY,,} =~ ^(https?|socks4a?|socks5h?)://[^[:space:]/]+(/[^[:space:]]*)?$ ]]; then
+    origem_txt PROXY; t val_proxy PROXY "$PROXY" "$FMT"; erro "$TXT"
+    exit 2
+  fi
+  export ALL_PROXY=$PROXY all_proxy=$PROXY HTTPS_PROXY=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY http_proxy=$PROXY
+fi
+# O ffprobe e o ffmpeg só passam por proxy HTTP; o aria2c, idem. Num proxy SOCKS, iriam direto ao site,
+# mostrando o endereço real. Quem não sabe passar por ele fica de fora.
+PROXY_SOCKS=0
+if [[ ${PROXY,,} == socks* ]]; then
+  PROXY_SOCKS=1
+  (( ! PROCURAR_ARQUIVO && CONEXOES_POR_VIDEO == 1 )) || [[ $COMANDO == config ]] || aviso "${T[proxy_socks]}"
+  PROCURAR_ARQUIVO=0
+fi
+# sem_senha URL → FMT: o endereço do proxy para mostrar na tela
+sem_senha() {
+  FMT=$1
+  if [[ $1 =~ ^([^/]*//)[^/@]*@(.*)$ ]]; then FMT="${BASH_REMATCH[1]}•••@${BASH_REMATCH[2]}"; fi
+  return 0
+}
 # Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = desligado
 for nome in RESOLUCAO_MAXIMA RESOLUCAO_ALERTA; do
   case ${!nome,,} in
@@ -2278,6 +2344,7 @@ mostra_config() {
   else printf '  %s%s%s\n\n' "$AMARELO" "${T[cfg_inexistente]}" "$R"; fi
   for k in "${CHAVES_CONFIG[@]}"; do
     v=${!k:-—}; origem_txt "$k"
+    [[ $k == PROXY ]] && { sem_senha "$v"; v=$FMT; origem_txt "$k"; }
     pad=""; (( ${#v} < 22 )) && printf -v pad '%*s' $(( 22 - ${#v} )) ''   # por caracteres: "—" ocupa 3 bytes
     printf '  %-22s %s%s%s%s %s%s%s\n' "$k" "$NEG" "$v" "$R" "$pad" "$DIM" "$FMT" "$R"
   done
@@ -3322,7 +3389,7 @@ escolhe_principal() {
     (( idx > 0 )) || continue
     n=$(( n + 1 ))
     num "$dur"; dur=$NUM
-    if (( dur == 0 )) && [[ $link == http* ]] && command -v ffprobe >/dev/null 2>&1; then
+    if (( dur == 0 && ! PROXY_SOCKS )) && [[ $link == http* ]] && command -v ffprobe >/dev/null 2>&1; then
       dur=$(ffprobe -v error -rw_timeout 15000000 -show_entries format=duration -of csv=p=0 -- "$link" 2>/dev/null)
       num "$dur"; dur=$NUM
     fi
@@ -3825,7 +3892,9 @@ comando_repetir() {                           # → FMT: o mesmo comando, só co
   if [[ $(command -v -- "$nome" 2>/dev/null) -ef $eu ]]; then eu=$nome   # instalado no PATH: basta o nome
   elif [[ $eu != */* ]]; then eu="./$eu"; fi
   [[ $eu == */* && ! -x $eu ]] && txt="bash "
-  for p in "$eu" "${OPCOES[@]}" -l "$ARQUIVO_FALHAS"; do
+  local px=()
+  if [[ ${ORIGEM[PROXY]:-} == opção ]]; then sem_senha "$PROXY"; px=(--proxy "$FMT"); fi
+  for p in "$eu" "${OPCOES[@]}" "${px[@]}" -l "$ARQUIVO_FALHAS"; do
     if [[ $p =~ ^[[:alnum:]_./:=@%+,-]+$ ]]; then txt+="$p "; else txt+="${p@Q} "; fi
   done
   FMT=${txt% }
@@ -4357,7 +4426,7 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
 
 # O aria2c que o yt-dlp vai chamar: veja --baixa-partes. Sem ele, cada arquivo direto usa uma conexão.
 prepara_aria() {
-  (( CONEXOES_POR_VIDEO > 1 )) && command -v aria2c >/dev/null 2>&1 && mkdir -p "$TMP/aria" || return 0
+  (( CONEXOES_POR_VIDEO > 1 && ! PROXY_SOCKS )) && command -v aria2c >/dev/null 2>&1 && mkdir -p "$TMP/aria" || return 0
   printf '#!/usr/bin/env bash\nexec bash %q --baixa-partes "$@"\n' "$GRABIT_SCRIPT" > "$TMP/aria/aria2c" &&
     chmod +x "$TMP/aria/aria2c" && ARIA="$TMP/aria/aria2c"
 }
@@ -4469,6 +4538,7 @@ monta_args_ytdlp() {
   [[ -n $COOKIES_NAVEGADOR ]] && YTDLP_ARGS+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
   [[ -n $USER_AGENT ]]        && YTDLP_ARGS+=(--user-agent "$USER_AGENT")
   (( TEM_JS_RUNTIMES ))       && [[ -n $JS_RUNTIME ]] && YTDLP_ARGS+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  (( PROXY_SOCKS )) && YTDLP_ARGS+=(--downloader m3u8:native)   # o ffmpeg iria direto ao site
   read -ra opcoes <<<"$OPCOES_YTDLP"
   YTDLP_ARGS+=("${EXTRA_YTDLP[@]}" "${opcoes[@]}")
   return 0
@@ -4671,8 +4741,8 @@ pasta_navegador() {                           # → PASTA_NAV: um navegador do s
     PASTA_NAV="${XDG_DATA_HOME:-$HOME/.local/share}/grabit/$NAV_NOME"
   fi
   mkdir -p "$PASTA_NAV/perfil" && chmod 700 "$PASTA_NAV" || return 1
-  [[ $NAV_TIPO == firefox && ! -e $PASTA_NAV/perfil/user.js ]] || return 0
-  cat > "$PASTA_NAV/perfil/user.js" <<'EOF'
+  [[ $NAV_TIPO == firefox ]] || return 0
+  [[ -e $PASTA_NAV/perfil/user.js ]] || cat > "$PASTA_NAV/perfil/user.js" <<'EOF'
 // Perfil do GrabIt: sem telas de boas-vindas e com o vídeo começando sozinho, sem precisar de play.
 user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("browser.aboutwelcome.enabled", false);
@@ -4682,6 +4752,31 @@ user_pref("toolkit.startup.max_resumed_crashes", -1);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
 EOF
+  proxy_do_firefox "$PASTA_NAV/perfil/user.js"
+}
+
+# proxy_do_firefox USER.JS: o Firefox não lê o proxy do ambiente nem da linha de comando. As linhas
+# dele são refeitas a cada vez: sem PROXY, voltam a não existir. Se o proxy pedir senha, a janela pergunta.
+proxy_do_firefox() {
+  local u=$1 esq h porta linhas
+  linhas=$(grep -v '"network.proxy\.' "$u" 2>/dev/null)
+  if [[ -n $PROXY ]]; then
+    esq=${PROXY%%://*}; esq=${esq,,}; h=${PROXY#*://}; h=${h##*@}; h=${h%%/*}
+    if [[ $h == *:* ]]; then porta=${h##*:}; h=${h%:*}
+    elif [[ $esq == socks* ]]; then porta=1080
+    elif [[ $esq == https ]]; then porta=443
+    else porta=80; fi
+    linhas+=$'\n''user_pref("network.proxy.type", 1);'
+    if [[ $esq == socks* ]]; then
+      linhas+=$'\n'"user_pref(\"network.proxy.socks\", \"$h\");"$'\n'"user_pref(\"network.proxy.socks_port\", $porta);"
+      [[ $esq == socks4* ]] && linhas+=$'\n''user_pref("network.proxy.socks_version", 4);'
+      linhas+=$'\n''user_pref("network.proxy.socks_remote_dns", true);'
+    else
+      linhas+=$'\n'"user_pref(\"network.proxy.http\", \"$h\");"$'\n'"user_pref(\"network.proxy.http_port\", $porta);"
+      linhas+=$'\n'"user_pref(\"network.proxy.ssl\", \"$h\");"$'\n'"user_pref(\"network.proxy.ssl_port\", $porta);"
+    fi
+  fi
+  printf '%s\n' "$linhas" > "$u"
 }
 
 # O log → a 1ª linha é "2 LINK" (playlist) ou "1 LINK" (arquivo de vídeo); depois, os cabeçalhos
@@ -4760,18 +4855,24 @@ if salvo:
     mostra(*salvo)'
 
 baixa_pelo_navegador() {
-  local url=$1 idx=$2 log pid pedido=() opcoes=() inicio primeiro=0 media
+  local url=$1 idx=$2 log pid pedido=() opcoes=() proxy_chrome=() inicio primeiro=0 media
   printf '[grabit] navegador\n'
   pasta_navegador
   log="$PASTA_NAV/http"                       # tem os cookies: só vive enquanto a janela está aberta
   rm -f -- "$log"*
   read -ra opcoes <<<"${GRABIT_NAVEGADOR_OPCOES:-}"
+  # (o Chrome não aceita senha nessa opção: se o proxy pedir, a janela pergunta)
+  if [[ -n $PROXY ]]; then
+    local px=${PROXY#*://}
+    proxy_chrome=("--proxy-server=${PROXY%%://*}://${px##*@}")
+    proxy_chrome[0]=${proxy_chrome[0]/socks5h:/socks5:}
+  fi
   if [[ $NAV_TIPO == firefox ]]; then
     MOZ_LOG=nsHttp:1 MOZ_LOG_FILE=$log "$NAV_PROG" --no-remote --profile "$PASTA_NAV/perfil" "${opcoes[@]}" "$url" >/dev/null 2>&1 &
   else
     "$NAV_PROG" --user-data-dir="$PASTA_NAV/perfil" --no-first-run --no-default-browser-check \
       --autoplay-policy=no-user-gesture-required --log-net-log="$log.json" --net-log-capture-mode=IncludeSensitive \
-      "${opcoes[@]}" "$url" >/dev/null 2>&1 &
+      "${proxy_chrome[@]}" "${opcoes[@]}" "$url" >/dev/null 2>&1 &
   fi
   pid=$!
   trap 'mata_arvore "$pid"; rm -f -- "$log"*; exit 143' TERM INT HUP
@@ -5845,6 +5946,7 @@ if [[ -n $TXT ]]; then
 elif [[ -n $txt_ign ]]; then
   t lim_desligados "$AMARELO" "$R" "$txt_ign"; kv "${T[kv_limites]}" "$TXT"
 fi
+if [[ -n $PROXY ]]; then sem_senha "$PROXY"; kv "${T[kv_proxy]}" "$FMT"; fi
 if (( CONFIG_CRIADO )); then
   t kv_config_criado "$VERDE" "$R" "${CONFIG_ARQ/#$HOME/\~}"; kv "${T[kv_config]}" "$TXT"
 elif [[ -f $CONFIG_ARQ ]]; then

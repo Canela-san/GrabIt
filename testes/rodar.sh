@@ -658,6 +658,34 @@ printf 'https://site.invalid/ok   # comentário çãõ\r\n\thttps://site.invalid
 falso s6 -L pt texto.txt
 espera "lista de texto com acentos, tabulação e fim de linha do Windows continua valendo" contem "$STUB_LOG" "site.invalid/tab"
 
+secao "Proxy"
+D="$TMP/proxy"; mkdir -p "$D"; cd "$D" || exit 1
+roda p1 -L pt --proxy http://user:s3nha@proxy.invalid:8080 --config
+espera "--proxy aparece na configuração" grep -qE 'PROXY +http://•••@proxy.invalid:8080 +opção do comando' p1
+espera "…sem mostrar a senha" nao_contem p1 "s3nha"
+PROXY=proxy.invalid:3128 roda p2 -L pt --config
+espera "host:porta vira http://" contem p2 "http://proxy.invalid:3128"
+roda p3 -L pt --proxy 'ftp://x' --config
+espera "endereço que não é de proxy é recusado" codigo "$RC" 2
+OPCOES_YTDLP='--force-ipv4 --proxy http://p.invalid:1' roda p4 -L pt --config
+espera "--proxy em OPCOES_YTDLP também vale para o resto" grep -qE 'PROXY +http://p.invalid:1' p4
+https_proxy=http://amb.invalid:2 roda p5 -L pt --config
+espera "o proxy do ambiente também" grep -qE 'PROXY +http://amb.invalid:2 +variável de ambiente' p5
+: > "$STUB_LOG"
+falso p6 -L pt --proxy http://user:s3nha@proxy.invalid:8080 http://a.invalid/p6
+espera "a senha não vai na linha de comando do yt-dlp" nao_contem "$STUB_LOG" "s3nha"
+espera "…e o início mostra o proxy" contem p6 "•••@proxy.invalid:8080"
+: > "$STUB_LOG"
+falso p7 -L pt --proxy socks5://proxy.invalid:1080 http://a.invalid/p7
+espera "proxy SOCKS avisa o que fica de fora" contem p7 "não passam por ele"
+espera "…nem a busca por arquivo direto nem o aria2c" nao_contem "$STUB_LOG" "--procura-direto"
+espera "…e transmissão ao vivo não passa pelo ffmpeg" contem "$STUB_LOG" "m3u8:native"
+if command -v aria2c >/dev/null 2>&1; then
+  : > "$STUB_LOG"
+  PATH="$(dirname "$(command -v aria2c)"):$PATH" falso p8 -L pt --proxy socks5://proxy.invalid:1080 http://a.invalid/p8
+  espera "SOCKS: nenhum download pelo aria2c" nao_contem "$STUB_LOG" "--downloader http:"
+fi
+
 secao "Vídeo achado pelo navegador (Firefox de mentira)"
 D="$TMP/navegador"; FF="$TMP/ff"; mkdir -p "$D" "$FF"; cd "$D" || exit 1
 cat > "$FF/firefox" <<'EOF'
@@ -732,6 +760,15 @@ STUB_ERRO="Unsupported URL: https://n.invalid/z" USAR_NAVEGADOR=1 PATH="$FF:$STU
 espera "sem terminal nem tela, ninguém veria a janela: não abre" nao_contem "$STUB_LOG" "firefox "
 
 if command -v python3 >/dev/null 2>&1; then
+  : > "$STUB_LOG"
+  STUB_ERRO="Unsupported URL: https://n.invalid/px" nav n-px -L pt --proxy socks5://u:s@proxy.invalid:1080 'https://n.invalid/px'
+  USERJS="$TMP/navdados/grabit/firefox/perfil/user.js"
+  espera "Firefox: o proxy vai para o perfil, sem a senha" contem "$USERJS" 'user_pref("network.proxy.socks", "proxy.invalid");'
+  espera "…com a porta" contem "$USERJS" 'user_pref("network.proxy.socks_port", 1080);'
+  espera "…e o DNS também passa por ele" contem "$USERJS" 'user_pref("network.proxy.socks_remote_dns", true);'
+  espera "…sem perder o resto do perfil" contem "$USERJS" 'media.autoplay.default'
+  STUB_ERRO="Unsupported URL: https://n.invalid/sem" nav n-sem -L pt 'https://n.invalid/sem'
+  espera "…e sem proxy, ele sai do perfil" nao_contem "$USERJS" 'network.proxy'
   secao "Vídeo achado pelo navegador (Chrome de mentira)"
   FF2="$TMP/ff2"; mkdir -p "$FF2"
   cat > "$FF2/google-chrome" <<'EOF'
@@ -764,6 +801,9 @@ EOF
   espera "…e nunca na linha de comando" nao_contem "$STUB_LOG" "cf_clearance"
   espera "…com o nome da página" tentou video.n.invalid "k.invalid - player ep 1 ["
   espera "o log do navegador, que tem cookies, é apagado" test -z "$(find "$TMP/navdados" -name 'http*')"
+  : > "$STUB_LOG"
+  PROGRAMA_NAVEGADOR="$FF2/google-chrome" STUB_ERRO="Unsupported URL: https://k.invalid/player" nav k-px -L pt --proxy socks5h://u:s@proxy.invalid:1080 'https://k.invalid/player?ep=9'
+  espera "Chrome: o proxy vai na opção dele, sem a senha" contem "$STUB_LOG" "--proxy-server=socks5://proxy.invalid:1080"
 fi
 
 secao "A cascata lembra o que funcionou em cada site"
@@ -966,6 +1006,7 @@ class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam 
             return True
         self.send_response(206)
         self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Last-Modified", self.date_time_string(int(os.path.getmtime(p))))
         self.send_header("Content-Type", self.guess_type(p))
         self.send_header("Content-Length", str(fim - ini + 1))
         self.send_header("Content-Range", f"bytes {ini}-{fim}/{t}")
@@ -991,7 +1032,8 @@ class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam 
         if not self.permitido():
             return self.send_error(403)
         limita = self.path.startswith("/limita/") and self.headers.get("Want-Digest")   # limita só o aria2c
-        if limita or self.path.startswith("/calmo/"):      # /calmo/: dá tempo de as outras conexões abrirem
+        lento = self.path.startswith("/lento/")            # /lento/: dá tempo de interromper no meio
+        if limita or lento or self.path.startswith("/calmo/"):      # /calmo/: dá tempo de as outras conexões abrirem
             p = self.translate_path(self.path)
             t = os.path.getsize(p)
             ini, fim = 0, t - 1
@@ -1000,9 +1042,10 @@ class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam 
                 ini, fim = int(m[1]), min(int(m[2] or t - 1), t - 1)
                 with open(os.path.join(self.directory, "pedidos.log"), "a") as f:
                     f.write(f"{self.path} {m[0]}\n")
-            bloco, pausa = (16384, 0.05) if limita else (262144, 0.02)
+            bloco, pausa = (16384, 0.05) if limita else (65536, 0.02) if lento else (262144, 0.02)
             self.send_response(206 if m else 200)
             self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Last-Modified", self.date_time_string(int(os.path.getmtime(p))))
             self.send_header("Content-Length", str(fim - ini + 1))
             if m:
                 self.send_header("Content-Range", f"bytes {ini}-{fim}/{t}")
@@ -1398,6 +1441,49 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "…sem erro" codigo "$RC" 0
   espera "…e sem marcar o site como difícil" nao_contem "$XDG_DATA_HOME/grabit/metodos.txt" "127.0.0.1"
 fi
+
+secao "Proxy, de verdade"
+# Um nome que só o proxy conhece: quem tentasse ir direto ao site nem acharia o endereço.
+D="$TMP/d12"; mkdir -p "$D"; cd "$D" || exit 1
+PORTA_P=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+cat > "$TMP/proxy.py" <<'EOF'
+import http.server, shutil, sys, urllib.error, urllib.parse, urllib.request
+porta, destino, log = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+direto = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class P(http.server.BaseHTTPRequestHandler):
+    def repassa(self):
+        u = urllib.parse.urlsplit(self.path)
+        with open(log, "a") as f:
+            f.write(f"{self.command} {u.netloc} {u.path} {self.headers.get('User-Agent', '')}\n")
+        c = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "proxy-connection", "connection")}
+        q = urllib.request.Request(destino + u.path + ("?" + u.query if u.query else ""), headers=c, method=self.command)
+        try:
+            r = direto.open(q)
+        except urllib.error.HTTPError as e:
+            r = e
+        self.send_response(r.status)
+        for k, v in r.headers.items():
+            if k.lower() not in ("connection", "transfer-encoding", "server", "date"):
+                self.send_header(k, v)
+        self.end_headers()
+        if self.command == "GET":
+            try:
+                shutil.copyfileobj(r, self.wfile)
+            except OSError:
+                pass
+    do_GET = do_HEAD = repassa
+    def log_message(self, *a):
+        pass
+http.server.ThreadingHTTPServer(("127.0.0.1", porta), P).serve_forever()
+EOF
+python3 "$TMP/proxy.py" "$PORTA_P" "$B" "$TMP/proxy.log" >/dev/null 2>&1 & SRV_P=$!
+ate python3 -c "import socket; socket.create_connection(('127.0.0.1', $PORTA_P), 1)"
+roda x1 -L pt -o ./a --proxy "http://127.0.0.1:$PORTA_P" http://so-pelo-proxy.invalid/dir/botao.html
+espera "o vídeo vem pelo proxy" test -n "$(find a -name '*.mkv' -print -quit)"
+espera "…a página é lida por ele" grep -qE '^GET so-pelo-proxy.invalid /dir/botao.html' "$TMP/proxy.log"
+espera "…a medição do arquivo direto também" grep -qE 'so-pelo-proxy.invalid /dir/video720.mp4 Lavf' "$TMP/proxy.log"
+espera "…e nada foi baixado do stream de 360p em vez dele" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
+kill "$SRV_P" 2>/dev/null
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
