@@ -106,13 +106,375 @@ if [[ ${1:-} == --nfo ]]; then
   exit 0
 fi
 
+# Modo auxiliar das conexões múltiplas. O yt-dlp só abre várias conexões em vídeo dividido em
+# pedaços (-N); para um arquivo único, quem sabe fazer isso é o aria2c. O aria2c que o yt-dlp chama é
+# um script de uma linha em $TMP/aria, que traz para cá: o de verdade baixa, e aqui só se traduz o
+# que ele diz. O progresso vira as linhas que o painel lê (@@P@@) e uma recusa do site vira um aviso,
+# para os próximos downloads dele irem com menos conexões. Se o site recusa só as conexões extras,
+# o próprio aria2c termina nas que sobraram, sem perder nada do que já chegou.
+#
+# Mais conexões nem sempre é mais rápido: há sites que limitam quem pede pedaços grandes (no YouTube,
+# foi 40 vezes mais lento). Por isso, depois de alguns segundos, uma sonda pede um pedaço pequeno, como
+# o yt-dlp faria. Se só ela já render bem mais que todas as conexões juntas, o aria2c para aqui, e o
+# GrabIt repete o download pelo yt-dlp.
+if [[ ${1:-} == --baixa-partes ]]; then
+  shift
+  [[ ${1:-} == -v ]] && exec aria2c -v        # o yt-dlp confere se o programa existe
+  nome=""; ant=""
+  for a in "$@"; do [[ $ant == --out ]] && nome=$a; ant=$a; done
+  nome=${nome##*/}; nome=${nome%.part}; nome=${nome%.*}
+  [[ $nome =~ ^(.*)\.f[^.\ ]+$ ]] && nome=${BASH_REMATCH[1]}
+  nome=${nome% \[*\]}
+  em_bytes() {                                # em_bytes 1.5GiB → NUM
+    NUM=0
+    [[ $1 =~ ^([0-9]+)(\.([0-9]))?[0-9]*([KMGT]?)i?B$ ]] || return 0
+    local m=1 i=${BASH_REMATCH[1]} d=${BASH_REMATCH[3]:-0}
+    case ${BASH_REMATCH[4]} in K) m=1024 ;; M) m=1048576 ;; G) m=1073741824 ;; T) m=1099511627776 ;; esac
+    NUM=$(( (10#$i * 10 + 10#$d) * m / 10 ))
+  }
+  em_segundos() {                             # em_segundos 1h2m3s → NUM
+    NUM=0
+    [[ $1 =~ ([0-9]+)h ]] && NUM=$(( NUM + 10#${BASH_REMATCH[1]} * 3600 ))
+    [[ $1 =~ ([0-9]+)m ]] && NUM=$(( NUM + 10#${BASH_REMATCH[1]} * 60 ))
+    [[ $1 =~ ([0-9]+)s ]] && NUM=$(( NUM + 10#${BASH_REMATCH[1]} ))
+    return 0
+  }
+  # sonda_conexao DE → NUM: bytes por segundo de uma conexão só, com os mesmos cabeçalhos e cookies
+  sonda_conexao() {
+    local a ant="" cab=()
+    for a in "${opcoes[@]}"; do
+      [[ $ant == --header ]] && cab+=(-H "$a")
+      [[ $a == --load-cookies=* ]] && cab+=(-b "${a#*=}")
+      ant=$a
+    done
+    NUM=$(curl -s -L -m 4 --proto =http,https --proto-redir =http,https -r "$1-$(( $1 + 8000000 ))" -o /dev/null \
+            -w '%{speed_download}' "${cab[@]}" --url "$link" 2>/dev/null)
+    NUM=${NUM%%[.,]*}; [[ $NUM =~ ^[0-9]+$ ]] || NUM=0
+  }
+  traduz() {
+    local l b t v e c vistos=" " re='^\[#[0-9a-f]+ ([0-9.]+[KMGT]?i?B)/([0-9.]+[KMGT]?i?B)' soma=0 n=0 ini=$SECONDS sondar=$sonda_ligada
+    while IFS= read -r l; do
+      l=${l//$'\r'/}
+      if [[ $l =~ $re ]]; then
+        t=${BASH_REMATCH[2]}
+        em_bytes "${BASH_REMATCH[1]}"; b=$NUM
+        em_bytes "$t"; t=$NUM
+        v=0; e=0
+        if [[ $l =~ DL:([0-9.]+[KMGT]?i?B) ]]; then em_bytes "${BASH_REMATCH[1]}"; v=$NUM; fi
+        if [[ $l =~ ETA:([0-9hms]+) ]]; then em_segundos "${BASH_REMATCH[1]}"; e=$NUM; fi
+        printf '@@P@@%d\x1f%d\x1f%d\x1f%d\x1f\x1f\x1f?\x1f\x1f\x1f\x1f%s\n' "$b" "$t" "$v" "$e" "$nome"
+        # Só com várias conexões abertas, e com bastante arquivo pela frente
+        if (( sondar )) && [[ $l =~ CN:([0-9]+) ]] && (( BASH_REMATCH[1] > 1 && SECONDS - ini >= 3 )); then
+          soma=$(( soma + v )); n=$(( n + 1 ))
+          if (( SECONDS - ini >= 8 && n > 0 )); then
+            sondar=0
+            if (( b * 10 < t * 7 )); then
+              v=$(( soma / n ))
+              sonda_conexao $(( t / 2 ))
+              if (( NUM > v * 2 && NUM > 1048576 )); then
+                printf '[grabit] lento\n@@R@@%s\n' "aria2c: uma conexão rendeu mais que todas juntas"
+                kill "$$" 2>/dev/null         # (depois do exec, este PID é o do aria2c)
+              else
+                printf '[grabit] sonda ok\n'
+              fi
+            fi
+          fi
+        fi
+      elif [[ $l =~ status=([0-9]{3}) ]]; then
+        c=${BASH_REMATCH[1]}
+        [[ $vistos == *" $c "* ]] && continue
+        vistos+="$c "
+        printf '[grabit] recusou %s\n@@R@@HTTP Error %s\n' "$c" "$c"
+      elif [[ $l =~ errorCode=[0-9]+\ (.+)$ && ${BASH_REMATCH[1]} != URI=* ]]; then
+        printf '@@R@@%s\n' "${BASH_REMATCH[1]}"
+      fi
+    done
+  }
+  # (antes do "--" que precede o link, e depois das opções do yt-dlp: no aria2c, vale a última)
+  opcoes=(); while (( $# )) && [[ $1 != -- ]]; do opcoes+=("$1"); shift; done
+  link=${2:-}
+  sonda_ligada=${GRABIT_SONDAR:-1}
+  [[ -n $link ]] && command -v curl >/dev/null 2>&1 || sonda_ligada=0
+  [[ " ${opcoes[*]} " == *" --max-overall-download-limit"* ]] && sonda_ligada=0   # o limite é da pessoa
+  opcoes+=(--summary-interval=1 --enable-color=false --console-log-level=warn --download-result=hide
+           --allow-overwrite=true --auto-file-renaming=false --min-split-size=20M --max-tries=3 --retry-wait=2
+           --connect-timeout=15 --timeout=30 --async-dns=false)
+  exec > >(traduz) 2>&1
+  exec aria2c "${opcoes[@]}" "$@"
+fi
+
+# ───── Trocar o formato de um vídeo. Trocar a embalagem não mexe na imagem nem no som: os dados são
+# ───── copiados, bit a bit, quantas vezes for. O que muda é o que cada formato sabe guardar: aqui se
+# ───── tenta do mais completo ao mais simples, e TR_PERDEU diz o que ficou de fora.
+muxer_de() {                                  # muxer_de EXTENSÃO → MUX: o nome para o ffmpeg
+  case ${1,,} in
+    mp4|m4v)  MUX=mp4 ;;
+    mov|qt)   MUX=mov ;;
+    mkv|mk3d) MUX=matroska ;;
+    webm)     MUX=webm ;;
+    avi|divx) MUX=avi ;;
+    flv|f4v)  MUX=flv ;;
+    ts|m2ts|mts|m2t) MUX=mpegts ;;
+    mpg|mpeg) MUX=mpeg ;;
+    vob)      MUX=vob ;;
+    wmv|asf)  MUX=asf ;;
+    ogv|ogm)  MUX=ogg ;;
+    3gp)      MUX=3gp ;;
+    3g2)      MUX=3g2 ;;
+    *) MUX=""; return 1 ;;
+  esac
+}
+
+# faixas ARQUIVO → F_VID F_AUD F_SUB F_ANEXO F_CAP F_TAGS F_DUR F_VC F_AC F_R F_HDR F_SUBCOD, e a
+# capa: F_CAPA (a posição dela entre as faixas de vídeo; -1 = sem capa) e F_CAPA_COD
+faixas() {
+  local l minusc k tipo cod nv=0
+  F_VID=0; F_AUD=0; F_SUB=0; F_ANEXO=0; F_CAP=0; F_TAGS=0; F_DUR=0; F_VC=""; F_AC=""; F_R=""; F_HDR=0; F_SUBCOD=""
+  F_CAPA=-1; F_CAPA_COD=""
+  while IFS= read -r l; do
+    case $l in
+      stream*)
+        # (num .ts, cada faixa aparece duas vezes: a do programa não traz a marca de capa)
+        [[ $l == *attached_pic=* ]] || continue
+        tipo=""; cod=""
+        [[ $l =~ codec_type=([a-z]+) ]] && tipo=${BASH_REMATCH[1]}
+        [[ $l =~ codec_name=([^|]+) ]] && cod=${BASH_REMATCH[1]}
+        case $tipo in
+          video)
+            if [[ $l == *attached_pic=1* ]]; then
+              F_CAPA=$nv; F_CAPA_COD=$cod
+            else
+              if (( ! F_VID )); then
+                F_VC=$cod
+                [[ $l =~ r_frame_rate=([0-9]+/[0-9]+) ]] && F_R=${BASH_REMATCH[1]}
+                [[ $l == *color_transfer=smpte2084* || $l == *color_transfer=arib-std-b67* ]] && F_HDR=1
+              fi
+              F_VID=$(( F_VID + 1 ))
+            fi
+            nv=$(( nv + 1 )) ;;
+          audio)      F_AUD=$(( F_AUD + 1 )); [[ -z $F_AC ]] && F_AC=$cod ;;
+          subtitle)   F_SUB=$(( F_SUB + 1 )); F_SUBCOD+=" $cod" ;;
+          attachment) F_ANEXO=$(( F_ANEXO + 1 )) ;;
+        esac ;;
+      chapter*) F_CAP=$(( F_CAP + 1 )) ;;
+      format*)
+        [[ $l =~ duration=([0-9]+) ]] && F_DUR=${BASH_REMATCH[1]}
+        minusc=${l,,}
+        for k in title comment description date artist; do
+          [[ $minusc == *"|tag:$k="* ]] && F_TAGS=$(( F_TAGS + 1 ))
+        done ;;
+    esac
+  done < <(ffprobe -v error -of compact \
+             -show_entries format=duration:format_tags=title,comment,description,date,artist:stream=codec_name,codec_type,r_frame_rate,color_transfer:stream_disposition=attached_pic:chapter=id \
+             -- "$1" 2>/dev/null)
+}
+
+# tempo_exato ARQUIVO RITMO: os tempos só foram arredondados ao milissegundo (é o que o MKV faz)?
+# Confere nos primeiros quadros se todos caem na grade do ritmo, com a folga do arredondamento. Um
+# vídeo de ritmo variável não passa, e fica como está.
+tempo_exato() {
+  [[ $2 =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] || return 1
+  (( BASH_REMATCH[1] / BASH_REMATCH[2] <= 240 )) || return 1   # 1000/1 é o MKV dizendo "não sei o ritmo"
+  ffprobe -v error -select_streams v:0 -read_intervals '%+#400' -show_entries packet=pts_time -of csv=p=0 -- "$1" 2>/dev/null |
+    cut -d, -f1 | sort -n |
+    awk -v n="${BASH_REMATCH[1]}" -v d="${BASH_REMATCH[2]}" '
+      $1 !~ /^[0-9.]+$/ { next }
+      NR == 1 { s = $1 }
+      { k = ($1 - s) * n / d; r = k - int(k + 0.5); if (r < 0) r = -r; if (r * d / n > 0.0012) ruim = 1; c++ }
+      END { exit (ruim || c < 2) }'
+}
+
+codificador() {                               # codificador CODEC → ENC: as opções do ffmpeg; 1 se ele não tiver
+  local lista
+  lista=$(ffmpeg -hide_banner -encoders 2>/dev/null)
+  ENC=()
+  case $1 in
+    # (CRF baixo: a perda é pequena; quem recomprime já está pagando o preço para poder tocar o vídeo)
+    h264)  [[ $lista == *" libx264 "* ]] && ENC=(-c:v:0 libx264 -preset medium -crf 18 -pix_fmt:v:0 yuv420p) ;;
+    hevc)  [[ $lista == *" libx265 "* ]] && ENC=(-c:v:0 libx265 -preset medium -crf 20 -tag:v:0 hvc1 -x265-params log-level=error) ;;
+    av1)   if [[ $lista == *" libsvtav1 "* ]]; then ENC=(-c:v:0 libsvtav1 -preset 6 -crf 28)
+           elif [[ $lista == *" libaom-av1 "* ]]; then ENC=(-c:v:0 libaom-av1 -cpu-used 5 -row-mt 1 -crf 28 -b:v:0 0); fi ;;
+    vp9)   [[ $lista == *" libvpx-vp9 "* ]] && ENC=(-c:v:0 libvpx-vp9 -row-mt 1 -cpu-used 2 -crf 28 -b:v:0 0) ;;
+    mpeg4) [[ $lista == *" mpeg4 "* ]] && ENC=(-c:v:0 mpeg4 -q:v:0 3) ;;
+  esac
+  (( ${#ENC[@]} ))
+}
+
+# converte ENTRADA SAÍDA [CODEC] → TR_PERDEU, TR_ERRO e TR_EXATO. Sem CODEC, copia a imagem e o som.
+# TR_CAPA_FORA: uma capa que está fora do arquivo. TR_PROG: função que recebe POSIÇÃO e VELOCIDADE.
+# A saída só aparece depois de conferida; se ENTRADA e SAÍDA forem o mesmo arquivo, ele é trocado.
+converte() {
+  local ent=$1 sai=$2 cod=${3:-} ext=${2##*.} mux pasta tmp capa="" capa_fonte=${TR_CAPA_FORA:-} tipo_capa=image/jpeg
+  local e_vid e_aud e_sub e_capa e_anexo e_cap e_tags e_dur e_subcod e_r t0=$SECONDS feito=0 rc=1 d k v pos=0 vel=""
+  local args exato=() sub=() enc=() audio=() cabe_capa=0 cabe_sub=0 modo tent c_capa c_sub usa_exato=0
+  TR_PERDEU=""; TR_ERRO=""; TR_EXATO=0
+  muxer_de "$ext" || { TR_ERRO=formato; return 1; }
+  mux=$MUX
+  faixas "$ent"
+  e_vid=$F_VID; e_aud=$F_AUD; e_sub=$F_SUB; e_capa=$F_CAPA; e_anexo=$F_ANEXO; e_cap=$F_CAP; e_tags=$F_TAGS; e_dur=$F_DUR
+  e_subcod=$F_SUBCOD; e_r=$F_R
+  (( e_vid + e_aud > 0 )) || { TR_ERRO=ilegivel; return 1; }
+  if [[ -n $cod ]]; then codificador "$cod" || { TR_ERRO=codificador; return 1; }; enc=("${ENC[@]}"); fi
+  pasta=$(mktemp -d "${TMPDIR:-/tmp}/grabit-conv.XXXXXX") || { TR_ERRO=temporario; return 1; }
+  tmp="${sai%.*}.grabit-tmp.$ext"
+  [[ $tmp == -* ]] && tmp=./$tmp
+
+  case $mux in
+    mp4|mov)  cabe_capa=1; cabe_sub=1; sub=(-c:s mov_text) ;;
+    matroska) cabe_capa=1; cabe_sub=1; [[ $e_subcod == *mov_text* ]] && sub=(-c:s srt) ;;
+    webm)     cabe_sub=1; sub=(-c:s webvtt) ;;
+  esac
+  # A capa viaja à parte: copiada junto, ela perde a marca de capa e, recomprimida, trava o ffmpeg
+  if (( cabe_capa )); then
+    if [[ -n $capa_fonte ]]; then
+      case ${capa_fonte,,} in
+        *.jpg|*.jpeg) cp -- "$capa_fonte" "$pasta/capa.jpg" 2>/dev/null && capa=$pasta/capa.jpg ;;
+        *.png)        cp -- "$capa_fonte" "$pasta/capa.png" 2>/dev/null && capa=$pasta/capa.png ;;
+        *) ffmpeg -nostdin -v error -y -i "file:$capa_fonte" -frames:v 1 "$pasta/capa.jpg" 2>/dev/null && capa=$pasta/capa.jpg ;;
+      esac
+    elif (( e_capa >= 0 )); then
+      capa_fonte=$ent
+      case $F_CAPA_COD in
+        mjpeg) ffmpeg -nostdin -v error -y -i "file:$ent" -map "0:v:$e_capa" -c copy -f image2 "$pasta/capa.jpg" 2>/dev/null && capa=$pasta/capa.jpg ;;
+        png)   ffmpeg -nostdin -v error -y -i "file:$ent" -map "0:v:$e_capa" -c copy -f image2 "$pasta/capa.png" 2>/dev/null && capa=$pasta/capa.png ;;
+        *)     ffmpeg -nostdin -v error -y -i "file:$ent" -map "0:v:$e_capa" -frames:v 1 "$pasta/capa.jpg" 2>/dev/null && capa=$pasta/capa.jpg ;;
+      esac
+    fi
+    [[ $capa == *.png ]] && tipo_capa=image/png
+  elif (( e_capa >= 0 )); then
+    capa_fonte=$ent
+  fi
+
+  # O MKV arredonda o tempo de cada quadro ao milissegundo. Saindo dele para um formato que guarda o
+  # tempo exato, e sendo o vídeo de ritmo constante, dá para desfazer: cada quadro volta à sua grade.
+  if [[ $mux == mp4 || $mux == mov ]] && muxer_de "${ent##*.}" && [[ $MUX == matroska || $MUX == webm ]] && tempo_exato "$ent" "$e_r"; then
+    usa_exato=1
+    if [[ -n $cod ]]; then
+      exato=(-r:v:0 "$e_r")
+    elif ffmpeg -hide_banner -h bsf=setts 2>/dev/null | grep -q time_base; then
+      k=${e_r%/*}; v=${e_r#*/}
+      exato=(-bsf:v:0 "setts=time_base=1/90000:pts=(STARTPTS*TB+round((PTS-STARTPTS)*TB*$k/$v)*$v/$k)/TB_OUT:dts=(STARTPTS*TB+round((DTS-STARTPTS)*TB*$k/$v)*$v/$k)/TB_OUT:duration=$v/$k/TB_OUT"
+             -video_track_timescale 90000)
+    else
+      usa_exato=0
+    fi
+  fi
+
+  # Do mais completo ao mais simples. O áudio só é refeito se a pessoa pediu para recomprimir.
+  for modo in copia ${cod:+refaz}; do
+    audio=(-c:a copy)
+    if [[ $modo == refaz ]]; then
+      if [[ $mux == webm ]]; then audio=(-c:a libopus -b:a 160k); else audio=(-c:a aac -b:a 192k); fi
+    fi
+    for tent in "1 1" "0 1" "1 0" "0 0"; do
+      c_capa=${tent% *}; c_sub=${tent#* }
+      (( c_capa )) && [[ -z $capa ]] && continue
+      (( c_sub && ( ! cabe_sub || e_sub == 0 ) )) && continue
+      args=(-nostdin -hide_banner -v error -y -fflags +genpts -i "file:$ent")
+      (( c_capa )) && [[ $mux != matroska ]] && args+=(-i "$capa")
+      args+=(-map '0:V?' -map '0:a?')
+      (( c_sub )) && args+=(-map '0:s?')
+      [[ $mux == matroska ]] && args+=(-map '0:t?')
+      args+=(-map_metadata 0 -map_chapters 0 -c copy)
+      if (( c_capa )); then
+        if [[ $mux == matroska ]]; then
+          args+=(-attach "$capa" "-metadata:s:t:$e_anexo" "mimetype=$tipo_capa" "-metadata:s:t:$e_anexo" "filename=cover.${capa##*.}")
+        else
+          args+=(-map 1:v "-c:v:$e_vid" copy "-disposition:v:$e_vid" attached_pic)
+        fi
+      fi
+      (( c_sub )) && args+=("${sub[@]}")
+      args+=("${audio[@]}" "${enc[@]}" "${exato[@]}")
+      [[ $mux == mp4 || $mux == mov ]] && args+=(-movflags +faststart)
+      args+=(-progress pipe:1 -nostats -f "$mux" "file:$tmp")
+      ffmpeg "${args[@]}" 2>"$pasta/erros" | while IFS='=' read -r k v; do
+        case $k in
+          out_time_us) [[ $v =~ ^[0-9]+$ ]] && pos=$(( v / 1000000 )) ;;
+          speed)       vel=$v ;;
+          progress)    [[ -n ${TR_PROG:-} ]] && "$TR_PROG" "$pos" "$vel" ;;
+        esac
+      done
+      rc=${PIPESTATUS[0]}
+      if (( rc == 0 )) && [[ -s $tmp ]]; then
+        faixas "$tmp"
+        d=$(( F_DUR - e_dur )); (( d < 0 )) && d=$(( -d ))
+        if (( F_VID == e_vid && F_AUD == e_aud && d <= 2 + e_dur / 100 )); then feito=1; break 2; fi
+        TR_ERRO=verificacao
+      else
+        # (a primeira linha é a que explica: as outras só repetem que não deu para abrir a saída)
+        TR_ERRO=$(head -n 1 "$pasta/erros" 2>/dev/null | sed -E 's/\[[^]]* @ 0x[0-9a-f]+\] //')
+      fi
+      rm -f -- "$tmp"
+      # Formato que não aceita é recusado na hora. Depois de um tempo, ou no Ctrl+C, é outra coisa.
+      (( rc == 255 || SECONDS - t0 > 60 )) && break 2
+    done
+  done
+  rm -f -- "$pasta/erros" "$pasta/capa.jpg" "$pasta/capa.png"
+  rmdir -- "$pasta" 2>/dev/null
+  (( feito )) || return 1
+  (( e_sub > F_SUB )) && TR_PERDEU+=" legendas"
+  [[ -n $capa_fonte ]] && (( F_CAPA < 0 )) && TR_PERDEU+=" capa"
+  (( e_anexo > F_ANEXO )) && TR_PERDEU+=" dados"
+  (( e_cap > F_CAP )) && TR_PERDEU+=" capitulos"
+  (( e_tags > F_TAGS )) && TR_PERDEU+=" metadados"
+  TR_EXATO=$usa_exato
+  [[ $sai == "$ent" ]] || touch -r "$ent" -- "$tmp" 2>/dev/null
+  mv -f -- "$tmp" "$sai"
+}
+
+# Modo auxiliar de -O e -e: o yt-dlp chama o GrabIt assim depois de cada vídeo. A capa fica por conta
+# daqui: no yt-dlp, um formato que não aceita capa é um erro que prende o vídeo na pasta temporária.
+# Se o vídeo não veio no formato pedido, troca a embalagem agora. O vídeo já chegou: o que der errado
+# aqui é só um aviso. @@M@@: o arquivo mudou de nome. @@A@@: o que ficou de fora dele.
+if [[ ${1:-} == --acabamento ]]; then
+  alvo=$2 manter=$3 arq=$4
+  [[ -f $arq ]] || exit 0
+  base=${arq%.*}; ext=${arq##*.}; ext=${ext,,}; final=$arq; capa=""; avisos=""
+  [[ $alvo == original ]] && alvo=$ext
+  for c in "$base".{jpg,jpeg,png,webp,avif}; do
+    if [[ -f $c ]]; then capa=$c; break; fi
+  done
+  m_de=""; muxer_de "$ext" && m_de=$MUX
+  m_para=""; muxer_de "$alvo" && m_para=$MUX
+  TR_CAPA_FORA=""; TR_PERDEU=""
+  case $m_para in mp4|mov|matroska) TR_CAPA_FORA=$capa ;; esac
+  if [[ -n $m_para && ( $m_de != "$m_para" || -n $TR_CAPA_FORA ) ]]; then
+    if converte "$arq" "$base.$alvo"; then
+      final=$base.$alvo
+      [[ $final == "$arq" ]] || rm -f -- "$arq"
+    else
+      printf '@@F@@%s\x1f%s\n' "$arq" "$TR_ERRO"
+      # Ficou no formato em que veio: a capa, ao menos, ainda pode entrar nele
+      TR_PERDEU=""; TR_CAPA_FORA=""
+      case $m_de in mp4|mov|matroska) TR_CAPA_FORA=$capa ;; esac
+      if [[ -n $TR_CAPA_FORA ]] && [[ $m_de != "$m_para" ]]; then converte "$arq" "$arq"; fi
+    fi
+  elif [[ -n $m_para && $ext != "$alvo" ]]; then    # o mesmo formato com outro nome (mp4 e m4v)
+    mv -n -- "$arq" "$base.$alvo" && final=$base.$alvo
+  fi
+  avisos=$TR_PERDEU
+  faixas "$final"
+  if [[ -n $capa ]]; then
+    if (( F_CAPA < 0 )); then avisos+=" capa"
+    elif [[ $manter == 0 ]]; then rm -f -- "$capa"; fi
+  fi
+  for c in "$base".*.vtt "$base".*.srt "$base".*.ass; do
+    if [[ -f $c ]]; then avisos+=" legendas"; break; fi
+  done
+  (( F_TAGS == 0 )) && avisos+=" metadados"
+  [[ $final == "$arq" ]] || printf '@@M@@%s\x1f%s\n' "$arq" "$final"
+  [[ -n $avisos ]] && printf '@@A@@%s\x1f%s\n' "$final" "$avisos"
+  exit 0
+fi
+
 # Modo auxiliar da busca pelo arquivo direto: o yt-dlp chama o GrabIt assim depois de escolher
-# o formato e antes de baixar. Um stream nem sempre é o melhor que o site tem: um .mp4 que chega
+# o formato e antes de baixar. Um stream nem sempre é o melhor que o site tem: um arquivo que chega
 # sem altura nem fps informados perde para qualquer stream com esses dados, por pior que o stream
-# seja, e um .mp4 citado só num script ou num botão de baixar nem entra na conta. Aqui, cada
-# candidato é medido com o ffprobe: o nome do arquivo não diz nada, e "direto" não quer dizer
-# "melhor". Só troca se for o mesmo vídeo (a mesma duração: um trailer também é .mp4), com áudio
-# e melhor em números. Qualquer dúvida ou erro deixa tudo como está (o yt-dlp segue com o stream).
+# seja, e um arquivo citado só num script ou num botão de baixar nem entra na conta. Quem recomprime
+# não acrescenta qualidade: o arquivo enviado ao site é o teto, e o stream sai dele. Só que o
+# endereço não diz se aquele arquivo é o original ou uma versão mais leve, e por isso cada candidato
+# é medido com o ffprobe. Troca se for o mesmo vídeo (a mesma duração: um trailer também é arquivo),
+# com áudio e não claramente pior em números. Qualquer erro deixa tudo como está (segue o stream).
 #
 # Achou: grava MARCA (o link, o título, a linha do histórico, a página e o formato, se for da
 # oferta do site) e avisa o JOB, que interrompe este yt-dlp e baixa o arquivo (baixa_direto).
@@ -121,6 +483,7 @@ fi
 if [[ ${1:-} == --procura-direto ]]; then
   marca=$2 job=$3 arq_site=$4 arq_fmts=$5 limite=$6 pagina=$7 titulo=$8 extrator=$9 id=${10} escolhido=${11}
   proto=${12} alt=${13} larg=${14} fps=${15} tbr=${16} dur=${17} dr=${18} acodec=${19} entradas=${20} ua=${21:-}
+  vcodec_s=${22:-NA}
   [[ $ua == NA ]] && ua=""
   command -v ffprobe >/dev/null 2>&1 || exit 0
   case $entradas in NA|0|1) ;; *) exit 0 ;; esac      # um vídeo de uma lista: a página fala de vários
@@ -138,12 +501,17 @@ if [[ ${1:-} == --procura-direto ]]; then
       NUM=$(awk -v f="$1" 'BEGIN { printf "%d", f * 1000 }')
     else NUM=0; fi
   }
-  mede() {                                    # mede URL → M_LADO M_FPS M_KBPS M_DUR M_AUDIO
-    local k v tipo="" visto=0 w=0 h=0
-    M_LADO=0; M_FPS=0; M_KBPS=0; M_DUR=0; M_AUDIO=0
+  mede() {                                    # mede URL → M_LADO M_FPS M_KBPS M_DUR M_AUDIO M_CODEC M_FORMATO
+    local k v tipo="" visto=0 w=0 h=0 nome=""
+    M_LADO=0; M_FPS=0; M_KBPS=0; M_DUR=0; M_AUDIO=0; M_CODEC=""; M_FORMATO=""
     while IFS='=' read -r k v; do
       case $k in
-        codec_type) tipo=$v; [[ $v == audio ]] && M_AUDIO=1 ;;
+        codec_name) nome=$v ;;                # (o ffprobe informa o codec antes do tipo da faixa)
+        codec_type)
+          tipo=$v
+          [[ $v == audio ]] && M_AUDIO=1
+          [[ $v == video && -z $M_CODEC ]] && M_CODEC=$nome ;;
+        format_name) M_FORMATO=$v ;;
         width)  (( visto )) || { [[ $tipo == video ]] && { inteiro "$v"; w=$NUM; }; } ;;
         height) (( visto )) || { [[ $tipo == video ]] && { inteiro "$v"; h=$NUM; }; } ;;
         r_frame_rate|avg_frame_rate)
@@ -156,10 +524,21 @@ if [[ ${1:-} == --procura-direto ]]; then
       esac
     done < <(ffprobe -v error -protocol_whitelist http,https,tcp,tls,crypto -rw_timeout 15000000 \
                ${ua:+-user_agent "$ua"} -headers "Referer: $pagina"$'\r\n' \
-               -show_entries format=duration,bit_rate:stream=codec_type,width,height,r_frame_rate,avg_frame_rate \
+               -show_entries format=format_name,duration,bit_rate:stream=codec_name,codec_type,width,height,r_frame_rate,avg_frame_rate \
                -of default=nw=1 -- "$1" 2>/dev/null)
     lado "$w" "$h"; M_LADO=$NUM
     (( M_LADO > 0 ))
+  }
+  # Quanto cada bit rende, em % do H.264: 5 Mb/s em HEVC valem mais que 5 Mb/s em H.264. É uma regra
+  # de bolso, que só evita comparar codecs diferentes pelo número cru.
+  peso() {
+    case ${1,,} in
+      av1*|av01*) NUM=200 ;;
+      hevc*|h265*|hev1*|hvc1*|vp9*|vp09*) NUM=150 ;;
+      mpeg4*|mp4v*|msmpeg*|wmv*|vc1*|flv*|h263*|vp6*|vp8*|theora*) NUM=70 ;;
+      mpeg1*|mpeg2*|mp1v*|mp2v*|mjpeg*) NUM=50 ;;
+      *) NUM=100 ;;
+    esac
   }
   rotulo() {                                  # rotulo LADO FPS KBPS → FMT: "1080p · 60 fps · 16 Mb/s"
     FMT="$1p"
@@ -173,8 +552,23 @@ if [[ ${1:-} == --procura-direto ]]; then
     local u=$1 c
     [[ $u =~ ^https?:// && $u != "$escolhido" ]] || return 0
     for c in "${cands[@]}"; do [[ $c == "$u" ]] && return 0; done
-    (( ${#cands[@]} < 4 )) && cands+=("$u")
+    (( ${#cands[@]} < 60 )) && cands+=("$u")
     return 0
+  }
+  # Fora da lista: .rm e .rmvb, que o FFmpeg não consegue copiar para MKV, e .m4s, pedaço de stream
+  exts='mp4|m4v|webm|mov|qt|mkv|mk3d|avi|divx|mpg|mpeg|vob|wmv|asf|flv|f4v|ogv|ogm|3gp|3g2|ts|m2ts|mts|m2t|mxf'
+  absoluto() {                                # absoluto LINK → ABS: o endereço completo, se servir
+    ABS=$1
+    case $ABS in
+      http://*|https://*) ;;
+      //*) ABS="${pagina%%://*}:$ABS" ;;
+      /*)  ABS=$origem$ABS ;;
+      *)   [[ $ABS =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] && return 1     # blob:, data:…
+           ABS=$pasta/$ABS ;;
+    esac
+    ABS=${ABS%%#*}
+    # o que claramente não é o vídeo nem merece um pedido (a duração pegaria de qualquer jeito)
+    [[ ! ${ABS,,} =~ [/_.-](trailer|teaser|preview|sample|thumb|thumbnail|sprite|logo|intro|banner|ads?|vast|poster)[/_.-] ]]
   }
 
   inteiro "$alt"; a=$NUM; inteiro "$larg"; lado "$a" "$NUM"; lado_s=$NUM
@@ -204,31 +598,64 @@ if [[ ${1:-} == --procura-direto ]]; then
     http|https|http+http|https+https|http+https|https+http) vale_pagina=0 ;;
     *) vale_pagina=1 ;;
   esac
-  case ${s_pag,,} in *.m3u8|*.mpd|*.mp4|*.m4v|*.webm|*.mkv|*.mov|*.ts|*.f4m|*.ism) vale_pagina=0 ;; esac
+  [[ ${s_pag,,} =~ \.(m3u8|mpd|f4m|ism|$exts)$ ]] && vale_pagina=0
   if (( vale_pagina )) && [[ $pagina =~ ^https?:// ]] && command -v curl >/dev/null 2>&1; then
     n=0
     [[ -f $arq_site ]] && n=$(wc -l < "$arq_site")
     if (( n < 3 )); then
       origem=${pagina#*://}; origem="${pagina%%://*}://${origem%%[/?#]*}"
       pasta=${s_pag%/*}; [[ $pasta == "${pagina%%://*}:/" ]] && pasta=$origem
+      pag=$(curl -fsSL -m 15 --max-filesize 5000000 --proto =http,https --proto-redir =http,https \
+              ${ua:+-A "$ua"} -e "$pagina" --url "$pagina" 2>/dev/null | head -c 3000000 | tr -d '\0' |
+            sed -e 's#\\/#/#g' -e 's#\\u002[fF]#/#g' -e 's#&amp;#\&#g')
+      # A extensão precisa estar no fim do endereço: .mov e .ts também são fim de nome de site
+      re_arq="^https?://[^/?#]+[/?#].*\\.($exts)(\$|[?#&])"
+      # O que a página diz ser o vídeo ou o botão de baixar vale mesmo sem extensão no endereço
+      re_tag='[[:space:]](data-)?(src|href)=("[^"]*"|'\''[^'\'']*'\''|[^[:space:]>]+)'
+      while IFS= read -r l; do
+        [[ $l =~ $re_tag ]] || continue
+        [[ ${l,,} == *mpegurl* || ${l,,} == *dash+xml* ]] && continue
+        l=${BASH_REMATCH[3]}; l=${l#[\"\']}; l=${l%[\"\']}
+        absoluto "$l" || continue
+        n=${ABS%%[?#]*}; n=${n##*/}; n=${n,,}
+        if [[ $n == *.* ]] && ! [[ ${ABS,,} =~ $re_arq || $n =~ \.(php|aspx?|jsp|cgi)$ ]]; then continue; fi
+        junta "$ABS"
+      done < <(grep -aoiE '<(video|source)[[:space:]][^>]*>|<a[[:space:]][^>]*[[:space:]]download([[:space:]=][^>]*)?>' <<< "$pag")
       c='[^][:space:]"'\''<>()\\`]'
       while IFS= read -r l; do
         l=${l#[\"\'=(]}
-        case $l in
-          http://*|https://*) ;;
-          //*) l="${pagina%%://*}:$l" ;;
-          /*)  l=$origem$l ;;
-          *)   l=$pasta/$l ;;
-        esac
-        # o que claramente não é o vídeo nem merece um pedido (a duração pegaria de qualquer jeito)
-        [[ ${l,,} =~ [/_.-](trailer|teaser|preview|sample|thumb|thumbnail|sprite|logo|intro|banner|ads?|vast|poster)[/_.-] ]] && continue
-        junta "$l"
-      done < <(curl -fsSL -m 15 --max-filesize 5000000 --proto =http,https --proto-redir =http,https \
-                 ${ua:+-A "$ua"} -e "$pagina" --url "$pagina" 2>/dev/null | head -c 3000000 |
-               sed -e 's#\\/#/#g' -e 's#\\u002[fF]#/#g' -e 's#&amp;#\&#g' |
-               grep -aoiE "([\"'=(]|(https?:)?//)$c+\.(mp4|m4v|webm|mov|mkv)(\?$c*)?")
+        absoluto "$l" || continue
+        [[ ${ABS,,} =~ $re_arq ]] && junta "$ABS"
+      done < <(grep -aoiE "([\"'=(]|(https?:)?//)$c+\.($exts)$c*" <<< "$pag")
     fi
   fi
+  if (( ! ${#cands[@]} )); then
+    (( ${vale_pagina:-0} )) && printf 'x\n' >> "$arq_site"
+    exit 0
+  fi
+
+  # Só 4 são medidos, para não encher o site de pedidos. Uma página que lista do 240p ao 4K, nessa
+  # ordem, não pode gastá-los com os menores: vem primeiro o que o nome promete ser o melhor.
+  nota() {                                    # nota URL → NUM
+    local n=${1%%[?#]*}; n=${n##*/}; n=${n,,}
+    NUM=800                                   # sem pista: depois do 1080p, antes do 720p
+    if [[ $n =~ (^|[^a-z])(original|orig|source|master|raw|remux|lossless)([^a-z]|$) ]]; then NUM=9000
+    elif [[ $n =~ (^|[^0-9])(4320|2160|1440|1080|720|576|540|480|360|270|240|144)p?([^0-9]|$) ]]; then NUM=${BASH_REMATCH[2]}
+    elif [[ $n =~ (^|[^a-z0-9])(8k|4k|uhd|2k|qhd|fhd)([^a-z0-9]|$) ]]; then
+      case ${BASH_REMATCH[2]} in 8k) NUM=4320 ;; 4k|uhd) NUM=2160 ;; 2k|qhd) NUM=1440 ;; fhd) NUM=1080 ;; esac
+    elif [[ $n =~ (^|[^a-z])(mobile|low|small|lq|light|mini|tiny)([^a-z]|$) ]]; then NUM=100
+    fi
+    [[ $n == *.ts ]] && NUM=0                 # costuma ser pedaço de stream ou código TypeScript
+    return 0
+  }
+  n_ts=0; ordem=""
+  for u in "${cands[@]}"; do l=${u%%[?#]*}; [[ ${l,,} == *.ts ]] && (( ++n_ts )); done
+  for u in "${cands[@]}"; do
+    l=${u%%[?#]*}
+    (( n_ts > 3 )) && [[ ${l,,} == *.ts ]] && continue     # vários .ts: são os pedaços de um stream
+    nota "$u"; ordem+="$NUM"$'\t'"$u"$'\n'
+  done
+  mapfile -t cands < <(printf '%s' "$ordem" | sort -s -t $'\t' -k1,1nr | cut -f2- | head -n 4)
   if (( ! ${#cands[@]} )); then
     (( ${vale_pagina:-0} )) && printf 'x\n' >> "$arq_site"
     exit 0
@@ -242,18 +669,25 @@ if [[ ${1:-} == --procura-direto ]]; then
     (( fps_s )) || fps_s=$M_FPS
     (( kbps_s )) || kbps_s=$M_KBPS
     (( dur_s )) || dur_s=$M_DUR
+    [[ $vcodec_s == NA ]] && vcodec_s=$M_CODEC
   fi
   (( sem_ref || (lado_s > 0 && dur_s > 0) )) || exit 0
 
-  # 4) A comparação, na ordem da do yt-dlp: resolução, depois fps, depois bitrate. Com a mesma
-  #    imagem, fica o arquivo se ele não for pior: um arquivo só é bem menos pedidos que um stream.
-  melhor=""; lado_m=$lado_s; fps_m=$fps_s; kbps_m=$kbps_s; dur_m=$dur_s; limiar=95
+  # 4) A comparação, na ordem da do yt-dlp: resolução, depois fps, depois bitrate. Com a mesma imagem,
+  #    fica o arquivo, a não ser que ele seja claramente mais leve: ele pode ser o original, de onde
+  #    o stream saiu, e é um download só em vez de centenas de pedaços. O corte de 75% é porque o
+  #    número do stream muitas vezes é o pico, não a média: em 4 de 17 streams medidos, o real foi
+  #    80% do informado. Sem bitrate do stream para comparar, fica o arquivo.
+  peso "$vcodec_s"; kbps_m=$(( kbps_s * NUM / 100 ))
+  melhor=""; lado_m=$lado_s; fps_m=$fps_s; kbps_ver=$kbps_s; dur_m=$dur_s; limiar=75
   folga=$(( dur_s / 50 )); (( folga < 5 )) && folga=5
   for u in "${cands[@]}"; do
     mede "$u" || continue
+    case $M_FORMATO in *hls*|*dash*) continue ;; esac     # é outro stream, com endereço de arquivo
     (( M_DUR > 0 )) || continue
     (( limite > 0 && M_LADO > limite )) && continue
     (( M_AUDIO )) || [[ $acodec == none ]] || continue
+    peso "$M_CODEC"; ef=$(( M_KBPS * NUM / 100 ))
     ganha=0
     if (( sem_ref )); then
       (( M_DUR >= 30 )) || continue
@@ -267,11 +701,14 @@ if [[ ${1:-} == --procura-direto ]]; then
       if (( M_LADO > lado_m )); then ganha=1
       elif (( M_LADO == lado_m )); then
         if (( fps_m > 0 && M_FPS > fps_m + 1000 )); then ganha=1
-        elif (( M_FPS + 1000 >= fps_m && kbps_m > 0 && M_KBPS * 100 >= kbps_m * limiar )); then ganha=1; fi
+        elif (( M_FPS + 1000 >= fps_m )); then
+          if (( kbps_m > 0 )); then (( ef * 100 >= kbps_m * limiar )) && ganha=1
+          elif [[ -z $melhor ]] || (( ef > 0 )); then ganha=1; fi
+        fi
       fi
     fi
     (( ganha )) || continue
-    melhor=$u; lado_m=$M_LADO; fps_m=$M_FPS; kbps_m=$M_KBPS; dur_m=$M_DUR; limiar=101
+    melhor=$u; lado_m=$M_LADO; fps_m=$M_FPS; kbps_m=$ef; kbps_ver=$M_KBPS; dur_m=$M_DUR; limiar=101
   done
   if [[ -z $melhor ]]; then
     (( ${vale_pagina:-0} )) && printf 'x\n' >> "$arq_site"
@@ -279,7 +716,7 @@ if [[ ${1:-} == --procura-direto ]]; then
   fi
 
   rm -f -- "$arq_site"
-  rotulo "$lado_m" "$fps_m" "$kbps_m"; d=$FMT
+  rotulo "$lado_m" "$fps_m" "$kbps_ver"; d=$FMT
   if (( sem_ref )); then printf '[grabit] direto: %s\n' "$d"
   else rotulo "$lado_s" "$fps_s" "$kbps_s"; printf '[grabit] direto: %s\x1f%s\n' "$d" "$FMT"; fi
   chave=""
@@ -312,7 +749,7 @@ CONFIG_ARQ="${GRABIT_CONFIG:-$GRABIT_DIR/grabit.config}"
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -324,7 +761,7 @@ RESOLUCAO_ALERTA=720                          # avisa quando o melhor disponíve
 SO_AUDIO=0                                    # 1 = baixa só o áudio
 FORMATO_AUDIO=original                        # original (sem recomprimir), mp3, m4a, opus, flac…
 DOWNLOADS_SIMULTANEOS=4                       # vídeos ao mesmo tempo
-CONEXOES_POR_VIDEO=4                          # fragmentos por vídeo
+CONEXOES_POR_VIDEO=3                          # conexões por vídeo (o ritmo de cada site pode baixar)
 TENTATIVAS=2                                  # tentativas por link (1 = sem repetir)
 LIMITE_POR_SITE=0                             # downloads ao mesmo tempo do mesmo site (0 = automático)
 PAUSA_ENTRE_VIDEOS=0                          # segundos de espera antes de cada vídeo
@@ -340,6 +777,8 @@ USER_AGENT=                                   # o User-Agent do navegador (para 
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
 USAR_NAVEGADOR=1                              # 0 = nunca abrir um navegador para achar o vídeo
 PROCURAR_ARQUIVO=1                            # 0 = não procurar um arquivo direto melhor que o stream
+FORMATO_SAIDA=mkv                             # mkv, mp4, webm, mov…, ou original: como o site entrega
+CODEC_VIDEO=                                  # h264, hevc, av1, vp9 ou mpeg4: recomprime se o vídeo vier em outro
 PROGRAMA_NAVEGADOR=                           # vazio = procura Firefox, Chrome, Chromium, Brave, Edge…
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
 ARQUIVO_FALHAS=links_falhos.txt
@@ -459,6 +898,12 @@ idioma_pt() {
     [kv_extras]="Extras"
     [kv_ferramentas]="Ferramentas"
     [kv_recursos]="Recursos"
+    [kv_saida]="Saída"
+    [kv_saida_orig]="o formato do site"
+    [kv_saida_codec]=" · recomprime para %s se vier em outro codec"
+    [val_formato]="%s precisa ser original ou um formato como mkv, mp4, webm, mov, avi, ts, flv (recebi '%s', de: %s)."
+    [val_codec]="%s precisa ser h264, hevc, av1, vp9 ou mpeg4 (recebi '%s', de: %s)."
+    [saida_so_video]="-O, -e e -k valem para vídeo: com -x, ficam de fora."
     [kv_limites]="Limites"
     [lim_res]="até %dp"
     [lim_site]="%d vídeo(s) por site"
@@ -701,6 +1146,8 @@ idioma_pt() {
     [et_procura]="comparando com um arquivo direto do site"
     [et_direto]="baixando o arquivo direto: é melhor que o stream"
     [nav_abrindo]="Este site precisa de um navegador: vou abrir o %s. Se aparecer uma verificação, é só fazê-la na janela."
+    [k_conexoes]="%s recusou as conexões extras: os próximos downloads vão com uma só"
+    [k_lento]="%s rende mais com uma conexão só: seguindo assim nesse site"
     [k_freio]="%s pediu para ir mais devagar: no máximo %d download(s) ao mesmo tempo desse site, e o próximo daqui a %d s"
     [k_parado]="%s está recusando os pedidos: os links que faltam dele ficam para depois, e os outros sites continuam"
     [k_espera_site]="aguardando %s liberar (%d s) · q sai"
@@ -708,6 +1155,7 @@ idioma_pt() {
     [s_adiados]="Adiados"
     [s_adiados_det]="(o site estava recusando: tente mais tarde)"
     [ins_q_curlcffi]="Instalar o curl-cffi? Ajuda quando um site bloqueia downloads automáticos. [S/n]"
+    [ins_q_aria2]="Instalar o aria2? Baixa arquivos diretos por várias conexões, bem mais rápido. [S/n]"
     [ins_q_deno]="Instalar o Deno? O YouTube exige um runtime JavaScript para liberar as melhores resoluções. [S/n]"
     [ins_q_clip]="Instalar o %s? Serve para capturar links copiados (-C) e ler o cURL copiado. [S/n]"
     [ins_q_nav]="Instalar o Firefox? Só é útil em sites que funcionam apenas num navegador, e você não tem nenhum que o GrabIt use. [s/N]"
@@ -736,9 +1184,44 @@ idioma_pt() {
     [sufixo_ruim]=".com-erros"
     [d_verificacao]="o arquivo tem defeitos (ficou com %s no nome)"
     [r_baixa]="resolução baixa:"
+    [r_coube]="metadados:"
+    [r_coube_det]=".%s não guarda: %s"
+    [r_conv_falhou]="não deu para deixar em .%s: ficou em .%s (%s)"
+    [tok_capa]="capa (ficou ao lado)"
+    [tok_legendas]="legendas (ficaram ao lado)"
+    [tok_metadados]="título e outros dados"
+    [tok_dados]="dados do site (info.json)"
+    [tok_capitulos]="capítulos"
+    [tok_capa_conv]="capa"
+    [tok_legendas_conv]="legendas"
+    [cv_titulo]="GrabIt · conversão"
+    [cv_titulo_baixados]="Recomprimindo o que foi baixado"
+    [cv_o_que]="O que faz"
+    [cv_copia]="troca para .%s sem recomprimir: imagem e som continuam idênticos"
+    [cv_recomp]="recomprime para %s: perde um pouco de qualidade, e pode demorar bastante"
+    [cv_recomp_ext]="recomprime para %s, em .%s: perde um pouco de qualidade, e pode demorar bastante"
+    [cv_uso]="Diga o formato ou o codec: grabit converter ARQUIVO -e mp4, ou -k h264"
+    [cv_sem_alvo]="Diga o arquivo ou a pasta: grabit converter ARQUIVO -e mp4"
+    [cv_nao_existe]="Não encontrei: %s"
+    [cv_vazio]="Nenhum vídeo para converter."
+    [cv_ja]="já está assim"
+    [cv_existe]="já existe: %s"
+    [cv_ilegivel]="não consegui ler este arquivo"
+    [cv_sem_enc]="este ffmpeg não tem o codificador de %s"
+    [cv_verificacao]="o arquivo novo não passou na conferência, e o original ficou como está"
+    [cv_dica_codec]="o formato não aceita este vídeo ou áudio: com -k, dá para recomprimir"
+    [cv_exato]="tempo de cada quadro restaurado (o MKV arredonda ao milissegundo)"
+    [cv_perdeu]=".%s não guarda: %s"
+    [cv_hdr]="Vídeo HDR em H.264: as cores podem ficar lavadas, porque o H.264 fica em SDR."
+    [cv_s_titulo]="Resumo da conversão"
+    [cv_s_ok]="Convertidos"
+    [cv_s_pulados]="Pulados"
+    [cv_s_erro]="Com erro"
+    [cv_s_parcial]="Conversão interrompida"
+    [cv_cancelado]="O original continua como estava."
     [r_baixa_det]="%dp era a melhor versão disponível (com login, -b, às vezes há mais)"
     [r_direto]="arquivo direto:"
-    [r_direto_det]="%s, melhor que o stream (%s)"
+    [r_direto_det]="%s, melhor que a opção padrão (%s)"
     [r_curto]="mais curto:"
     [r_curto_det]="o arquivo tem %s, e o site informa %s; confira se veio inteiro"
     [s_baixa]="Baixa resolução"
@@ -775,7 +1258,12 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
   -l ARQUIVO    arquivo com os links ("-" = entrada padrão)  (padrão: links.txt)
   -o PASTA      pasta onde os vídeos serão salvos            (padrão: ./Downloads)
   -j N          downloads simultâneos                        (padrão: 4)
-  -c N          conexões (fragmentos) por vídeo              (padrão: 4)
+  -c N          conexões por vídeo, reguladas por site        (padrão: 3)
+  -O            mantém o formato do site (.mp4 fica .mp4), com capa e metadados
+                quando o formato aceita; o que não couber é avisado  (--original)
+  -e FORMATO    salva neste formato: mkv, mp4, webm, mov…        (padrão: mkv)  (--formato)
+  -k CODEC      recomprime se o vídeo vier em outro: h264, hevc, av1, vp9, mpeg4
+                (prefere a versão do site que já está nele; perde qualidade)  (--codec)
   -r ALTURA     resolução máxima: 720, 1080, 2160, 4k…       (padrão: sem limite)
   -F            força: ignora os limites do grabit.config (resolução, sites, pausa…)
                 e o ritmo automático por site
@@ -819,6 +1307,9 @@ que grabit --atualizar):
                      e oferece baixar de novo os que tiverem problema
   baixados, downloaded [AÇÃO]
                      lista a seção BAIXADOS; ações: editar, voltar N…, marcar LINK…, limpar
+  converter, convert ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
+                     muda a extensão de um vídeo já baixado (imagem e som continuam idênticos)
+                     ou recomprime em outro codec; o original fica, a não ser com --substituir
   ajuda, help        mostra esta ajuda
 
 • Um arquivo de links com o nome de um comando precisa de ./ na frente: grabit ./update
@@ -883,7 +1374,15 @@ EOF
 
 # Quantos vídeos baixar ao mesmo tempo (-j) e conexões por vídeo (-c)
 #DOWNLOADS_SIMULTANEOS=4
-#CONEXOES_POR_VIDEO=4
+#CONEXOES_POR_VIDEO=3
+
+# Formato do arquivo: mkv, mp4, webm, mov…, ou original: como o site entrega (-e, -O). O MKV é o
+# padrão porque guarda tudo: capa, legendas de qualquer tipo e os dados do site.
+#FORMATO_SAIDA=mkv
+
+# Codec do vídeo: vazio, ou h264, hevc, av1, vp9, mpeg4 (-k). Se o vídeo vier em outro, recomprime
+# depois de baixar. Perde qualidade e pode demorar: só para aparelhos que não tocam o original.
+#CODEC_VIDEO=
 
 # Tentativas por link quando a falha é passageira (1 = não tentar de novo)
 #TENTATIVAS=2
@@ -979,6 +1478,12 @@ idioma_en() {
     [kv_extras]="Extras"
     [kv_ferramentas]="Tools"
     [kv_recursos]="Features"
+    [kv_saida]="Output"
+    [kv_saida_orig]="the site's own format"
+    [kv_saida_codec]=" · re-encodes to %s if it comes in another codec"
+    [val_formato]="%s must be original or a format such as mkv, mp4, webm, mov, avi, ts, flv (got '%s', from: %s)."
+    [val_codec]="%s must be h264, hevc, av1, vp9 or mpeg4 (got '%s', from: %s)."
+    [saida_so_video]="-O, -e and -k apply to video: with -x, they are left out."
     [kv_limites]="Limits"
     [lim_res]="up to %dp"
     [lim_site]="%d video(s) per site"
@@ -1221,6 +1726,8 @@ idioma_en() {
     [et_procura]="comparing with a direct file from the site"
     [et_direto]="downloading the direct file: it beats the stream"
     [nav_abrindo]="This site needs a browser: I'll open %s. If a check shows up, just do it in the window."
+    [k_conexoes]="%s refused the extra connections: the next downloads use only one"
+    [k_lento]="%s is faster over a single connection: carrying on that way for that site"
     [k_freio]="%s asked to slow down: at most %d download(s) at once from that site, and the next one in %d s"
     [k_parado]="%s is refusing requests: its remaining links are left for later, and the other sites carry on"
     [k_espera_site]="waiting for %s to clear (%d s) · q quits"
@@ -1228,6 +1735,7 @@ idioma_en() {
     [s_adiados]="Postponed"
     [s_adiados_det]="(the site was refusing: try again later)"
     [ins_q_curlcffi]="Install curl-cffi? It helps when a site blocks automated downloads. [Y/n]"
+    [ins_q_aria2]="Install aria2? It downloads direct files over several connections, much faster. [Y/n]"
     [ins_q_deno]="Install Deno? YouTube requires a JavaScript runtime to unlock the best resolutions. [Y/n]"
     [ins_q_clip]="Install %s? It's for capturing copied links (-C) and reading the copied cURL. [Y/n]"
     [ins_q_nav]="Install Firefox? It's only useful on sites that just work in a browser, and you have none that GrabIt can use. [y/N]"
@@ -1256,9 +1764,44 @@ idioma_en() {
     [sufixo_ruim]=".with-errors"
     [d_verificacao]="the file has defects (kept with %s in its name)"
     [r_baixa]="low resolution:"
+    [r_coube]="metadata:"
+    [r_coube_det]=".%s can't hold: %s"
+    [r_conv_falhou]="couldn't make it .%s: it stayed .%s (%s)"
+    [tok_capa]="thumbnail (left beside it)"
+    [tok_legendas]="subtitles (left beside it)"
+    [tok_metadados]="title and other data"
+    [tok_dados]="site data (info.json)"
+    [tok_capitulos]="chapters"
+    [tok_capa_conv]="thumbnail"
+    [tok_legendas_conv]="subtitles"
+    [cv_titulo]="GrabIt · conversion"
+    [cv_titulo_baixados]="Re-encoding what was downloaded"
+    [cv_o_que]="What it does"
+    [cv_copia]="switches to .%s without re-encoding: picture and sound stay identical"
+    [cv_recomp]="re-encodes to %s: loses a little quality, and it can take a long time"
+    [cv_recomp_ext]="re-encodes to %s, as .%s: loses a little quality, and it can take a long time"
+    [cv_uso]="Say the format or the codec: grabit convert FILE -e mp4, or -k h264"
+    [cv_sem_alvo]="Say the file or folder: grabit convert FILE -e mp4"
+    [cv_nao_existe]="Not found: %s"
+    [cv_vazio]="No video to convert."
+    [cv_ja]="already like that"
+    [cv_existe]="already exists: %s"
+    [cv_ilegivel]="couldn't read this file"
+    [cv_sem_enc]="this ffmpeg doesn't have the %s encoder"
+    [cv_verificacao]="the new file failed the check, and the original stayed as it was"
+    [cv_dica_codec]="the format doesn't accept this video or audio: with -k, it can be re-encoded"
+    [cv_exato]="each frame's time restored (MKV rounds it to the millisecond)"
+    [cv_perdeu]=".%s can't hold: %s"
+    [cv_hdr]="HDR video as H.264: the colors may look washed out, because H.264 stays SDR."
+    [cv_s_titulo]="Conversion summary"
+    [cv_s_ok]="Converted"
+    [cv_s_pulados]="Skipped"
+    [cv_s_erro]="Failed"
+    [cv_s_parcial]="Conversion interrupted"
+    [cv_cancelado]="The original stayed as it was."
     [r_baixa_det]="%dp was the best version available (logged in, -b, there may be more)"
     [r_direto]="direct file:"
-    [r_direto_det]="%s, better than the stream (%s)"
+    [r_direto_det]="%s, better than the default choice (%s)"
     [r_curto]="shorter:"
     [r_curto_det]="the file runs %s, and the site says %s; check that it came whole"
     [s_baixa]="Low resolution"
@@ -1295,7 +1838,12 @@ Usage:  grabit [options] [LINK or FILE ...]
   -l FILE       file with the links ("-" = stdin)    (default: links.txt)
   -o FOLDER     where videos are saved               (default: ./Downloads)
   -j N          simultaneous downloads               (default: 4)
-  -c N          connections (fragments) per video    (default: 4)
+  -c N          connections per video, regulated per site     (default: 3)
+  -O            keeps the site's format (.mp4 stays .mp4), with thumbnail and metadata
+                when the format accepts them; what doesn't fit is reported  (--original)
+  -e FORMAT     saves in this format: mkv, mp4, webm, mov…       (default: mkv)  (--format)
+  -k CODEC      re-encodes if the video comes in another one: h264, hevc, av1, vp9, mpeg4
+                (prefers the site's version already in it; loses quality)  (--codec)
   -r HEIGHT     maximum resolution: 720, 1080, 4k…   (default: no limit)
   -F            force: ignore the grabit.config limits (resolution, sites, pause…)
                 and the automatic per-site pace
@@ -1339,6 +1887,9 @@ the same as grabit --atualizar):
                      and offer to download the problem ones again
   downloaded, baixados [ACTION]
                      list the DOWNLOADED section; actions: edit, back N…, add LINK…, clear
+  convert, converter FILE|FOLDER… -e FORMAT and/or -k CODEC
+                     changes the extension of a downloaded video (picture and sound stay
+                     identical) or re-encodes to another codec; the original stays, unless --replace
   help, ajuda        show this help
 
 • A link file named like a command needs ./ in front of it: grabit ./update
@@ -1407,7 +1958,15 @@ EOF
 
 # How many videos to download at once (-j) and connections per video (-c)
 #DOWNLOADS_SIMULTANEOS=4
-#CONEXOES_POR_VIDEO=4
+#CONEXOES_POR_VIDEO=3
+
+# File format: mkv, mp4, webm, mov…, or original: as the site delivers it (-e, -O). MKV is the
+# default because it holds everything: thumbnail, subtitles of any kind and the site's data.
+#FORMATO_SAIDA=mkv
+
+# Video codec: empty, or h264, hevc, av1, vp9, mpeg4 (-k). If the video comes in another one, it is
+# re-encoded after downloading. It loses quality and can take long: only for devices that can't play it.
+#CODEC_VIDEO=
 
 # Attempts per link when the failure is temporary (1 = don't retry)
 #TENTATIVAS=2
@@ -1513,17 +2072,27 @@ palavra_comando() {
     baixados|downloaded)              COMANDO=baixados ;;
     versao|versão|version)            COMANDO=versao ;;
     curl)                             COMANDO=curl ;;
+    converter|convert)                COMANDO=converter ;;
     *) return 1 ;;
   esac
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0
-for a in "$@"; do
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0
+while (( $# )); do
+  a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
   case $a in
     --)  ARGS_CURTOS+=("$a"); SO_LINKS=1 ;;
     --yes|--sim) ASSUME_SIM=1 ;;
+    --original|--source) ARGS_CURTOS+=(-O) ;;
+    --substituir|--replace) SUBSTITUIR=1 ;;
+    --formato=*|--format=*|--extensao=*|--extension=*) ARGS_CURTOS+=(-e "${a#*=}") ;;
+    --codec=*) ARGS_CURTOS+=(-k "${a#*=}") ;;
+    --formato|--format|--extensao|--extension|--codec)
+      (( $# )) || { t opcao_valor "$a"; erro "$TXT"; exit 2; }
+      if [[ $a == --codec ]]; then ARGS_CURTOS+=(-k "$1"); else ARGS_CURTOS+=(-e "$1"); fi
+      shift ;;
     --*) palavra_comando "${a#--}" || { t opcao_invalida "$a"; erro "$TXT"; uso; exit 2; } ;;
     *)   ARGS_CURTOS+=("$a") ;;
   esac
@@ -1535,7 +2104,7 @@ OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTU
 # O getopts para no primeiro link; aqui ele o guarda e continua. Depois de "--", só há links.
 while (( $# )); do
   OPTIND=1
-  while getopts ":l:o:j:c:b:r:L:A:pausivxdmfCUFhy" op; do
+  while getopts ":l:o:j:c:b:r:L:A:e:k:pausivxdmfCUFhyO" op; do
     case $op in
       l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
       o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -1544,6 +2113,9 @@ while (( $# )); do
       b) COOKIES_NAVEGADOR=$OPTARG;      ORIGEM[COOKIES_NAVEGADOR]=opção ;;
       A) USER_AGENT=$OPTARG;             ORIGEM[USER_AGENT]=opção ;;
       r) RESOLUCAO_MAXIMA=$OPTARG;       ORIGEM[RESOLUCAO_MAXIMA]=opção ;;
+      e) FORMATO_SAIDA=$OPTARG;          ORIGEM[FORMATO_SAIDA]=opção ;;
+      O) FORMATO_SAIDA=original;         ORIGEM[FORMATO_SAIDA]=opção ;;
+      k) CODEC_VIDEO=$OPTARG;            ORIGEM[CODEC_VIDEO]=opção ;;
       F) FORCAR=1 ;;
       L) ;;                              # já tratado acima, antes de carregar os textos
       p) SEM_PLAYLIST=1;                 ORIGEM[SEM_PLAYLIST]=opção ;;
@@ -1637,6 +2209,42 @@ case ${FORMATO_AUDIO,,} in
   mp3|m4a|aac|opus|flac|wav|alac|vorbis) FORMATO_AUDIO=${FORMATO_AUDIO,,} ;;
   *) origem_txt FORMATO_AUDIO; t val_audio FORMATO_AUDIO "$FORMATO_AUDIO" "$FMT"; erro "$TXT"; exit 2 ;;
 esac
+# nome_do_codec NOME → FMT: h264, hevc, av1, vp9 ou mpeg4, os nomes que o ffprobe usa
+nome_do_codec() {
+  case ${1,,} in
+    h264|h.264|x264|avc|avc1) FMT=h264 ;;
+    hevc|h265|h.265|x265)     FMT=hevc ;;
+    av1|av01)                 FMT=av1 ;;
+    vp9|vp09)                 FMT=vp9 ;;
+    mpeg4|xvid)               FMT=mpeg4 ;;
+    *) return 1 ;;
+  esac
+}
+FORMATO_SAIDA=${FORMATO_SAIDA#.}; FORMATO_SAIDA=${FORMATO_SAIDA,,}
+[[ -z $FORMATO_SAIDA ]] && FORMATO_SAIDA=mkv
+[[ $FORMATO_SAIDA == fonte || $FORMATO_SAIDA == source ]] && FORMATO_SAIDA=original
+# "-e av1": é um codec, não uma extensão, mas está claro o que a pessoa quer
+if nome_do_codec "$FORMATO_SAIDA"; then
+  [[ -z $CODEC_VIDEO ]] && { CODEC_VIDEO=$FMT; ORIGEM[CODEC_VIDEO]=${ORIGEM[FORMATO_SAIDA]:-}; }
+  FORMATO_SAIDA=mkv; unset 'ORIGEM[FORMATO_SAIDA]'
+fi
+if [[ $FORMATO_SAIDA != original ]] && ! muxer_de "$FORMATO_SAIDA"; then
+  origem_txt FORMATO_SAIDA; t val_formato FORMATO_SAIDA "$FORMATO_SAIDA" "$FMT"; erro "$TXT"
+  exit 2
+fi
+if [[ -n $CODEC_VIDEO ]]; then
+  if ! nome_do_codec "$CODEC_VIDEO"; then
+    origem_txt CODEC_VIDEO; t val_codec CODEC_VIDEO "$CODEC_VIDEO" "$FMT"; erro "$TXT"
+    exit 2
+  fi
+  CODEC_VIDEO=$FMT
+fi
+if (( SO_AUDIO )) && [[ $COMANDO != converter ]]; then
+  [[ ${ORIGEM[FORMATO_SAIDA]:-} == opção || ${ORIGEM[CODEC_VIDEO]:-} == opção ]] && aviso "${T[saida_so_video]}"
+  FORMATO_SAIDA=mkv; CODEC_VIDEO=""
+fi
+# Quem pediu um codec quer aquele codec: a busca escolheria pelo que parece melhor em números
+[[ -n $CODEC_VIDEO ]] && PROCURAR_ARQUIVO=0
 # Resolução: "1080", "1080p", "4k" e "8k" viram a altura; vazio ou 0 = desligado
 for nome in RESOLUCAO_MAXIMA RESOLUCAO_ALERTA; do
   case ${!nome,,} in
@@ -1696,6 +2304,8 @@ AJUSTE=""; AJUSTES=(); DICA_NAVEGADOR=0; MODO_CURL=0; EXTRA_YTDLP=(); N_CAB_CURL
 NIVEL=(); NIVEL_INICIO=(); NAV_AVISADO=0; NAV_DONO=0; NAV_PROG=""; NAV_TIPO=""; NAV_NOME=""; NAV_ROTULO=""; PASTA_NAV=""
 CAB_ARGS=(); CAB_REFERER=""; SAIDA_PAGINA=""; ARQ_METODOS=""; PROX_BLOQ=0; MUITAS_REQ=0
 declare -A METODO=() METODO_QUANDO=() ESPERA_ATE=()
+declare -A CONEX_SITE=() UMA_CONEXAO=() ARIA_OK=()
+ARIA=""; CONEX_JOB=(); RECUSOU=(); SEM_ARIA=(); CONVERTER=(); CV_OK=0; CV_PULADOS=0; CV_ERROS=0; CONV_DUR=0
 declare -A FILA_CAB=() FILA_RAB=() PEND_SITE=() ATIVOS_SITE=()
 declare -A LIM_SITE=() CREDITO_SITE=() BLOQ_SITE=() ESPERA_SITE=() PROX_INICIO_SITE=() FALHAS_SITE=() PARADO_SITE=() CALMA_ATE=()
 SEG=(); SITES=(); SAUDAVEL=(); N_PENDENTES=0; N_ADIADOS=0; BLOQUEIO=0
@@ -1886,6 +2496,11 @@ analisa_log() {
     }' "$1" 2>/dev/null)
   N_FATAIS=${r[0]:-0}; N_COSMETICOS=${r[1]:-0}; MOTIVO=${r[2]:-}; AVISO_CTX=${r[3]:-}
   [[ -z $MOTIVO ]] && MOTIVO=$(grep -av -e '^@@' -e '^WARNING:' "$1" 2>/dev/null | tail -n 1)
+  if [[ $MOTIVO == *"aria2c exited with code"* ]]; then   # o motivo de verdade: o que o aria2c disse
+    local r_a
+    r_a=$(grep -a '^@@R@@' "$1" 2>/dev/null | tail -n 1)
+    [[ -n $r_a ]] && MOTIVO="ERROR: ${r_a#@@R@@}"
+  fi
   if [[ $MOTIVO == *"error code 86" ]]; then  # reprovado na verificação (-v): mostra o que o ffmpeg achou
     MOTIVO=$(grep -a '^@@V@@ERRO ' "$1" 2>/dev/null | tail -n 1)
     MOTIVO="ERROR: [Verify] ${MOTIVO#@@V@@ERRO }"
@@ -1956,6 +2571,7 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     "[grabit] procura"*)                                           ETAPA=${T[et_procura]} ;;
     "[grabit] direto"*)                                            ETAPA=${T[et_direto]} ;;
     "[Exec]"*"--nfo "*)                                            ETAPA=${T[et_nfo]} ;;
+    "[Exec]"*"--acabamento "*)                                     ETAPA=${T[et_metadados]} ;;
     "[Exec]"*)                                                     ETAPA=${T[et_verificando]} ;;
     "[download] Sleeping "*)
       [[ $1 =~ Sleeping\ ([0-9]+) ]] && { t et_pausa "${BASH_REMATCH[1]}"; ETAPA=$TXT; } ;;
@@ -2205,8 +2821,8 @@ salva_log() {                                 # guarda o log de todas as tentati
 processa_resultado() {                        # processa_resultado IDX CÓDIGO_DE_SAÍDA
   local idx=$1 rc=$2 url idxs d n_done n_ja n_hist t tent logs=() dones=() hist=()
   local tipo h fps hdr vc ac canais dur titulo vid caminho tam glifo cor det l hid filtrados=()
-  local nota="" n_nota=0 direto dur_site dur_arq dur_a
-  local -A baixados=()
+  local nota="" n_nota=0 direto dur_site dur_arq dur_a tok
+  local -A baixados=() movido=() coube=() nao_veio=()
   url=${LINKS[$(( idx - 1 ))]}
   tent=${TENTATIVA[$idx]:-1}
   printf -v idxs "%0${#TOTAL}d/%d" "$idx" "$TOTAL"
@@ -2251,9 +2867,19 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     done < <(grep -a '^@@U@@' "$TMP/$idx.log" 2>/dev/null)
   fi
 
+  # O que o acabamento (-O, -e) fez com cada arquivo
+  while IFS= read -r l; do
+    case $l in
+      @@M@@*) l=${l#@@M@@}; movido[${l%%"$SEP"*}]=${l#*"$SEP"} ;;
+      @@A@@*) l=${l#@@A@@}; coube[${l%%"$SEP"*}]=${l#*"$SEP"} ;;
+      @@F@@*) l=${l#@@F@@}; nao_veio[${l%%"$SEP"*}]=${l#*"$SEP"} ;;
+    esac
+  done < <(cat "${logs[@]}" 2>/dev/null | grep -a '^@@[MAF]@@')
+
   for d in "${dones[@]}"; do
     IFS=$SEP read -r tipo h fps hdr vc ac dur titulo vid caminho <<<"$d"
     [[ -n $vid ]] && baixados[$vid]=1
+    [[ -n ${movido[$caminho]:-} ]] && caminho=${movido[$caminho]}
     titulo=${titulo//[[:cntrl:]]/ }
     n_nota=$(( n_nota + 1 )); [[ -z $nota ]] && nota=$titulo
     canais=0; tam=0; num "${dur%%.*}"; dur_site=$NUM; dur_arq=0
@@ -2281,6 +2907,22 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       PERM+=("         ${AMARELO}↳ ${T[r_baixa]}${R}${DIM} ${FMT}${R}")
     fi
     if [[ $tipo == N ]]; then
+      [[ -n $CODEC_VIDEO ]] && CONVERTER+=("$caminho")
+      if [[ -n ${nao_veio[$caminho]:-} ]]; then
+        l=${nao_veio[$caminho]}; [[ $l == verificacao ]] && l=${T[cv_verificacao]}
+        t r_conv_falhou "$FORMATO_SAIDA" "${caminho##*.}" "$l"; corta "$TXT" $(( COLS - 13 - ${#T[r_aviso]} ))
+        PERM+=("         ${AMARELO}↳ ${T[r_aviso]}${R}${DIM} ${FMT}${R}")
+        N_AVISOS=$(( N_AVISOS + 1 ))
+      fi
+      if [[ -n ${coube[$caminho]:-} ]]; then
+        tok=""
+        for l in ${coube[$caminho]}; do
+          case " $tok " in *" ${T[tok_$l]:-$l},"*|*" ${T[tok_$l]:-$l} "*) continue ;; esac
+          tok+="${tok:+, }${T[tok_$l]:-$l}"
+        done
+        t r_coube_det "${caminho##*.}" "$tok"; corta "$TXT" $(( COLS - 13 - ${#T[r_coube]} ))
+        PERM+=("         ${AMARELO}↳ ${T[r_coube]}${R}${DIM} ${FMT}${R}")
+      fi
       direto=$(cat "${logs[@]}" 2>/dev/null | grep -a '^\[grabit\] direto: ' | tail -n 1)
       if [[ $direto == *"$SEP"* ]]; then
         direto=${direto#\[grabit\] direto: }
@@ -2419,7 +3061,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
 
 # ───────────────────────────── Execução dos jobs ──────────────────────────────
 lanca_job() {                                 # lanca_job IDX
-  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs s e
+  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs s e n
   # A cascata vai do método mais rápido ao mais caro: 0 é direto; 1 manda o Referer, que os
   # vídeos protegidos contra links de fora costumam exigir, força a imitação de navegador (o
   # próprio yt-dlp avisa que forçá-la sempre pode deixar os downloads mais lentos e instáveis)
@@ -2428,6 +3070,17 @@ lanca_job() {                                 # lanca_job IDX
   if (( NIVEL[$i] == 1 )); then
     (( MODO_CURL )) || extra+=(--referer "$url")
     [[ -n $IMPERSONATE ]] && extra+=(--impersonate "$IMPERSONATE")
+  fi
+  # As conexões deste download, e quem as abre: em arquivo único, só o aria2c sabe abrir várias.
+  # Quem imita um navegador (nível 1) ou usa a sessão dele fica no yt-dlp, que sabe se passar por ele.
+  conexoes_do_job "$i"; n=$NUM
+  CONEX_JOB[$i]=$n; CONEX_SITE[${SITE[$i]}]=$(( ${CONEX_SITE[${SITE[$i]}]:-0} + n ))
+  (( n != CONEXOES_POR_VIDEO )) && extra+=(-N "$n")
+  # (o YouTube limita quem pede pedaços grandes: o yt-dlp, que pede pedaços curtos, é bem mais rápido)
+  if (( n > 1 && NIVEL[$i] == 0 && ! MODO_CURL )) && [[ -n $ARIA && ${SITE[$i]} != youtube.com ]]; then
+    extra+=(--downloader "http:$ARIA" --downloader-args "aria2c:-x$n -s$n")
+    GRABIT_SONDAR=1; [[ -n ${ARIA_OK[${SITE[$i]}]:-} ]] && GRABIT_SONDAR=0
+    export GRABIT_SONDAR
   fi
   read -ra ajuste <<<"${AJUSTES[$i]:-}"
   extra+=("${ajuste[@]}")
@@ -2439,7 +3092,7 @@ lanca_job() {                                 # lanca_job IDX
   # e com pausas entre os pedidos, e com um intervalo maior.
   s=${SITE[$i]}
   if (( ${BLOQ_SITE[$s]:-0} )); then
-    extra+=(-N 1 --sleep-requests 1)
+    extra+=(--sleep-requests 1)
     e=$(( ESPERA_BASE > 0 ? SECONDS + 2 + RANDOM % 3 : SECONDS ))
   elif (( FORCAR || PAUSA_ENTRE_VIDEOS > 0 )); then
     e=$SECONDS
@@ -2497,7 +3150,7 @@ baixa_link() {
     "${arq_site//%/%%}" "${fmts//%/%%}" "$lim"
   cmd+=' %(webpage_url)q %(title|NA)q %(extractor_key|NA)q %(id|NA)q %(requested_formats.0.url,url|NA)q %(protocol|NA)q'
   cmd+=' %(height|0)q %(width|0)q %(fps|0)q %(tbr|0)q %(duration|0)q %(dynamic_range|NA)q %(acodec|NA)q %(n_entries|NA)q'
-  cmd+=' %(http_headers.User-Agent|NA)q'
+  cmd+=' %(http_headers.User-Agent|NA)q %(vcodec|NA)q'
   trap 'mata_arvore "$yt"' USR1
   yt-dlp "${YTDLP_ARGS[@]}" "$@" \
     --print-to-file 'after_filter:%(formats.:.{format_id,url,protocol,height,fps,tbr,vcodec})j' "${fmts//%/%%}" \
@@ -2742,10 +3395,47 @@ site_pode_comecar() {
   (( NUM < 2 )) || [[ ! -d $TMP/navegador.trava ]]
 }
 
+# conexoes_do_job IDX → NUM: quantas conexões este download abre. Parte do que a pessoa escolheu (-c)
+# e baixa conforme o site: quem pediu calma ou recusou conexões extras recebe uma só, e a soma dos
+# downloads de um mesmo site não passa do dobro do escolhido. Assim, uma lista longa de um site só
+# não vira um monte de conexões abertas nele. -F dispensa esse teto, mas não o pedido do site.
+conexoes_do_job() {
+  local i=$1 s=${SITE[$1]} n=$CONEXOES_POR_VIDEO teto
+  if (( ${BLOQ_SITE[$s]:-0} || ${UMA_CONEXAO[$s]:-0} )) || [[ ${AJUSTES[$i]:-} == *"-N 1"* ]]; then
+    n=1
+  elif (( ! FORCAR )); then
+    teto=$(( CONEXOES_POR_VIDEO * 2 ))
+    (( ${CONEX_SITE[$s]:-0} + n > teto )) && n=$(( teto - ${CONEX_SITE[$s]:-0} ))
+    (( n < 1 )) && n=1
+  fi
+  NUM=$n
+}
+
+# confere_recusa IDX: o site recusou conexões deste download? O download segue nas que sobraram (é o
+# próprio aria2c que resolve); os próximos vão com uma só, e depois de alguns tranquilos, tenta de novo.
+# Se a sonda viu que uma conexão só rende mais, vale até o fim desta execução. Se viu que as várias
+# rendem, os próximos downloads desse site não precisam medir de novo.
+confere_recusa() {
+  local i=$1 s=${SITE[$1]}
+  (( ${CONEX_JOB[$i]:-1} > 1 )) || return 0
+  if [[ -z ${RECUSOU[$i]:-} ]] && grep -aqm 1 '^\[grabit\] recusou' "$TMP/$i.log" 2>/dev/null; then
+    RECUSOU[$i]=1
+    if (( ! ${UMA_CONEXAO[$s]:-0} )); then t k_conexoes "$s"; PERM+=("  ${AMARELO}⚠${R} $TXT"); fi
+    (( ${UMA_CONEXAO[$s]:-0} < 5 )) && UMA_CONEXAO[$s]=5
+  fi
+  if (( ${UMA_CONEXAO[$s]:-0} < 1000000 )) && grep -aqm 1 '^\[grabit\] lento' "$TMP/$i.log" 2>/dev/null; then
+    UMA_CONEXAO[$s]=1000000
+    t k_lento "$s"; PERM+=("  ${CIANO}↗${R} $TXT")
+  fi
+  if [[ -z ${ARIA_OK[$s]:-} ]] && grep -aqm 1 '^\[grabit\] sonda ok' "$TMP/$i.log" 2>/dev/null; then ARIA_OK[$s]=1; fi
+  return 0
+}
+
 # site_aceitou SITE: um download dele começou de verdade (ou terminou bem)
 site_aceitou() {
   local s=$1 falta=1 c
   FALHAS_SITE[$s]=0
+  (( ${UMA_CONEXAO[$s]:-0} > 0 )) && UMA_CONEXAO[$s]=$(( ${UMA_CONEXAO[$s]} - 1 ))
   (( ${BLOQ_SITE[$s]:-0} )) && falta=5         # depois de um 429, sobe bem mais devagar
   c=$(( ${CREDITO_SITE[$s]:-0} + 1 ))
   if (( c >= falta )); then
@@ -2805,6 +3495,7 @@ vigia_saude() {
   local s idx
   for (( s = 0; s < J; s++ )); do
     idx=${SLOT_IDX[$s]}
+    (( idx > 0 )) && confere_recusa "$idx"
     (( idx > 0 )) && [[ -z ${SAUDAVEL[$idx]:-} ]] || continue
     grep -aqm 1 '^@@[PD]@@' "$TMP/$idx.log" 2>/dev/null || continue
     SAUDAVEL[$idx]=1
@@ -3051,7 +3742,11 @@ vale_repetir() {
     # pode acontecer quem limita é o site_pediu_calma, que acaba parando o site.
     site_pediu_calma "$site"
     (( ${PARADO_SITE[$site]:-0} )) && return 1
-  elif (( NIVEL[$idx] < 2 && REPETE && tent < TENTATIVAS )); then
+  elif (( REPETE && NIVEL[$idx] == 0 && ! ${SEM_ARIA[$idx]:-0} )) && grep -aq 'aria2c exited with code' "$TMP/$idx.log" 2>/dev/null; then
+    # Quem falhou foi o aria2c, não o método: repete igual, só que pelo yt-dlp. Sem gastar tentativa e
+    # sem subir na cascata, que lembraria desse site como difícil por 30 dias.
+    SEM_ARIA[$idx]=1; UMA_CONEXAO[$site]=5
+  elif (( NIVEL[$idx] < 2 && REPETE && tent < TENTATIVAS + ${SEM_ARIA[$idx]:-0} )); then
     (( NIVEL[$idx] == 0 )) && NIVEL[$idx]=1     # o próximo degrau da cascata
   elif vai_ao_navegador "$idx"; then            # se a página só funciona num navegador, é a vez dele
     NIVEL[$idx]=2
@@ -3280,6 +3975,7 @@ descarta_parciais() {                         # apaga a pasta temporária desta 
 # ───────────────────────────── Verificações iniciais ──────────────────────────
 cabecalho() {
   local t=${T[titulo]} w h
+  [[ $FORMATO_SAIDA == mkv ]] || t=${t% (MKV)}
   w=$(( ${#t} + 4 ))
   if (( COLS < w + 4 )); then                   # terminal estreito: título simples, sem moldura
     printf '\n  %s%s%s\n\n' "$NEG" "${T[titulo_curto]}" "$R"
@@ -3629,8 +4325,15 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
   N_MOVIDOS=$(( N_MOVIDOS + ${#movidas[@]} ))
 }
 
+# O aria2c que o yt-dlp vai chamar: veja --baixa-partes. Sem ele, cada arquivo direto usa uma conexão.
+prepara_aria() {
+  (( CONEXOES_POR_VIDEO > 1 )) && command -v aria2c >/dev/null 2>&1 && mkdir -p "$TMP/aria" || return 0
+  printf '#!/usr/bin/env bash\nexec bash %q --baixa-partes "$@"\n' "$GRABIT_SCRIPT" > "$TMP/aria/aria2c" &&
+    chmod +x "$TMP/aria/aria2c" && ARIA="$TMP/aria/aria2c"
+}
+
 monta_args_ytdlp() {
-  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd qualidade=() opcoes=()
+  local langs=$IDIOMAS_LEGENDAS n=$RESOLUCAO_MAXIMA cmd qualidade=() opcoes=() capa=() ordem=""
   FORMATO='bv*+ba/b'
   # Com limite, vale o lado menor da imagem: a altura em vídeos deitados e a largura nos
   # verticais. Dimensão desconhecida passa (o "?"); se nada couber, o vídeo falha.
@@ -3645,10 +4348,36 @@ monta_args_ytdlp() {
     # com FORMATO_AUDIO, converte (no mp3, na melhor qualidade VBR).
     FORMATO='ba/b'
     qualidade=(-f "$FORMATO" -x --audio-format "${FORMATO_AUDIO/#original/best}" --audio-quality 0)
-  else
+    capa=(--embed-thumbnail)
+  elif [[ $FORMATO_SAIDA == mkv ]]; then
     # Qualidade máxima: melhor vídeo + melhor áudio, empacotados em MKV, com as legendas
-    qualidade=(-f "$FORMATO" --merge-output-format mkv --remux-video mkv --embed-subs --sub-langs "$langs")
+    # (+genpts: um .mpg ou .vob traz quadros sem tempo marcado, e a cópia para MKV falharia)
+    qualidade=(-f "$FORMATO" --merge-output-format mkv --remux-video mkv --ppa 'VideoRemuxer+ffmpeg_i1:-fflags +genpts'
+               --embed-subs --sub-langs "$langs")
+    capa=(--embed-thumbnail)
+  else
+    # Outro formato: aqui o yt-dlp nunca converte depois de baixar. Se o formato não aceitar o vídeo,
+    # o erro prenderia o que já chegou na pasta temporária. Quem troca a embalagem e embute a capa
+    # é o --acabamento, que avisa o que não coube. Antes, dá preferência às versões que já cabem.
+    qualidade=(-f "$FORMATO" --embed-subs --sub-langs "$langs")
+    capa=(--write-thumbnail)
+    case $FORMATO_SAIDA in
+      original) ;;
+      mp4|m4v)  qualidade+=(--merge-output-format mp4/mkv); ordem=,vext:mp4,aext:m4a ;;
+      mov|qt)   qualidade+=(--merge-output-format mov/mkv); ordem=,vext:mp4,aext:m4a ;;
+      webm)     qualidade+=(--merge-output-format webm/mkv); ordem=,vext:webm,aext:webm ;;
+      *)        qualidade+=(--merge-output-format mkv) ;;
+    esac
   fi
+  # Quem pediu um codec prefere a versão do site que já está nele, na maior resolução que houver
+  case $CODEC_VIDEO in
+    h264)  ordem=,vcodec:h264$ordem ;;
+    hevc)  ordem=,vcodec:h265$ordem ;;
+    av1)   ordem=,vcodec:av01$ordem ;;
+    vp9)   ordem=,vcodec:vp9$ordem ;;
+    mpeg4) ordem=,vcodec:h263$ordem ;;
+  esac
+  [[ -n $ordem ]] && qualidade+=(-S "res,fps,hdr:12$ordem")
   YTDLP_ARGS=(
     --ignore-config --color never --newline --no-quiet --no-simulate --progress
     --progress-delta 0.5
@@ -3667,7 +4396,7 @@ monta_args_ytdlp() {
     --embed-metadata --embed-chapters --embed-info-json
     # Capa em JPG (a mais compatível), menos AVIF: para converter, o yt-dlp força o
     # leitor "image2" do ffmpeg, que não abre AVIF — ela é embutida como veio.
-    --embed-thumbnail --convert-thumbnails 'webp>jpg/png>jpg/gif>jpg/bmp>jpg'
+    "${capa[@]}" --convert-thumbnails 'webp>jpg/png>jpg/gif>jpg/bmp>jpg'
 
     # Velocidade e resiliência (com espera crescente entre as repetições)
     -N "$CONEXOES_POR_VIDEO"
@@ -3697,6 +4426,11 @@ monta_args_ytdlp() {
   if (( MIDIA )); then                        # a capa fica também ao lado do vídeo, e o .nfo
     printf -v cmd 'bash %q --nfo' "${GRABIT_SCRIPT//%/%%}"
     YTDLP_ARGS+=(--write-thumbnail --exec "after_move:$cmd %(filepath)q")
+  fi
+  # (depois dos outros: é este que pode trocar o nome do arquivo)
+  if (( ! SO_AUDIO )) && [[ $FORMATO_SAIDA != mkv ]]; then
+    printf -v cmd 'bash %q --acabamento %q %d' "${GRABIT_SCRIPT//%/%%}" "$FORMATO_SAIDA" "$MIDIA"
+    YTDLP_ARGS+=(--exec "after_move:$cmd %(filepath)q")
   fi
   # Histórico: o que já foi baixado é pulado antes de tudo (na maioria dos sites,
   # sem nem acessar a página). Sem ele, o yt-dlp reextrai o vídeo, baixa a capa de
@@ -4211,6 +4945,7 @@ monta_plano() {
     elif [[ -n ${DISPLAY:-} ]] && ! command -v xclip >/dev/null 2>&1 && ! command -v xsel >/dev/null 2>&1; then clip=xclip; fi
     [[ -n $clip ]] && OPCIONAIS+=("clip:$clip")
   fi
+  command -v aria2c >/dev/null 2>&1 || OPCIONAIS+=(aria2)
   acha_navegador || OPCIONAIS+=(navegador)
   descreve_plano
 }
@@ -4232,6 +4967,8 @@ decide_opcionais() {
             *) command -v unzip >/dev/null 2>&1 || SISTEMA+=(unzip); ETAPAS+=(deno) ;;
           esac
         fi ;;
+      aria2)
+        if (( ASSUME_SIM )) || pergunta_sim "${T[ins_q_aria2]}"; then SISTEMA+=(aria2); fi ;;
       clip:*)
         pkg=${o#clip:}; t ins_q_clip "$pkg"
         if (( ASSUME_SIM )) || pergunta_sim "$TXT"; then SISTEMA+=("$pkg"); fi ;;
@@ -4362,6 +5099,7 @@ mostra_versoes() {
   v=$(yt-dlp --version 2>/dev/null) || v="—"
   kv "yt-dlp" "$v"
   v=$(ffmpeg -version 2>/dev/null | awk 'NR==1{print $3}'); kv "ffmpeg" "${v:-—}"
+  v=$(aria2c --version 2>/dev/null | awk 'NR==1{print $3}'); kv "aria2" "${v:-—}"
   candidatos_js; escolhe_js "$(consulta_js)"
   if [[ -n $JS_RUNTIME ]]; then kv "JavaScript" "$JS_RUNTIME"
   elif [[ -n $JS_RECUSADO ]]; then t js_velho "$JS_RECUSADO"; kv "JavaScript" "${AMARELO}${TXT}${R}"
@@ -4660,6 +5398,160 @@ verifica_colecao() {
   return "$rc"
 }
 
+# ───────────────────────────── Conversão (grabit converter) ───────────────────
+prog_conversao() {                            # prog_conversao POSIÇÃO VELOCIDADE: a linha de progresso
+  local pos=$1 v10=0 pct="" et=""
+  (( CONV_DUR > 0 )) && { pct=$(( pos * 100 / CONV_DUR )); (( pct > 100 )) && pct=100; pct=" ${pct}%"; }
+  [[ $2 =~ ^([0-9]+)(\.([0-9]))? ]] && v10=$(( 10#${BASH_REMATCH[1]} * 10 + 10#${BASH_REMATCH[3]:-0} ))
+  if (( v10 > 0 && CONV_DUR > pos )); then fmt_dur $(( (CONV_DUR - pos) * 10 / v10 )); et=" · ETA $FMT"; fi
+  printf '\r%s[K  %s%s%s %s%s%s%s' "$ESC" "$ACENTO" "${SPIN[$(( pos % ${#SPIN[@]} ))]}" "$R" "$CONV_ROTULO" "$DIM" "$pct$et" "$R"
+}
+
+# converte_um ARQUIVO ÍNDICE: decide o destino, converte e mostra o resultado
+converte_um() {
+  local f=$1 idxs=$2 nome ext alvo novo cod=$CODEC_VIDEO rc tok l
+  nome=${f##*/}; nome=${nome%.*}; ext=${f##*.}; ext=${ext,,}
+  faixas "$f"
+  if (( F_VID + F_AUD == 0 )); then
+    CV_ERROS=$(( CV_ERROS + 1 )); linha_resultado "✖" "$VERMELHO" "$idxs" "$nome" "${T[cv_ilegivel]}"; printf '%s\n' "$LINHA"
+    return 0
+  fi
+  [[ -n $cod && $F_VC == "$cod" ]] && cod=""  # já está nesse codec: recomprimir só pioraria
+  alvo=$ext
+  if [[ ${ORIGEM[FORMATO_SAIDA]:-} == opção && $FORMATO_SAIDA != original ]]; then
+    alvo=$FORMATO_SAIDA
+  elif [[ -n $cod ]]; then                    # um codec novo nem sempre cabe na embalagem antiga
+    case $ext in
+      mkv|mk3d|mp4|m4v|mov) ;;
+      webm) [[ $cod == av1 || $cod == vp9 ]] || alvo=mp4 ;;
+      *)    alvo=mp4 ;;
+    esac
+  fi
+  if [[ $alvo == "$ext" && -z $cod ]]; then
+    CV_PULADOS=$(( CV_PULADOS + 1 )); linha_resultado "↷" "$AMARELO" "$idxs" "$nome" "${T[cv_ja]}"; printf '%s\n' "$LINHA"
+    return 0
+  fi
+  if [[ $alvo != "$ext" ]]; then novo=${f%.*}.$alvo
+  elif (( SUBSTITUIR )); then novo=$f
+  else novo=${f%.*}.$cod.$ext; fi
+  if [[ $novo != "$f" && -e $novo ]]; then
+    CV_PULADOS=$(( CV_PULADOS + 1 )); t cv_existe "${novo##*/}"; linha_resultado "↷" "$AMARELO" "$idxs" "$nome" "$TXT"; printf '%s\n' "$LINHA"
+    return 0
+  fi
+  (( F_HDR )) && [[ $cod == h264 ]] && aviso "${T[cv_hdr]}"
+  CONV_DUR=$F_DUR; TR_CAPA_FORA=""; TR_PROG=""
+  corta "$idxs  $nome" $(( COLS - 30 )); CONV_ROTULO=$FMT
+  (( INTERATIVO )) && TR_PROG=prog_conversao
+  converte "$f" "$novo" "$cod"; rc=$?
+  (( INTERATIVO )) && printf '\r%s[K' "$ESC"
+  (( CANCELADO )) && return 0
+  if (( rc != 0 )); then
+    CV_ERROS=$(( CV_ERROS + 1 ))
+    case $TR_ERRO in
+      codificador) t cv_sem_enc "$cod"; l=$TXT ;;
+      verificacao) l=${T[cv_verificacao]} ;;
+      ilegivel)    l=${T[cv_ilegivel]} ;;
+      *)           l=$TR_ERRO ;;
+    esac
+    linha_resultado "✖" "$VERMELHO" "$idxs" "$nome" "${T[r_falhou]}"; printf '%s\n' "$LINHA"
+    corta "$l" $(( COLS - 12 )); printf '         %s↳ %s%s\n' "$VERMELHO" "$FMT" "$R"
+    if [[ -z $cod && $TR_ERRO != codificador ]]; then printf '         %s↳ %s%s\n' "$DIM" "${T[cv_dica_codec]}" "$R"; fi
+    return 0
+  fi
+  (( SUBSTITUIR )) && [[ $novo != "$f" ]] && rm -f -- "$f"
+  CV_OK=$(( CV_OK + 1 ))
+  sonda "$novo"
+  montar_meta "$S_H" "$S_FPS" "$S_HDR" "$S_VC" "$S_AC" "$S_CANAIS" "$S_DUR" "$S_TAM"
+  linha_resultado "✔" "$VERDE" "$idxs" "${novo##*/}" "$META"; printf '%s\n' "$LINHA"
+  (( TR_EXATO )) && printf '         %s↳ %s%s\n' "$DIM" "${T[cv_exato]}" "$R"
+  if [[ -n $TR_PERDEU ]]; then
+    tok=""
+    for l in $TR_PERDEU; do tok+="${tok:+, }${T[tok_${l}_conv]:-${T[tok_$l]:-$l}}"; done
+    t cv_perdeu "$alvo" "$tok"; corta "$TXT" $(( COLS - 13 )); printf '         %s↳ %s%s\n' "$AMARELO" "$FMT" "$R"
+  fi
+}
+
+resumo_conversao() {
+  fmt_tempo "$SECONDS"
+  local seg=$FMT
+  if (( CANCELADO )); then printf '\n  %s── %s ──%s\n' "$DIM" "${T[cv_s_parcial]}" "$R"
+  else printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "${T[cv_s_titulo]}" "$R"; fi
+  linha_resumo "✔" "$VERDE"    "${T[cv_s_ok]}"      "${NEG}${CV_OK}${R}"
+  linha_resumo "↷" "$AMARELO"  "${T[cv_s_pulados]}" "${NEG}${CV_PULADOS}${R}"
+  linha_resumo "✖" "$VERMELHO" "${T[cv_s_erro]}"    "${NEG}${CV_ERROS}${R}"
+  linha_resumo "◷" "$DIM"      "${T[s_tempo]}"      "$seg"
+  printf '\n'
+  (( CANCELADO )) && printf '  %s\n\n' "${T[cv_cancelado]}"
+}
+
+# grabit converter ARQUIVO|PASTA… [-e FORMATO] [-k CODEC] [--substituir]. Trocar a embalagem copia a
+# imagem e o som, sem perda, e recomprimir sempre perde um pouco. O original só sai com --substituir.
+conversao() {
+  local arqs=() achados=() f i=0 n idxs ok=0
+  [[ ${ORIGEM[FORMATO_SAIDA]:-} == opção && $FORMATO_SAIDA != original ]] && ok=1
+  [[ ${ORIGEM[CODEC_VIDEO]:-} == opção ]] && ok=1
+  if (( ! ok )); then erro "${T[cv_uso]}"; return 2; fi
+  if (( ! ${#ARGS_LINKS[@]} )); then erro "${T[cv_sem_alvo]}"; return 2; fi
+  if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+    t dep_faltando ffmpeg; erro "$TXT"
+    comando_grabit "${T[cmd_instalar]}"; t dep_instalador "${CIANO}${FMT}${R}"; printf '%s\n\n' "$TXT"
+    return 1
+  fi
+  for f in "${ARGS_LINKS[@]}"; do
+    if [[ -d $f ]]; then
+      mapfile -d '' achados < <(find "${f%/}" \( -name .parciais -o -name logs \) -prune -o -type f \
+        \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.m4v' -o -iname '*.avi' \
+           -o -iname '*.ts' -o -iname '*.flv' -o -iname '*.wmv' -o -iname '*.mpg' -o -iname '*.mpeg' -o -iname '*.ogv' \) \
+        ! -name '*.grabit-tmp.*' -print0 2>/dev/null | sort -z)
+      arqs+=("${achados[@]}")
+    elif [[ -f $f ]]; then arqs+=("$f")
+    else t cv_nao_existe "$f"; erro "$TXT"; return 1; fi
+  done
+  n=${#arqs[@]}
+  atualiza_largura
+  printf '\n  %s%s%s\n\n' "$NEG" "${T[cv_titulo]}" "$R"
+  if (( n == 0 )); then printf '  %s\n\n' "${T[cv_vazio]}"; return 0; fi
+  t vc_arquivos "$n"; kv "${T[vc_arquivos_r]}" "$TXT"
+  if [[ -n $CODEC_VIDEO && $FORMATO_SAIDA != mkv ]]; then nome_codec "$CODEC_VIDEO"; t cv_recomp_ext "$FMT" "$FORMATO_SAIDA"; kv "${T[cv_o_que]}" "$TXT"
+  elif [[ -n $CODEC_VIDEO ]]; then nome_codec "$CODEC_VIDEO"; t cv_recomp "$FMT"; kv "${T[cv_o_que]}" "$TXT"
+  else t cv_copia "$FORMATO_SAIDA"; kv "${T[cv_o_que]}" "$TXT"; fi
+  printf '\n'
+  trap 'CANCELADO=1' INT TERM
+  (( INTERATIVO )) && printf '%s' "${ESC}[?25l"
+  SECONDS=0
+  for f in "${arqs[@]}"; do
+    i=$(( i + 1 ))
+    printf -v idxs "%0${#n}d/%d" "$i" "$n"
+    converte_um "$f" "$idxs"
+    (( CANCELADO )) && break
+  done
+  (( INTERATIVO )) && printf '%s' "${ESC}[?25h"
+  resumo_conversao
+  (( CANCELADO )) && return 130
+  (( CV_ERROS == 0 ))
+}
+
+# -k na hora do download: recomprime um por vez, depois que tudo chegou. Assim, os downloads não
+# disputam o processador com a recompressão, e nada do que chegou se perde se ela falhar.
+recomprime_baixados() {
+  local f i=0 n=${#CONVERTER[@]} idxs seg=$SECONDS
+  SUBSTITUIR=1
+  COMECOU=0                                   # o resumo dos downloads já saiu: o limpa não repete
+  trap 'CANCELADO=1' INT TERM HUP
+  printf '  %s%s%s\n\n' "$NEG" "${T[cv_titulo_baixados]}" "$R"
+  (( INTERATIVO )) && printf '%s' "${ESC}[?25l"
+  SECONDS=0
+  for f in "${CONVERTER[@]}"; do
+    i=$(( i + 1 ))
+    printf -v idxs "%0${#n}d/%d" "$i" "$n"
+    converte_um "$f" "$idxs"
+    (( CANCELADO )) && break
+  done
+  (( INTERATIVO )) && printf '%s' "${ESC}[?25h"
+  resumo_conversao
+  (( CV_ERROS == 0 && ! CANCELADO ))
+}
+
 # ───────────────────────────── Seção BAIXADOS (--baixados) ───────────────────
 # grabit --baixados [listar|editar|voltar N…|marcar LINK…|limpar] cuida da seção BAIXADOS
 # do arquivo de links (-l, ou o links.txt): listar, editar só ela no editor, devolver
@@ -4831,6 +5723,7 @@ case $COMANDO in
   verificar) verifica_colecao; exit $? ;;
   baixados)  gerencia_baixados; exit $? ;;
   versao)    mostra_versao; exit $? ;;
+  converter) conversao; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM
@@ -4841,6 +5734,7 @@ atualiza_largura
 cabecalho
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/grabit.XXXXXX") || { erro "${T[tmp_falhou]}"; exit 1; }
 verifica_dependencias
+prepara_aria
 carrega_metodos
 [[ $COMANDO == curl ]] && le_curl
 if (( CAPTURA )) && ! detecta_clip; then
@@ -4893,6 +5787,11 @@ if (( MIDIA )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_midia]}"
 elif (( SUBPASTAS )); then kv "${T[kv_destino]}" "$PASTA_SAIDA/${T[kv_subpastas]}"
 else kv "${T[kv_destino]}" "$PASTA_SAIDA"; fi
 if (( UPGRADE )); then kv "${T[kv_modo]}" "${T[kv_upgrade]}"; fi
+if (( ! SO_AUDIO )) && [[ $FORMATO_SAIDA != mkv || -n $CODEC_VIDEO ]]; then
+  if [[ $FORMATO_SAIDA == original ]]; then txt_saida=${T[kv_saida_orig]}; else txt_saida=.$FORMATO_SAIDA; fi
+  if [[ -n $CODEC_VIDEO ]]; then nome_codec "$CODEC_VIDEO"; t kv_saida_codec "$FMT"; txt_saida+=$TXT; fi
+  kv "${T[kv_saida]}" "$txt_saida"
+fi
 if (( MODO_CURL )); then t kv_curl "$N_CAB_CURL" "$N_COOK_CURL" "$ROTULO_CURL"; kv "${T[kv_modo]}" "$TXT"; fi
 if (( SO_AUDIO )); then
   if [[ $FORMATO_AUDIO == original ]]; then kv "${T[kv_modo]}" "${T[kv_audio_original]}"
@@ -4934,7 +5833,8 @@ elif (( FILA_VIVA )); then kv "${T[kv_fila_viva]}" "${T[kv_fv]}"; fi
 kv "${T[kv_extras]}"   "$txt_extras"
 FFMPEG_VER=${FFMPEG_VER:-?}
 kv "${T[kv_ferramentas]}" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
-kv "${T[kv_recursos]}"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}${T[js_nenhum]}${R}}"
+if [[ -n $ARIA ]]; then txt_aria=ok; else txt_aria="${DIM}${T[js_nenhum]}${R}"; fi
+kv "${T[kv_recursos]}"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}${T[js_nenhum]}${R}} · aria2: $txt_aria"
 printf '\n'
 for a in "${AVISOS_CONFIG[@]}"; do t cfg_linha "${a%%:*}" "${a#*:}"; aviso "$TXT"; done
 if (( LIMITE_J > 0 )); then
@@ -4997,6 +5897,8 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     wait "${SLOT_PID[$s]}" 2>/dev/null; rc=$?
     SLOT_IDX[$s]=0
     ATIVOS_SITE[${SITE[$idx]}]=$(( ${ATIVOS_SITE[${SITE[$idx]}]:-1} - 1 ))
+    confere_recusa "$idx"
+    CONEX_SITE[${SITE[$idx]}]=$(( ${CONEX_SITE[${SITE[$idx]}]:-0} - ${CONEX_JOB[$idx]:-0} )); CONEX_JOB[$idx]=0
     if (( NAV_DONO == idx )); then NAV_DONO=0; rmdir "$TMP/navegador.trava" 2>/dev/null; fi
     if (( rc == 0 )) && [[ -z ${SAUDAVEL[$idx]:-} ]]; then SAUDAVEL[$idx]=1; site_aceitou "${SITE[$idx]}"; fi
     if (( rc != 0 )) && vale_repetir "$idx"; then continue; fi
@@ -5048,5 +5950,9 @@ descarta_parciais
 move_baixados
 resumo
 (( FILA_VIVA )) || notifica
+if (( ${#CONVERTER[@]} )) && ! recomprime_baixados; then
+  (( CANCELADO )) && exit 130
+  exit 1
+fi
 (( N_ERRO > 0 || N_ADIADOS > 0 || FINALIZADOS < TOTAL )) && exit 1
 exit 0

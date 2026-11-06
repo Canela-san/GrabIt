@@ -49,6 +49,7 @@ bash grabit.sh --install
 |---|---|---|
 | Deno | YouTube requires a JavaScript runtime to unlock the best resolutions (only offered if there's none that yt-dlp accepts) | installs |
 | `curl-cffi` | impersonate a browser when a site blocks automated downloads | installs |
+| aria2 | download direct files over several connections | installs |
 | `wl-clipboard` or `xclip` | capture copied links (`-C`) and read the copied cURL | installs |
 | Firefox | sites that only work in a browser (only offered if you have no compatible one) | **doesn't install** |
 
@@ -167,7 +168,10 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-l FILE` | file with the links (`-` = standard input) | `links.txt` |
 | `-o FOLDER` | folder where videos are saved | `./Downloads` |
 | `-j N` | simultaneous downloads | `4` |
-| `-c N` | connections (fragments) per video | `4` |
+| `-c N` | connections per video, regulated per site (see [Several connections](#how-it-works)) | `3` |
+| `-O`, `--original` | keeps the site's format: `.mp4` stays `.mp4` | — |
+| `-e FORMAT`, `--format` | saves in this format: `mkv`, `mp4`, `webm`, `mov`… | `mkv` |
+| `-k CODEC`, `--codec` | re-encodes if the video comes in another one: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
 | `-r HEIGHT` | maximum resolution (`720`, `1080`, `2160` or `4k`…) | no limit |
 | `-F` | force: ignore the `grabit.config` limits and the automatic per-site pace for this run | — |
 | `-y` | with `install`: install everything without asking | — |
@@ -253,7 +257,7 @@ COOKIES_NAVEGADOR=firefox
 | `FORMATO_AUDIO` | `original` (no re-encoding) or `mp3`, `m4a`, `aac`, `opus`, `flac`, `wav`, `alac`, `vorbis` | `original` |
 | `RESOLUCAO_ALERTA` | warn when the best version available is below this; `0` = never | `720` |
 | `DOWNLOADS_SIMULTANEOS` | videos at the same time | `4` |
-| `CONEXOES_POR_VIDEO` | connections per video | `4` |
+| `CONEXOES_POR_VIDEO` | connections per video (each site's pace may lower it) | `3` |
 | `TENTATIVAS` | attempts per link (`1` = don't retry) | `2` |
 | `LIMITE_POR_SITE` | maximum downloads at once from the same site (`0` = automatic) | `0` |
 | `PAUSA_ENTRE_VIDEOS` | seconds of pause before each video, with random variation | `0` |
@@ -269,6 +273,8 @@ COOKIES_NAVEGADOR=firefox
 | `OPCOES_YTDLP` | extra options for yt-dlp, separated by spaces (e.g. `--force-ipv4`) | — |
 | `USAR_NAVEGADOR` | `1` opens a browser when a page only works in one; `0` never opens it | `1` |
 | `PROCURAR_ARQUIVO` | `1` looks for a direct file better than the stream before downloading; `0` doesn't | `1` |
+| `FORMATO_SAIDA` | file format: `mkv`, `mp4`, `webm`, `mov`…, or `original` (as the site delivers it) | `mkv` |
+| `CODEC_VIDEO` | re-encodes if the video comes in another codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
 | `PROGRAMA_NAVEGADOR` | which browser to open (e.g. `google-chrome`); empty = the first one found | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
 | `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
@@ -320,7 +326,34 @@ GrabIt downloads **the best version the site delivers**, without recompressing i
 
 The file the uploader sent is almost never available to anyone: big sites recompress the video when they receive it, and that is the version everybody watches. So, compared to the original upload, the copy may be inferior; the loss happened on the site, not in the download.
 
-A stream doesn't mean lower quality: it is video split into pieces. And `.mp4` doesn't mean original: it is often a lighter version. That's why GrabIt measures both before choosing ([Direct file](#how-it-works)). It doesn't see what only shows up with the video playing in a browser, unless the page itself requires the browser.
+A stream doesn't mean lower quality: it is video split into pieces. And a direct file (`.mp4`, `.mkv` or another) doesn't mean original: it is often a lighter version, and the address doesn't say which. That's why GrabIt measures both before choosing ([Direct file](#how-it-works)). It doesn't see what only shows up with the video playing in a browser, unless the page itself requires the browser.
+
+### File format
+
+With no option, everything ends up in **MKV**, which holds it all: thumbnail, subtitles of any kind, chapters and the site's data. The picture and sound are the same the site delivers. The one detail is that MKV stores each frame's time rounded to the millisecond (at 24 fps, 41 or 42 ms instead of 41.667), like the vast majority of MKV files out there, including those made with `mkvmerge`.
+
+```bash
+grabit LINK -O            # keeps the site's format: .mp4 stays .mp4, with each frame's exact time
+grabit LINK -e mp4        # saves as .mp4 (also: webm, mov, avi, ts, flv…)
+grabit LINK -k h264       # re-encodes to H.264 if the video comes in another codec
+grabit LINK -k h264 -e mp4
+```
+
+With `-O` and `-e`, metadata goes in if the format accepts it, and the summary reports what didn't fit. `.mp4` holds title, description, date, channel, chapters, thumbnail and subtitles. Only MKV holds the site's data (`info.json`), which `grabit check` uses to find incomplete videos and offer to download them again. In other formats, a thumbnail and subtitles that don't fit are left beside the video. To make a format the default, set `FORMATO_SAIDA` in `grabit.config`.
+
+With `-k`, GrabIt prefers the site's version already in that codec, at the highest resolution there is, and only re-encodes if there is none: after everything is downloaded, one video at a time. Combine it with `-r 1080` to avoid re-encoding a 4K video when the site has the 1080p one in the requested codec.
+
+### Converting a downloaded video
+
+```bash
+grabit convert video.mkv -e mp4             # changes the extension, without re-encoding
+grabit convert Downloads -e mp4 --replace   # the whole folder, without keeping the originals
+grabit convert video.mp4 -k h264            # re-encodes: becomes video.h264.mp4
+```
+
+**Changing the extension doesn't touch the quality**, however many times you do it: picture and sound are copied, bit by bit. What changes is what each format can hold. GrabIt keeps all that fits, removes only what is strictly necessary and reports what was left out. Going from MKV to `.mp4` or `.mov`, it also restores each frame's exact time, if the video has a constant frame rate. Some pairs don't exist without re-encoding, such as H.264 in `.webm`: it explains that, and `-k` solves it.
+
+**Re-encoding always loses a little quality** and can take a long time, but sometimes it is the only way to play the video on a certain device. The original only goes away with `--replace`, and never before the new file is checked. A video already in the requested codec is left alone.
 
 ## A summary at the end
 
@@ -340,8 +373,9 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 
 ## How it works
 
-- **Format:** yt-dlp's `bv*+ba/b` (best video + best audio) with **MKV** output, which accepts any codec. Nothing is re-encoded: the picture is the same the site delivers, frame by frame, with one detail: MKV stores each frame's time rounded to the millisecond.
-- **Direct file:** before downloading a stream (HLS/DASH), GrabIt looks for an `.mp4`, `.webm` or similar in the site's offer and in the page itself, including scripts and download buttons, and measures up to 4 candidates with `ffprobe`. It only switches if it is the same video (same duration), has audio and is better in resolution, fps or bitrate, in that order; with the same picture, the file wins, because a single file means far fewer requests to the site. If the page doesn't open in yt-dlp, the search comes before opening a browser. A file mentioned only in the page comes without what only the site provides (thumbnail, subtitles, channel). On a site where nothing turns up three times in a row, the search stops until the next run. `PROCURAR_ARQUIVO=0` turns it off; `-x`, `-u`, `-m` and `grabit curl` don't search.
+- **Format:** yt-dlp's `bv*+ba/b` (best video + best audio) with **MKV** output, which accepts any codec. Nothing is re-encoded: the picture is the same the site delivers, frame by frame, with one detail: MKV stores each frame's time rounded to the millisecond ([File format](#file-format)).
+- **Several connections:** for video split into pieces (HLS/DASH), yt-dlp itself opens the connections. For a single file, it only uses one, and what opens more is [aria2](https://aria2.github.io) (optional: `grabit install` offers it). With 3 connections, a real site delivered 3 times more. The number is regulated per site: files under 40 MB aren't split; downloads from the same site add up to at most twice `-c`; if the site refuses the extra connections, the download finishes on the ones left, losing nothing, and the next ones use only one; a site that asked to slow down gets only one. Since more connections aren't always faster, after a few seconds a probe compares them with a single plain connection and, if that delivers over twice as much, the download carries on without aria2. YouTube, which throttles large requests, always goes through yt-dlp. `-c 1` turns it off.
+- **Direct file:** before downloading a stream (HLS/DASH), GrabIt looks for a video file in the site's offer and in the page itself, including scripts and download buttons: `.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.wmv`, `.flv`, `.mpg`, `.ts` and others, plus a `<video>` or download button with no extension in its address. It measures up to 4 candidates with `ffprobe`, starting with whatever the name promises to be the original or the highest resolution. It switches if it is the same video (same duration), has audio and is better in resolution or fps. With the same picture, the file wins unless it is clearly lighter (under 75% of the stream's bitrate, allowing for the difference between codecs): it may be the original the stream came from, and it is one download instead of hundreds of pieces. If the page doesn't open in yt-dlp, the search comes before opening a browser. A file mentioned only in the page comes without what only the site provides (thumbnail, subtitles, channel). On a site where nothing turns up three times in a row, the search stops until the next run. `PROCURAR_ARQUIVO=0` turns it off; `-x`, `-u`, `-m` and `grabit curl` don't search.
 - **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A download that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, network drop) **starts over from scratch** next time instead of resuming the pieces: resuming can leave holes in the video, and here quality comes before speed. The links that were still pending go to `links_falhos.txt`.
 - **Cascade of attempts:** each link starts with the fastest way and only climbs if it has to: **1)** direct; **2)** with the `Referer`, impersonating a browser when `curl-cffi` is installed and with the adjustment for the error (IPv4 on network failures, one connection at a time on refused pieces, slower on 429); **3)** through the browser, if the page only works in one. Errors nothing can fix (private, removed video, 404) stop right away.
 - **The cascade remembers:** the step that worked on each site is kept (in `~/.local/share/grabit/metodos.txt`), and the site's next links start right there. On a long list, this avoids repeating on every link a path already known to fail. The memory expires in 30 days and drops if the method stops working.

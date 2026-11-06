@@ -172,6 +172,11 @@ if [ -n "${STUB_DORME:-}" ]; then                                               
     printf 'ini\n' >> "$STUB_CONC"; sleep "$STUB_DORME"; printf 'fim\n' >> "$STUB_CONC" ;;
   esac
 fi
+case "$*" in *--downloader*)                                                          # o aria2c, por conta do teste
+  [ -z "${STUB_RECUSA:-}" ] || echo "[grabit] recusou 429"
+  if [ -n "${STUB_LENTO:-}" ]; then printf '[grabit] lento\nERROR: aria2c exited with code 7\n'; exit 1; fi
+  if [ -n "${STUB_ARIA_FALHA:-}" ]; then echo "ERROR: aria2c exited with code 1"; exit 1; fi ;;
+esac
 [ -z "${STUB_D:-}" ] || printf '%s\n' "$STUB_D"                                       # o resultado, se o teste quiser um
 [ -z "${STUB_ERRO:-}" ] && exit 0
 echo "ERROR: $STUB_ERRO"; exit 1
@@ -408,6 +413,7 @@ formas "GrabIt · atualização" atualizar update
 formas "não existe" verificar check -- "$TMP/nao-existe"
 formas "seção BAIXADOS" baixados downloaded -- -l "$L"
 formas "cópia sem Git" versao versão version
+formas "Diga o formato" converter convert
 falso w1 -L pt -- update
 espera "depois de -- a palavra não é comando" contem w1 "Nenhum link válido"
 falso w2 -L pt -l update --config
@@ -418,6 +424,103 @@ espera "só a primeira palavra pode ser comando" nao_contem w3 "atualização"
 echo http://a.invalid/w4 > update
 falso w4 -L pt ./update
 espera "arquivo com nome de comando vale com ./" contem "$STUB_LOG" "a.invalid/w4"
+
+secao "Várias conexões"
+D="$TMP/conexoes"; mkdir -p "$D" "$TMP/comaria"; cd "$D" || exit 1
+printf '#!/bin/sh\nexit 0\n' > "$TMP/comaria/aria2c"; chmod +x "$TMP/comaria/aria2c"
+comaria() { HOME="$TMP/casa" PATH="$TMP/comaria:$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
+pedido() { grep -F -- "$1" "$STUB_LOG" | tail -n 1 | grep -qF -- "$2"; }
+sem_pedido() { ! pedido "$1" "$2"; }
+: > "$STUB_LOG"
+comaria c1 -L pt http://a.invalid/c1
+espera "arquivo direto: abre 3 conexões pelo aria2c" pedido a.invalid/c1 "aria2c:-x3 -s3"
+espera "…e os pedaços de um stream também vão com 3" pedido a.invalid/c1 "-N 3"
+comaria c2 -L pt -c 5 http://a.invalid/c2
+espera "-c muda o número" pedido a.invalid/c2 "aria2c:-x5 -s5"
+comaria c3 -L pt -c 1 http://a.invalid/c3
+espera "-c 1 dispensa o aria2c" sem_pedido a.invalid/c3 "--downloader"
+comaria c4 -L pt https://www.youtube.com/watch?v=abc
+espera "o YouTube fica no yt-dlp: ele limita quem pede pedaços grandes" sem_pedido youtube.com/watch "--downloader"
+if ! command -v aria2c >/dev/null 2>&1; then
+  falso c5 -L pt http://a.invalid/c5
+  espera "sem aria2c, uma conexão por arquivo e nenhum erro" sem_pedido a.invalid/c5 "--downloader"
+fi
+: > "$STUB_LOG"; rm -f "$TMP/conc"
+STUB_DORME=3 STUB_PROGRESSO=1 STUB_CONC="$TMP/conc" comaria c6 -L pt -j 4 http://b.invalid/1 http://b.invalid/2 http://b.invalid/3 http://b.invalid/4
+espera "um site só não abre conexões sem fim: a soma para no dobro de -c" test "$(grep -c 'aria2c:-x3' "$STUB_LOG")" -eq 2
+espera "…e os demais vão com uma" test "$(grep -- '-- http://b.invalid/' "$STUB_LOG" | grep -c -- '-N 1 ')" -eq 2
+: > "$STUB_LOG"
+STUB_RECUSA=1 comaria c7 -L pt -j 1 http://c.invalid/1 http://c.invalid/2
+espera "site que recusa as conexões extras é avisado" contem c7 "recusou as conexões extras"
+espera "…e o próximo vai com uma só" sem_pedido c.invalid/2 "--downloader"
+: > "$STUB_LOG"
+STUB_ARIA_FALHA=1 comaria c8 -L pt http://d.invalid/1
+espera "o aria2c falhou: repete sem ele" sem_pedido d.invalid/1 "--downloader"
+espera "…sem subir na cascata" sem_pedido d.invalid/1 "--referer"
+espera "…sem gastar tentativa nem marcar o site como difícil" nao_contem "$XDG_DATA_HOME/grabit/metodos.txt" "d.invalid"
+: > "$STUB_LOG"
+STUB_LENTO=1 comaria c9 -L pt -j 1 http://e.invalid/1 http://e.invalid/2
+espera "a sonda viu que uma conexão só rende mais: avisa" contem c9 "rende mais com uma conexão só"
+espera "…e o site segue sem o aria2c" sem_pedido e.invalid/2 "--downloader"
+mkdir -p "$TMP/falso-aria"; cat > "$TMP/falso-aria/aria2c" <<'EOF2'
+#!/bin/sh
+printf '[#a1b2c3 20MiB/60MiB(34%%) CN:3 DL:10MiB ETA:1m3s]\n'
+printf 'Exception: errorCode=22 URI=http://x/\n  -> errorCode=22 The response status is not successful. status=429\n'
+EOF2
+chmod +x "$TMP/falso-aria/aria2c"
+GRABIT_SONDAR=0 PATH="$TMP/falso-aria:$PATH" bash "$G" --baixa-partes --out 'Um titulo [abc].f137.mp4.part' -- http://x/ > traduzido 2>&1
+ate grep -q 'HTTP Error 429' traduzido
+espera "o progresso do aria2c vira a linha do painel" contem traduzido "$(printf '@@P@@20971520\x1f62914560\x1f10485760\x1f63\x1f\x1f\x1f?\x1f\x1f\x1f\x1fUm titulo')"
+espera "…e a recusa, um aviso para o GrabIt" contem traduzido "[grabit] recusou 429"
+
+secao "Formato do arquivo"
+D="$TMP/formato"; mkdir -p "$D"; cd "$D" || exit 1
+: > "$STUB_LOG"
+falso f1 -L pt http://f.invalid/1
+espera "padrão: MKV, com a capa pelo yt-dlp" pedido f.invalid/1 "--remux-video mkv"
+espera "…e nenhum acabamento" sem_pedido f.invalid/1 "--acabamento"
+for o in "-O" "--original"; do
+  falso f2 -L pt "$o" "http://f.invalid/2$o"
+  espera "$o não converte" sem_pedido "f.invalid/2$o" "--remux-video"
+  espera "$o deixa a capa com o acabamento, que avisa o que não coube" pedido "f.invalid/2$o" "--acabamento original"
+  espera "$o nem pede a capa embutida ao yt-dlp, que prenderia o vídeo na pasta temporária" sem_pedido "f.invalid/2$o" "--embed-thumbnail"
+done
+for o in "-e mp4" "-e .MP4" "--formato mp4" "--format=mp4" "--extensao mp4"; do
+  read -ra a <<<"$o"
+  falso f3 -L pt "${a[@]}" "http://f.invalid/3${a[0]}"
+  espera "$o" pedido "f.invalid/3${a[0]}" "--acabamento mp4"
+done
+falso f4 -L pt -e mp4 http://f.invalid/4
+espera "-e mp4: prefere as versões que já cabem" pedido f.invalid/4 "vext:mp4,aext:m4a"
+espera "…sem abrir mão da resolução" pedido f.invalid/4 "-S res,fps,hdr:12"
+FORMATO_SAIDA=original falso f5 -L pt http://f.invalid/5
+espera "FORMATO_SAIDA no ambiente ou no grabit.config" pedido f.invalid/5 "--acabamento original"
+falso f6 -L pt -e xyz http://f.invalid/6
+espera "formato desconhecido é recusado" codigo "$RC" 2
+falso f7 -L pt --formato
+espera "--formato sem valor é recusado" codigo "$RC" 2
+for o in "-k h264" "-k x264" "--codec avc" "--codec=h264"; do
+  read -ra a <<<"$o"
+  falso f8 -L pt "${a[@]}" "http://f.invalid/8${a[0]}"
+  espera "$o prefere a versão que já está nesse codec" pedido "f.invalid/8${a[0]}" "vcodec:h264"
+done
+espera "-k não procura outro arquivo: ela escolheria pelos números" sem_pedido "f.invalid/8-k" "--procura-direto"
+falso f9 -L pt -e av1 http://f.invalid/9
+espera "-e av1: é um codec, não uma extensão, e funciona" pedido f.invalid/9 "vcodec:av01"
+espera "…no MKV de sempre" pedido f.invalid/9 "--remux-video mkv"
+falso f10 -L pt -k xyz http://f.invalid/10
+espera "codec desconhecido é recusado" codigo "$RC" 2
+falso f11 -L pt -x -O http://f.invalid/11
+espera "só áudio: as opções de vídeo ficam de fora, com um aviso" contem f11 "valem para vídeo"
+espera "…e nada de acabamento" sem_pedido f.invalid/11 "--acabamento"
+falso f12 -L pt -O http://f.invalid/12
+espera "o cabeçalho mostra a saída" contem f12 "o formato do site"
+falso f13 -L pt converter
+espera "converter sem formato nem codec explica o que falta" codigo "$RC" 2
+falso f14 -L pt converter -e mp4
+espera "…e sem arquivo também" contem f14 "Diga o arquivo"
+falso f15 -L pt converter ./nao-existe.mp4 -e mkv
+espera "…e arquivo que não existe, idem" contem f15 "Não encontrei"
 
 secao "Novas tentativas por outro caminho"
 D="$TMP/tentativas"; mkdir -p "$D"; cd "$D" || exit 1
@@ -734,6 +837,7 @@ D="$TMP/instalador"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
 STUB_JS="none" falso i1 -L pt install -y
 espera "install -y não pergunta e instala o recomendado" contem "$STUB_LOG" "brew install deno"
+command -v aria2c >/dev/null 2>&1 || espera "…inclusive o aria2, que abre várias conexões" grep -q '^brew install.*aria2' "$STUB_LOG"
 espera "…e não chega a pedir confirmação" nao_contem i1 "[S/n]"
 : > "$STUB_LOG"
 PROGRAMA_NAVEGADOR=/nao/existe STUB_JS="node-22.1.0" falso i2 -L pt --install --yes
@@ -812,8 +916,39 @@ cat > "$W/pagina/index.html" <<'EOF'
 EOF
 PORTA=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 cat > "$TMP/servidor.py" <<'EOF'
-import functools, http.server, sys
+import functools, http.server, os, re, sys, time
 class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam os vídeos protegidos
+    def parcial(self):                               # pedidos parciais, como num servidor de verdade
+        m = re.match(r"bytes=(\d+)-(\d*)$", self.headers.get("Range", ""))
+        p = self.translate_path(self.path)
+        if not m or not os.path.isfile(p):
+            return False
+        with open(os.path.join(self.directory, "pedidos.log"), "a") as f:
+            f.write(f"{self.path} {m[0]}\n")
+        if int(m[1]) > 0 and self.path.startswith("/recusa429/"):   # só as conexões extras são recusadas
+            self.send_error(429)
+            return True
+        if int(m[1]) > 0 and self.path.startswith("/recusa403/"):
+            self.send_error(403)
+            return True
+        t = os.path.getsize(p)
+        ini, fim = int(m[1]), min(int(m[2] or t - 1), t - 1)
+        if ini >= t:
+            self.send_error(416)
+            return True
+        self.send_response(206)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Type", self.guess_type(p))
+        self.send_header("Content-Length", str(fim - ini + 1))
+        self.send_header("Content-Range", f"bytes {ini}-{fim}/{t}")
+        self.end_headers()
+        with open(p, "rb") as f:
+            f.seek(ini)
+            try:
+                self.wfile.write(f.read(fim - ini + 1))
+            except OSError:
+                pass
+        return True
     def permitido(self):
         c = self.headers
         if self.path.startswith(("/referer/", "/protegido/")):
@@ -825,7 +960,37 @@ class H(http.server.SimpleHTTPRequestHandler):      # /referer e /sessao imitam 
     def do_GET(self):
         if self.path.startswith("/bloq/") and self.path.endswith(".ts"):
             return self.send_error(403)                  # a playlist abre, mas os pedaços são recusados
-        super().do_GET() if self.permitido() else self.send_error(403)
+        if not self.permitido():
+            return self.send_error(403)
+        limita = self.path.startswith("/limita/") and self.headers.get("Want-Digest")   # limita só o aria2c
+        if limita or self.path.startswith("/calmo/"):      # /calmo/: dá tempo de as outras conexões abrirem
+            p = self.translate_path(self.path)
+            t = os.path.getsize(p)
+            ini, fim = 0, t - 1
+            m = re.match(r"bytes=(\d+)-(\d*)$", self.headers.get("Range", ""))
+            if m:
+                ini, fim = int(m[1]), min(int(m[2] or t - 1), t - 1)
+                with open(os.path.join(self.directory, "pedidos.log"), "a") as f:
+                    f.write(f"{self.path} {m[0]}\n")
+            bloco, pausa = (16384, 0.05) if limita else (262144, 0.02)
+            self.send_response(206 if m else 200)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(fim - ini + 1))
+            if m:
+                self.send_header("Content-Range", f"bytes {ini}-{fim}/{t}")
+            self.end_headers()
+            with open(p, "rb") as f:
+                f.seek(ini)
+                r = fim - ini + 1
+                try:
+                    while r > 0 and (b := f.read(min(bloco, r))):
+                        self.wfile.write(b)
+                        r -= len(b)
+                        time.sleep(pausa)
+                except OSError:
+                    pass
+            return
+        self.parcial() or super().do_GET()
     def do_HEAD(self):
         super().do_HEAD() if self.permitido() else self.send_error(403)
     def log_message(self, *a):
@@ -836,7 +1001,7 @@ python3 "$TMP/servidor.py" "$PORTA" "$W" >/dev/null 2>&1 & SRV=$!
 B="http://127.0.0.1:$PORTA"
 for _ in 1 2 3 4 5 6 7 8 9 10; do python3 -c "import urllib.request; urllib.request.urlopen('$B/curto.mp4')" 2>/dev/null && break; sleep 0.3; done
 export NO_PROXY="127.0.0.1,${NO_PROXY:-}" no_proxy="127.0.0.1,${no_proxy:-}"
-altura() { ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 -- "$1"; }
+altura() { ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 -- "$1" | cut -d, -f1; }
 um() { local f; for f in "$@"; do [[ -e $f ]] && { printf '%s' "$f"; return 0; }; done; return 1; }
 
 secao "Download, histórico e seção BAIXADOS"
@@ -1005,12 +1170,206 @@ espera "site sem nada três vezes seguidas: não pede mais a página" test ! -e 
 bash "$G" --procura-direto "$PWD/marca" 0 "$PWD/vazio.site" "" 0 "$B/dir/botao.html" T generic a "$B/res/p360.m3u8" m3u8_native \
   360 640 30 400 2 SDR aac 5 NA >/dev/null 2>&1
 espera "um vídeo de uma lista longa: não procura (a página fala de vários)" test ! -e marca
+
+# Qualquer formato de arquivo vale, e o que decide é a medida
+filme() { ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1280x720:rate=25:duration=2" -f lavfi -i "sine=duration=2" "$@" </dev/null; }
+filme -c:v mpeg4 -c:a mp2 "$W/dir/filme.avi"
+filme -c:v wmv2 -c:a wmav2 "$W/dir/filme.wmv"
+filme -c:v flv -c:a aac -ar 44100 "$W/dir/filme.flv"
+filme -c:v mpeg2video -c:a mp2 "$W/dir/filme.mpg"
+for e in mkv mov ts; do filme -c:v libx264 -preset ultrafast -c:a aac "$W/dir/filme.$e"; done
+ln -f "$W/dir/filme.mkv" "$W/dir/GRANDE.MKV"
+for e in avi wmv flv mpg mkv mov ts; do
+  pagina "f_$e" "$STREAM<a href=\"/dir/filme.$e\">Baixar</a>"
+  roda "s-f_$e" -L pt -o "./f_$e" "$B/dir/f_$e.html"
+  espera ".$e citado na página: baixa o arquivo de 720p, em MKV" codigo "$(altura "$(acha "f_$e")")" 720
+done
+pagina maiuscula "$STREAM<a href=\"/dir/GRANDE.MKV\">Baixar</a>"
+roda s-maiuscula -L pt -o ./maiuscula "$B/dir/maiuscula.html"
+espera ".MKV em maiúsculas: idem" codigo "$(altura "$(find maiuscula -iname '*.mkv' -print -quit)")" 720
+roda s-mpg -L pt -o ./mpg_direto "$B/dir/filme.mpg"
+espera "um link direto para um .mpg também vira MKV" codigo "$(altura "$(acha mpg_direto)")" 720
+
+for i in 144 240 270 360 480; do ln -f "$W/dir/video180.mp4" "$W/dir/qual_$i.mp4"; done
+ln -f "$W/dir/video720.mp4" "$W/dir/qual_1080.mp4"
+for i in 1 2 3 4; do ln -f "$W/dir/video180.mp4" "$W/dir/parte$i.mp4"; ln -f "$W/dir/filme.ts" "$W/dir/pedaco$i.ts"; done
+ln -f "$W/dir/filme.mkv" "$W/dir/original.mkv"
+pagina muitos "$STREAM<script>var f=[\"/dir/qual_144.mp4\",\"/dir/qual_240.mp4\",\"/dir/qual_270.mp4\",\"/dir/qual_360.mp4\",\"/dir/qual_480.mp4\",\"/dir/qual_1080.mp4\"]</script>"
+pagina o_original "$STREAM<script>var f=[\"/dir/parte1.mp4\",\"/dir/parte2.mp4\",\"/dir/parte3.mp4\",\"/dir/parte4.mp4\",\"/dir/original.mkv\"]</script>"
+pagina pedacos "$STREAM<script>var f=[\"/dir/pedaco1.ts\",\"/dir/pedaco2.ts\",\"/dir/pedaco3.ts\",\"/dir/pedaco4.ts\"]</script>"
+ln -f "$W/dir/video720.mp4" "$W/dir/video720.mov"
+pagina nome_de_site "$STREAM<script>var f=\"/dir/video720.mov/pagina.html\"</script>"
+mkdir -p "$W/dir/baixar"; cp "$W/dir/video720.mp4" "$W/dir/baixar/123"; cp "$W/res/p720.m3u8" "$W/res/semext"
+pagina sem_extensao "$STREAM<a href=\"/dir/baixar/123\" download>Baixar</a>"
+pagina link_comum "$STREAM<a href=\"/dir/baixar/123\">Episódio</a>"
+pagina outro_stream "$STREAM<a href=\"/res/semext\" download>Baixar</a>"
+for c in muitos:720:"mais de 4 citados: mede antes o que promete ser o maior" \
+         o_original:720:"…e o que se diz original, mesmo sendo o último" \
+         pedacos:360:"vários .ts são pedaços de um stream, não um arquivo" \
+         nome_de_site:360:".mov no meio do endereço não é arquivo" \
+         sem_extensao:720:"botão de baixar sem extensão no endereço: mede e baixa" \
+         link_comum:360:"…um link qualquer sem extensão não merece um pedido" \
+         outro_stream:360:"…e um stream com cara de arquivo não conta"; do
+  n=${c%%:*}; r=${c#*:}; e=${r%%:*}; d=${r#*:}
+  roda "s-$n" -L pt -o "./$n" "$B/dir/$n.html"
+  espera "$d" codigo "$(altura "$(acha "$n")")" "$e"
+done
+
+# Mesma imagem: só perde se for claramente mais leve (640x360, 30 fps e 2 s, como o stream informado)
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=30:duration=2" -f lavfi -i "sine=duration=2" \
+  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/igual.mp4"
+pagina igual "$STREAM<a href=\"/dir/igual.mp4\">Baixar</a>"
+KB=$(( $(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$W/dir/igual.mp4") / 1000 ))
+compara() {                                   # compara BITRATE_INFORMADO CODEC_INFORMADO
+  rm -f marca
+  bash "$G" --procura-direto "$PWD/marca" 0 "$PWD/compara.site" "" 0 "$B/dir/igual.html" T generic a "$B/res/p360.m3u8" m3u8_native \
+    360 640 30 "$1" 2 SDR aac NA NA "$2" >/dev/null 2>&1
+}
+compara $(( KB * 100 / 80 )) avc1.64001f
+espera "stream informa 25% acima (costuma ser o pico): fica o arquivo" test -s marca
+compara $(( KB * 2 )) avc1.64001f
+espera "stream com o dobro do bitrate: o arquivo é uma versão mais leve" test ! -e marca
+compara 0 NA
+espera "stream sem bitrate para comparar: fica o arquivo" test -s marca
+compara $(( KB * 16 / 10 )) mp4v.20.2
+espera "codec antigo no stream: o número maior não vale tanto" test -s marca
+compara "$KB" hvc1.1.6.L93.B0
+espera "HEVC no stream: o mesmo número vale mais" test ! -e marca
 pronto() { printf '@@D@@360\x1f30\x1fSDR\x1fh264\x1faac\x1f%s\x1fCurto\x1fcurto\x1f%s' "$1" "$W/curto.mp4"; }
 mkdir -p "$TMP/so-ytdlp"; ln -sf "$STUB/yt-dlp" "$TMP/so-ytdlp/yt-dlp"     # o ffprobe é o de verdade: é ele quem mede o arquivo
 STUB_D=$(pronto 100) PATH="$TMP/so-ytdlp:$PATH" roda s-curto -L pt -o ./curto http://curto.invalid/1
 espera "bem mais curto que o site informa: avisa" contem s-curto "mais curto"
 STUB_D=$(pronto 2) PATH="$TMP/so-ytdlp:$PATH" roda s-igual -L pt -o ./igual http://curto.invalid/2
 espera "…e não avisa à toa" nao_contem s-igual "mais curto"
+
+secao "Formato do arquivo, de verdade"
+D="$TMP/d9"; mkdir -p "$D" "$W/fmt"; cd "$D" || exit 1
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=320x180:duration=1" -frames:v 1 "$W/fmt/capa.jpg"
+video "$W/fmt/f.mp4" 640x360 2
+ffmpeg -loglevel error -y -i "$W/fmt/f.mp4" -c copy "$W/fmt/f.mkv"
+ffmpeg -loglevel error -y -i "$W/fmt/f.mp4" -c:v libvpx -deadline realtime -cpu-used 8 -c:a libopus "$W/fmt/f.webm"
+for e in mp4 mkv webm; do
+  printf '<!doctype html><html><head><title>Pagina %s</title><meta property="og:image" content="%s/fmt/capa.jpg"></head><body><video src="/fmt/f.%s"></video></body></html>\n' "$e" "$B" "$e" > "$W/fmt/p_$e.html"
+done
+faixas_de() { ffprobe -v error -show_entries stream=codec_name:stream_disposition=attached_pic -of csv=p=0 "$1" | tr '\n' ' '; }
+so_um() { find "$1" -maxdepth 1 -type f -name "*.$2" -print -quit; }
+tem_capa() { faixas_de "$1" | grep -q 'mjpeg,1'; }
+roda s1 -L pt -O -o ./o1 "$B/fmt/p_mp4.html"
+A=$(so_um o1 mp4)
+espera "-O: o .mp4 continua .mp4" test -n "$A"
+espera "…com as mesmas imagens" test "$(imagens "$A")" = "$(imagens "$W/fmt/f.mp4")"
+espera "…com a capa dentro" tem_capa "$A"
+espera "…sem a imagem sobrando na pasta" test -z "$(so_um o1 jpg)"
+espera "…com o título" sh -c "ffprobe -v error -show_entries format_tags=title -of csv=p=0 \"\$1\" | grep -q Pagina" _ "$A"
+espera "…sem nada a avisar" nao_contem s1 "não guarda"
+roda s2 -L pt -O -o ./o2 "$B/fmt/p_webm.html"
+espera "-O em .webm, que não aceita capa: o vídeo chega" test -n "$(so_um o2 webm)"
+espera "…e a capa fica ao lado, com um aviso" contem s2 ".webm não guarda: capa"
+espera "…sem virar erro" codigo "$RC" 0
+espera "…a imagem está lá" test -n "$(so_um o2 jpg)"
+roda s3 -L pt -e mp4 -o ./o3 "$B/fmt/p_mkv.html"
+A=$(so_um o3 mp4)
+espera "-e mp4 num .mkv: vira .mp4" test -n "$A"
+espera "…e o .mkv não fica" test -z "$(so_um o3 mkv)"
+espera "…com as mesmas imagens" test "$(imagens "$A")" = "$(imagens "$W/fmt/f.mkv")"
+espera "…e com a capa" tem_capa "$A"
+roda s4 -L pt -e webm -o ./o4 "$B/fmt/p_mp4.html"
+A=$(so_um o4 mp4)
+espera "-e webm com H.264, que não cabe: o vídeo não se perde" test -n "$A"
+espera "…e o motivo aparece" contem s4 "não deu para deixar em .webm"
+espera "…sem virar erro" codigo "$RC" 0
+espera "…a capa entra no formato em que ele ficou" tem_capa "$A"
+roda s5 -L pt -k h264 -o ./o5 "$B/fmt/p_webm.html"
+A=$(so_um o5 mkv)
+espera "-k h264 num .webm: recomprime depois de baixar" sh -c "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 \"\$1\" | grep -q h264" _ "$A"
+espera "…sem deixar a versão anterior" test "$(find o5 -maxdepth 1 -type f ! -name '.*' | wc -l)" -eq 1
+espera "…e mantém a capa" tem_capa "$A"
+espera "…e sai no resumo" contem s5 "Convertidos"
+roda s6 -L pt -k h264 -O -o ./o6 "$B/fmt/p_mp4.html"
+A=$(so_um o6 mp4)
+espera "-k num vídeo já nesse codec: não recomprime" test "$(imagens "$A")" = "$(imagens "$W/fmt/f.mp4")"
+espera "…nem fala em conversão como se tivesse feito" nao_contem s6 "Convertidos         1"
+
+secao "Conversão de um vídeo já baixado"
+D="$TMP/d10"; mkdir -p "$D"; cd "$D" || exit 1
+roda sb -L pt -o ./base "$B/fmt/p_mp4.html"
+V=$(so_um base mkv); cp "$V" "v [x].mkv"; REF=$(imagens "v [x].mkv")
+intervalos() { ffprobe -v error -select_streams v:0 -show_entries packet=pts_time -of csv=p=0 "$1" | sort -n | awk 'NR>1 { printf "%.1f\n", ($1 - p) * 1000 } { p = $1 }' | sort -u | tr '\n' ' '; }
+espera "o MKV arredonda o tempo de cada quadro (é o que motiva o resto)" test "$(intervalos "v [x].mkv")" = "33.0 34.0 "
+roda c1 -L pt converter "v [x].mkv" -e mp4
+espera "troca a extensão" test -f "v [x].mp4"
+espera "…com as mesmas imagens" test "$(imagens "v [x].mp4")" = "$REF"
+espera "…com o tempo exato de cada quadro de volta" test "$(intervalos "v [x].mp4")" = "33.3 "
+espera "…e diz que restaurou" contem c1 "tempo de cada quadro restaurado"
+espera "…com a capa" tem_capa "v [x].mp4"
+espera "…e avisa o que o .mp4 não guarda" contem c1 ".mp4 não guarda: dados do site"
+espera "o original fica" test -f "v [x].mkv"
+roda c2 -L pt converter "v [x].mkv" -e mp4
+espera "não sobrescreve o que já existe" contem c2 "já existe"
+roda c3 -L pt converter "v [x].mp4" -e mp4
+espera "já está nesse formato: nada a fazer" contem c3 "já está assim"
+mkdir t; cp "v [x].mp4" t/a.mp4
+roda c4 -L en convert t/a.mp4 --format mkv --replace
+espera "ida e volta: as imagens continuam as mesmas" test "$(imagens t/a.mkv)" = "$REF"
+espera "…a capa continua sendo capa" tem_capa t/a.mkv
+espera "--replace tira o original" test ! -e t/a.mp4
+espera "…e não deixa temporário" test -z "$(find t -name '*grabit-tmp*')"
+for e in mov mkv mp4 ts; do
+  case $e in ts) x=ts ;; *) x=$e ;; esac
+  roda c5 -L pt converter t/a.* -e "$x" --substituir
+  espera "de novo, em .$x: as imagens continuam as mesmas" test "$(imagens "t/a.$x")" = "$REF"
+done
+roda c6 -L pt converter "v [x].mp4" -e webm
+espera "H.264 em .webm não existe sem recomprimir: é erro" codigo "$RC" 1
+espera "…explicado" contem c6 "com -k, dá para recomprimir"
+espera "…e nada fica pela metade" test -z "$(find . -name '*grabit-tmp*')"
+roda c7 -L pt converter "v [x].mp4" -e webm -k vp9
+espera "com -k, dá" sh -c "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 'v [x].webm' | grep -q vp9"
+roda c8 -L pt converter "v [x].mp4" -k h264
+espera "recomprimir para o codec em que ele já está: não faz" contem c8 "já está assim"
+roda c9 -L pt converter "v [x].webm" -k h264
+espera "recomprime: um codec novo que não cabe na embalagem antiga vira .mp4" test -f "v [x].mp4"
+espera "…sem sobrescrever o que já havia" contem c9 "já existe"
+cp "v [x].webm" w.webm
+roda c10 -L pt converter w.webm -k h264
+espera "…e, sem nada no caminho, ele sai" sh -c "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 w.mp4 | grep -q h264"
+cp "v [x].mp4" m.mp4
+roda c11 -L pt converter m.mp4 -k hevc
+espera "recomprime na mesma embalagem: o original fica, e o novo leva o nome do codec" test -f m.hevc.mp4 -a -f m.mp4
+roda c12 -L pt converter ./base -e mp4
+espera "uma pasta inteira" contem c12 "Convertidos"
+
+if command -v aria2c >/dev/null 2>&1; then
+  secao "Várias conexões, de verdade"
+  D="$TMP/d11"; mkdir -p "$D"; cd "$D" || exit 1
+  ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1280x720:rate=30:duration=45" -f lavfi -i "sine=duration=45" \
+    -c:v libx264 -preset ultrafast -b:v 11M -c:a aac "$W/grande.mp4"
+  for r in recusa429 recusa403 limita calmo; do ln -sfn . "$W/$r"; done
+  REF=$(imagens "$W/grande.mp4")
+  : > "$W/pedidos.log"
+  roda s1 -L pt -O -o ./a "$B/calmo/grande.mp4"
+  # (60 MiB, com o mínimo de 20 MiB por parte: a primeira conexão mais um pedido parcial)
+  espera "um arquivo grande vem em várias partes" test "$(grep -c '^/calmo/grande.mp4 bytes=' "$W/pedidos.log")" -ge 1
+  espera "…e chega inteiro, com as mesmas imagens" test "$(imagens "$(so_um a mp4)")" = "$REF"
+  : > "$W/pedidos.log"
+  roda s2 -L pt -O -c 1 -o ./b "$B/grande.mp4"
+  espera "-c 1: nenhuma parte" test "$(grep -c '^/grande.mp4' "$W/pedidos.log")" -eq 0
+  : > "$W/pedidos.log"
+  roda s3 -L pt -O -o ./c1 "$B/curto.mp4"
+  espera "um arquivo pequeno não se divide" test "$(grep -c '^/curto.mp4 bytes=[1-9]' "$W/pedidos.log")" -eq 0
+  for c in 429 403; do
+    : > "$W/pedidos.log"
+    roda s4 -L pt -O -j 1 -o "./r$c" "$B/recusa$c/grande.mp4" "$B/recusa$c/curto.mp4"
+    espera "site que recusa as partes ($c): o download termina nas conexões que sobraram" test "$(imagens "$(find "r$c" -maxdepth 1 -name 'grande*.mp4' -print -quit)")" = "$REF"
+    espera "…sem erro" codigo "$RC" 0
+    espera "…com um aviso" contem s4 "recusou as conexões extras"
+  done
+  roda s5 -L pt -O -o ./l "$B/limita/grande.mp4"
+  espera "o site limita quem abre várias conexões: a sonda percebe" contem s5 "rende mais com uma conexão só"
+  espera "…e o download sai sem elas" test "$(imagens "$(so_um l mp4)")" = "$REF"
+  espera "…sem erro" codigo "$RC" 0
+  espera "…e sem marcar o site como difícil" nao_contem "$XDG_DATA_HOME/grabit/metodos.txt" "127.0.0.1"
+fi
 
 secao "Verificação da coleção (--verificar)"
 D="$TMP/d5"; mkdir -p "$D"; cd "$D" || exit 1
