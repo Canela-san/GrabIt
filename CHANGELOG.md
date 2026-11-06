@@ -12,6 +12,13 @@ Primeira versão publicada.
 - `--proxy` em `OPCOES_YTDLP` não chegava à busca por arquivo direto, à sonda de velocidade nem ao navegador, que iam direto ao site com o endereço real.
 - Disco cheio durante um download pelo aria2c agora é reconhecido na hora, em vez de repetir o download para descobrir a mesma coisa.
 
+### Uso
+
+- `grabit` sozinho mostra a ajuda, que agora cabe numa tela (`grabit ajuda completa` mostra tudo). Para baixar a lista do `links.txt`: `grabit download`.
+- O início mostra só o que muda o que vai acontecer; `--detalhes` mostra o resto.
+- Terminal de fundo claro: as cores se ajustam sozinhas (`TEMA=auto`, `claro` ou `escuro`).
+- O painel usa cerca de um quarto da CPU de antes e não apaga a tela a cada quadro. Ctrl+C não deixa mais o último quadro na tela, Ctrl+Z devolve o cursor ao shell, e uma janela mais baixa que o painel não enche o histórico de rolagem.
+
 ### Download
 
 - Arquivo direto em várias conexões pelo aria2c (`-c`, padrão 3), com regulagem por site. Abaixo de 40 MiB não divide, e uma sonda compara com uma conexão simples.

@@ -194,6 +194,7 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
 | `--proxy URL` | passa tudo por um proxy: `http://host:8080` ou `socks5://host:1080` | — |
 | `--simular` | mostra o que seria baixado e quanto ocupa, sem baixar nada | — |
+| `--detalhes` | mostra no início também as ferramentas, os recursos e o histórico | — |
 | `--desde DATA` | só vídeos desde a data (`2026-01-31`) ou a idade (`7d`, `2w`, `3m`, `1y`) | — |
 | `--max N` | no máximo N vídeos por link | — |
 | `--max-tamanho TAM` | pula arquivos maiores que isso (`2G`, `500M`) | — |
@@ -313,6 +314,7 @@ COOKIES_NAVEGADOR=firefox
 | `PROCURAR_ARQUIVO` | `1` procura um arquivo direto melhor que o stream, antes de baixar; `0` não procura | `1` |
 | `FORMATO_SAIDA` | formato do arquivo: `mkv`, `mp4`, `webm`, `mov`…, ou `original` (como o site entrega) | `mkv` |
 | `FILTRO_DESDE`, `FILTRO_MAX`, `FILTRO_TAMANHO` | os mesmos de `--desde`, `--max` e `--max-tamanho` | — |
+| `TEMA` | cores: `auto`, pelo fundo do terminal; `claro` ou `escuro`, se ele errar | `auto` |
 | `PROXY` | passa tudo por um proxy, inclusive a busca por arquivo direto e o navegador | — |
 | `CANAL_ATUALIZACAO` | `estavel`: só versões publicadas; `main`: tudo o que entra no repositório | `estavel` |
 | `CODEC_VIDEO` | recomprime se o vídeo vier em outro codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |

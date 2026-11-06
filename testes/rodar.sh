@@ -805,6 +805,20 @@ printf '# só comentários\n' > links.txt
 falso d6 -L pt download
 espera "lista sem nenhum link: explica, com um exemplo" contem d6 "grabit https://"
 
+secao "Títulos com emoji"
+largura() {
+  (
+    SEP=$'\x1f'; declare -A CACHE_CORTA=()
+    eval "$(sed -n '/^corta() {/,/^}/p' "$G")"
+    corta "$1" 200; printf '%s' "$LARG"
+  )
+}
+espera "emoji simples: 2 colunas" test "$(largura '🔥')" = 2
+espera "família, unida por ZWJ: 2 colunas" test "$(largura $'\U1F468\u200D\U1F469\u200D\U1F467')" = 2
+espera "coração com seletor: 2 colunas" test "$(largura $'\u2764\uFE0F')" = 2
+espera "japonês: 2 colunas por letra" test "$(largura '日本語')" = 6
+espera "texto com acento: 1 por letra" test "$(largura 'ação')" = 4
+
 secao "Comando digitado errado"
 D="$TMP/errado"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
@@ -1433,6 +1447,19 @@ EOF
   espera "…a velocidade" contem p1 "⇣ "
   espera "…o título da janela" contem p1 "· GrabIt"
   espera "…as teclas" contem p1 "p pausa"
+  espera "…numa linha só" nao_contem p1 "termina depois dos atuais"
+  espera "o início é curto: sem as linhas técnicas" nao_contem p1 "Ferramentas"
+  espera "…e o título traz a versão" contem p1 "GrabIt $(sed -n 's/^GRABIT_VERSAO=//p' "$G")"
+  espera "…e o resumo não lista o que deu zero" nao_contem p1 "Links com erro"
+  STUB_PAINEL=1 tela p1d 'espera:Filme de teste|fim' -L pt --detalhes -j 1 http://a.invalid/painel-d
+  espera "--detalhes mostra o resto" contem p1d "Ferramentas"
+  # o tema: o terminal informa o fundo
+  STUB_PAINEL=1 NO_COLOR="" COLORFGBG='0;15' tela p1c 'espera:Filme de teste|fim' -L pt -j 1 http://a.invalid/claro
+  espera "fundo claro: cores escuras" contem p1c $'\e[38;5;25m'
+  STUB_PAINEL=1 NO_COLOR="" COLORFGBG='15;0' tela p1e 'espera:Filme de teste|fim' -L pt -j 1 http://a.invalid/escuro
+  espera "fundo escuro: as cores de sempre" contem p1e $'\e[38;5;81m'
+  STUB_PAINEL=1 NO_COLOR="" COLORFGBG='15;0' TEMA=claro tela p1t 'espera:Filme de teste|fim' -L pt -j 1 http://a.invalid/tema
+  espera "TEMA vence o que o terminal diz" contem p1t $'\e[38;5;25m'
   espera "…termina com código 0" contem p1.rc "rc 0"
   espera "…e devolve o cursor" contem p1 $'\e[?25h'
   espera "…e a quebra de linha" contem p1 $'\e[?7h'

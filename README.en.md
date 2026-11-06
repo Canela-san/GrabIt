@@ -194,6 +194,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
 | `--proxy URL` | send everything through a proxy: `http://host:8080` or `socks5://host:1080` | — |
 | `--simulate` | show what would be downloaded and its size, without downloading | — |
+| `--details` | also show the tools, resources and history at the start | — |
 | `--since DATE` | only videos since the date (`2026-01-31`) or the age (`7d`, `2w`, `3m`, `1y`) | — |
 | `--max N` | at most N videos per link | — |
 | `--max-size SIZE` | skip files larger than that (`2G`, `500M`) | — |
@@ -314,6 +315,7 @@ COOKIES_NAVEGADOR=firefox
 | `PROCURAR_ARQUIVO` | `1` looks for a direct file better than the stream before downloading; `0` doesn't | `1` |
 | `FORMATO_SAIDA` | file format: `mkv`, `mp4`, `webm`, `mov`…, or `original` (as the site delivers it) | `mkv` |
 | `FILTRO_DESDE`, `FILTRO_MAX`, `FILTRO_TAMANHO` | the same as `--since`, `--max` and `--max-size` | — |
+| `TEMA` | colors: `auto`, by the terminal's background; `claro` (light) or `escuro` (dark), if it gets it wrong | `auto` |
 | `PROXY` | send everything through a proxy, including the direct-file search and the browser | — |
 | `CANAL_ATUALIZACAO` | `estavel` (stable): published versions only; `main`: everything that lands in the repository | `estavel` |
 | `CODEC_VIDEO` | re-encodes if the video comes in another codec: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |

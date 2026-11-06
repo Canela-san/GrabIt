@@ -926,7 +926,7 @@ fi
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP PROXY FILTRO_DESDE FILTRO_MAX FILTRO_TAMANHO CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP TEMA PROXY FILTRO_DESDE FILTRO_MAX FILTRO_TAMANHO CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -952,6 +952,7 @@ VERIFICAR=0                                   # 1 = decodifica cada vídeo intei
 COOKIES_NAVEGADOR=                            # ex.: firefox, chrome, brave
 USER_AGENT=                                   # o User-Agent do navegador (para usar junto com os cookies)
 OPCOES_YTDLP=                                 # opções a mais para o yt-dlp, separadas por espaços
+TEMA=auto                                     # cores: auto (pelo fundo do terminal), claro ou escuro
 PROXY=                                        # ex.: http://host:8080 ou socks5://host:1080; vale para tudo
 FILTRO_DESDE=                                 # só vídeos desde esta data: 2026-01-31, 7d, 2w, 3m, 1y
 FILTRO_MAX=0                                  # no máximo N vídeos por link (0 = sem limite)
@@ -1179,8 +1180,8 @@ idioma_pt() {
     [ver_nova]="há uma versão mais nova"
     [ver_sem_net]="não deu para conferir (sem conexão?)"
     [ver_sem_git]="cópia sem Git"
-    [dica_ctrlc]="Ctrl+C cancela · o que estiver pela metade recomeça do zero"
-    [dica_teclas]="p pausa · q termina depois dos atuais · + e - mudam quantos baixam ao mesmo tempo"
+    [dica_ctrlc]="Ctrl+C cancela"
+    [dica_teclas]=" · p pausa · q termina os atuais · + e - mudam os simultâneos"
     [k_pausado]="pausado · p continua"
     [k_parando]="terminando os downloads atuais · q de novo cancela"
     [k_simultaneos]="%d download(s) ao mesmo tempo"
@@ -1302,6 +1303,7 @@ idioma_pt() {
     [r_filtrado]="fora dos filtros"
     [s_filtrados]="Fora dos filtros"
     [sim_titulo]="GrabIt · simulação: nada será baixado"
+    [sim_consultando]="consultando %d de %d…"
     [sim_resumo]="Simulação"
     [sim_baixaria]="Seriam baixados"
     [sim_tamanho]="Tamanho estimado"
@@ -1358,6 +1360,7 @@ idioma_pt() {
     [cmp_h]="mostra a ajuda"
     [cmp_proxy]="passa tudo por um proxy"
     [cmp_simular]="mostra o que seria baixado, sem baixar"
+    [cmp_detalhes]="mostra as ferramentas e os recursos no início"
     [cmp_desde]="só vídeos desde a data"
     [cmp_max]="no máximo N vídeos por link"
     [cmp_tamanho]="pula arquivos maiores que isso"
@@ -1634,6 +1637,7 @@ Uso:  grabit [opções] LINK ou ARQUIVO ...
   -A AGENTE     usa o User-Agent do navegador, junto com -b, em sites com verificação
   --proxy URL   passa tudo por um proxy: http://host:8080 ou socks5://host:1080
   --simular     mostra o que seria baixado e quanto ocupa, sem baixar nada
+  --detalhes    mostra no início também as ferramentas, os recursos e o histórico
   --desde DATA  só vídeos desde a data: 2026-01-31, ou a idade: 7d, 2w, 3m, 1y
   --max N       no máximo N vídeos por link
   --max-tamanho TAM
@@ -1821,6 +1825,9 @@ EOF
 # todos os testes; ou main, tudo o que entra no repositório, assim que entra.
 #CANAL_ATUALIZACAO=estavel
 
+# Cores: auto, pelo fundo do terminal; ou claro, ou escuro, se ele errar
+#TEMA=auto
+
 # Proxy para tudo o que o GrabIt acessa, inclusive a busca por arquivo direto e o navegador
 # (--proxy): http://host:8080 ou socks5://host:1080. Um proxy SOCKS desliga a busca por arquivo
 # direto e as várias conexões, porque o ffprobe e o aria2c não passam por ele.
@@ -1963,8 +1970,8 @@ idioma_en() {
     [ver_nova]="there's a newer version"
     [ver_sem_net]="couldn't check (no connection?)"
     [ver_sem_git]="copy without Git"
-    [dica_ctrlc]="Ctrl+C cancels · anything half-done starts over from scratch"
-    [dica_teclas]="p pauses · q stops after the current ones · + and - change how many run at once"
+    [dica_ctrlc]="Ctrl+C cancels"
+    [dica_teclas]=" · p pause · q finish current · + and - how many at once"
     [k_pausado]="paused · p resumes"
     [k_parando]="finishing the current downloads · q again cancels"
     [k_simultaneos]="%d download(s) at once"
@@ -2086,6 +2093,7 @@ idioma_en() {
     [r_filtrado]="outside the filters"
     [s_filtrados]="Outside the filters"
     [sim_titulo]="GrabIt · simulation: nothing will be downloaded"
+    [sim_consultando]="looking up %d of %d…"
     [sim_resumo]="Simulation"
     [sim_baixaria]="Would download"
     [sim_tamanho]="Estimated size"
@@ -2142,6 +2150,7 @@ idioma_en() {
     [cmp_h]="show the help"
     [cmp_proxy]="send everything through a proxy"
     [cmp_simular]="show what would be downloaded, without downloading"
+    [cmp_detalhes]="show the tools and resources at the start"
     [cmp_desde]="only videos since the date"
     [cmp_max]="at most N videos per link"
     [cmp_tamanho]="skip files larger than that"
@@ -2419,6 +2428,7 @@ Usage:  grabit [options] LINK or FILE ...
   -A AGENT      use the browser's User-Agent, along with -b, on sites with a check
   --proxy URL   send everything through a proxy: http://host:8080 or socks5://host:1080
   --simulate    show what would be downloaded and its size, without downloading
+  --details     also show the tools, resources and history at the start
   --since DATE  only videos since the date: 2026-01-31, or the age: 7d, 2w, 3m, 1y
   --max N       at most N videos per link
   --max-size SIZE
@@ -2610,6 +2620,9 @@ EOF
 # the tests; or main, everything that lands in the repository, as soon as it does.
 #CANAL_ATUALIZACAO=estavel
 
+# Colors: auto, by the terminal's background; or claro (light), or escuro (dark), if it gets it wrong
+#TEMA=auto
+
 # Proxy for everything GrabIt accesses, including the direct-file search and the browser
 # (--proxy): http://host:8080 or socks5://host:1080. A SOCKS proxy turns off the direct-file search
 # and multiple connections, because ffprobe and aria2c cannot go through it.
@@ -2658,11 +2671,46 @@ ESC=$'\033'
 INTERATIVO=0
 [[ -t 1 && ${TERM:-dumb} != dumb ]] && INTERATIVO=1
 
+# fundo_claro → 0 se o fundo do terminal for claro. Primeiro pelo que o próprio terminal informa; senão,
+# pergunta a cor do fundo. O pedido de identificação que vem junto é respondido por todo terminal: assim a
+# espera só vai até o tempo limite nos raros que ficam mudos.
+fundo_claro() {
+  local c fd ant r="" ch i=0 a b d m
+  c=${COLORFGBG:-}; c=${c##*;}
+  if [[ $c =~ ^[0-9]+$ ]]; then (( c == 7 || c >= 9 )); return; fi
+  [[ ${TERM:-} == linux ]] && return 1
+  { exec {fd}<>/dev/tty; } 2>/dev/null || return 1
+  ant=$(stty -g <&"$fd" 2>/dev/null) || { exec {fd}<&-; return 1; }
+  stty -echo -icanon min 0 time 0 <&"$fd" 2>/dev/null
+  printf '\033]11;?\033\\\033[c' >&"$fd"
+  while (( i++ < 120 )) && IFS= read -r -s -n 1 -t 0.3 -u "$fd" ch; do
+    r+=$ch
+    [[ $r =~ $'\033'\[\?[0-9\;]*c$ ]] && break
+  done
+  stty "$ant" <&"$fd" 2>/dev/null
+  exec {fd}<&-
+  [[ $r =~ rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+) ]] || return 1
+  a=${BASH_REMATCH[1]}; b=${BASH_REMATCH[2]}; d=${BASH_REMATCH[3]}
+  m=$(( (1 << (${#a} * 4)) - 1 ))
+  (( (299 * 16#$a + 587 * 16#$b + 114 * 16#$d) / m > 500 ))
+}
+
 if (( INTERATIVO )) && [[ -z "${NO_COLOR:-}" ]]; then
   R="${ESC}[0m";            NEG="${ESC}[1m"
-  DIM="${ESC}[38;5;245m";   CINZA="${ESC}[38;5;238m"
-  VERDE="${ESC}[38;5;78m";  VERMELHO="${ESC}[38;5;203m"
-  AMARELO="${ESC}[38;5;221m"; CIANO="${ESC}[38;5;81m"; ACENTO="${ESC}[38;5;141m"
+  case ${TEMA,,} in
+    claro|light)  tema_claro=1 ;;
+    escuro|dark)  tema_claro=0 ;;
+    *) if fundo_claro; then tema_claro=1; else tema_claro=0; fi ;;
+  esac
+  if (( tema_claro )); then                   # contraste de pelo menos 4,5 sobre o branco
+    DIM="${ESC}[38;5;242m";   CINZA="${ESC}[38;5;250m"
+    VERDE="${ESC}[38;5;28m";  VERMELHO="${ESC}[38;5;160m"
+    AMARELO="${ESC}[38;5;130m"; CIANO="${ESC}[38;5;25m"; ACENTO="${ESC}[38;5;92m"
+  else
+    DIM="${ESC}[38;5;245m";   CINZA="${ESC}[38;5;238m"
+    VERDE="${ESC}[38;5;78m";  VERMELHO="${ESC}[38;5;203m"
+    AMARELO="${ESC}[38;5;221m"; CIANO="${ESC}[38;5;81m"; ACENTO="${ESC}[38;5;141m"
+  fi
 else
   R=""; NEG=""; DIM=""; CINZA=""; VERDE=""; VERMELHO=""; AMARELO=""; CIANO=""; ACENTO=""
 fi
@@ -2732,7 +2780,7 @@ sugere_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0; DETALHES=0
 while (( $# )); do
   a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
@@ -2742,6 +2790,7 @@ while (( $# )); do
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
     --ajuda-completa|--help-all) COMANDO=ajuda; AJUDA_COMPLETA=1 ;;
+    --detalhes|--details) DETALHES=1 ;;
     --simular|--simulate|--dry-run) SIMULAR=1 ;;
     --todos|--all) CANAL_TODOS=1 ;;
     --desde=*|--since=*) FILTRO_DESDE=${a#*=}; ORIGEM[FILTRO_DESDE]=opção ;;
@@ -3179,7 +3228,7 @@ fmt_dur() {                                   # 125 → 02:05 · 3725 → 1:02:0
 # FMT ocupa). Mede colunas, não caracteres: emoji e CJK ocupam 2, acentos
 # combinantes 0 — senão títulos como "🔥 测试" empurram o fim da linha para fora.
 corta() {
-  local s=$1 n=$2 i c cp cw w=0 corte=0 w_corte=0 chave
+  local s=$1 n=$2 i c cp cw w=0 corte=0 w_corte=0 chave junta=0 ant=0
   if (( n < 1 )); then FMT=""; LARG=0; return; fi
   if [[ $s != *[![:ascii:]]* ]]; then         # só ASCII: 1 caractere = 1 coluna
     if (( ${#s} > n )); then FMT="${s:0:n-1}…"; else FMT=$s; fi
@@ -3205,6 +3254,12 @@ corta() {
             (cp >= 0x2753 && cp <= 0x2757) || (cp >= 0x2795 && cp <= 0x2797) || cp == 0x2B50 || cp == 0x2B55 )); then cw=2
     else cw=1
     fi
+    # Um emoji composto ocupa o espaço de um só: quem vem depois do ZWJ não soma, e o seletor FE0F
+    # transforma o símbolo anterior, de 1 coluna, num emoji, de 2
+    if (( junta )); then cw=0; junta=0
+    elif (( cp == 0x200D )); then junta=1
+    elif (( cp == 0xFE0F && ant == 1 )); then cw=1; fi
+    (( cp == 0x200D || cp == 0xFE0F )) || ant=$cw
     if (( w + cw > n - 1 && corte == 0 )); then corte=$i; w_corte=$w; fi
     w=$(( w + cw ))
     (( w > n )) && break
@@ -4826,8 +4881,8 @@ resumo() {
   (( (CANCELADO || PARANDO) && FINALIZADOS < TOTAL )) && titulo_r=${T[s_resumo_parcial]}
   printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "$titulo_r" "$R"
   linha_resumo "✔" "$VERDE"    "${T[s_baixados]}" "${NEG}${N_OK}${R}"
-  linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"       "${NEG}${N_JA}${R}"
-  linha_resumo "✖" "$VERMELHO" "${T[s_erro]}"     "${NEG}${N_ERRO}${R}"
+  (( N_JA > 0 ))   && linha_resumo "↷" "$AMARELO"  "${T[s_ja]}"   "${NEG}${N_JA}${R}"
+  (( N_ERRO > 0 )) && linha_resumo "✖" "$VERMELHO" "${T[s_erro]}" "${NEG}${N_ERRO}${R}"
   (( N_FILTRADOS > 0 )) && linha_resumo "↷" "$AMARELO" "${T[s_filtrados]}" "${NEG}${N_FILTRADOS}${R}"
   if (( N_ADIADOS > 0 )); then
     linha_resumo "‖" "$AMARELO" "${T[s_adiados]}" "${NEG}${N_ADIADOS}${R}  ${DIM}${T[s_adiados_det]}${R}"
@@ -4932,6 +4987,7 @@ descarta_parciais() {                         # apaga a pasta temporária desta 
 cabecalho() {
   local t=${T[titulo]} w h
   [[ $FORMATO_SAIDA == mkv ]] || t=${t% (MKV)}
+  t="GrabIt $GRABIT_VERSAO${t#GrabIt}"
   w=$(( ${#t} + 4 ))
   if (( COLS < w + 4 )); then                   # terminal estreito: título simples, sem moldura
     printf '\n  %s%s%s\n\n' "$NEG" "${T[titulo_curto]}" "$R"
@@ -5514,7 +5570,9 @@ simula_links() {
     i=$(( i + 1 ))
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
     site_de "$url"; perfil_args "$FMT"
+    if (( INTERATIVO )); then t sim_consultando "$i" "$TOTAL"; printf '\r%s[K  %s%s%s' "$ESC" "$DIM" "$TXT" "$R"; fi
     saida=$(yt-dlp "${YTDLP_ARGS[@]}" "${ARGS_PERFIL[@]}" --simulate --no-exec --print "video:$m" -- "$url" 2>&1); rc=$?
+    (( INTERATIVO )) && printf '\r%s[K' "$ESC"
     (( rc == 101 )) && rc=0
     while IFS= read -r l; do
       case $l in
@@ -5547,7 +5605,7 @@ simula_links() {
   printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "${T[sim_resumo]}" "$R"
   linha_resumo "▸" "$CIANO"  "${T[sim_baixaria]}" "${NEG}${n_vid}${R}"
   fmt_bytes "$soma"; linha_resumo "▣" "$DIM" "${T[sim_tamanho]}" "~ $FMT"
-  linha_resumo "↷" "$AMARELO" "${T[sim_ja]}" "${NEG}${n_ja}${R}"
+  (( n_ja )) && linha_resumo "↷" "$AMARELO" "${T[sim_ja]}" "${NEG}${n_ja}${R}"
   (( n_fora )) && linha_resumo "↷" "$AMARELO" "${T[s_filtrados]}" "${NEG}${n_fora}${R}"
   (( n_erro )) && linha_resumo "✖" "$VERMELHO" "${T[s_erro]}" "${NEG}${n_erro}${R}"
   printf '\n  %s%s%s\n' "$DIM" "${T[sim_nada]}" "$R"
@@ -6664,8 +6722,8 @@ verifica_colecao() {
   if (( CANCELADO )); then printf '\n  %s── %s ──%s\n' "$DIM" "${T[vc_s_parcial]}" "$R"
   else printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "${T[vc_s_titulo]}" "$R"; fi
   linha_resumo "✔" "$VERDE"    "${T[vc_s_ok]}"         "${NEG}${n_ok}${R}"
-  linha_resumo "✖" "$VERMELHO" "${T[vc_s_defeito]}"    "${NEG}${n_def}${R}"
-  linha_resumo "⚠" "$AMARELO"  "${T[vc_s_incompleto]}" "${NEG}${n_inc}${R}"
+  (( n_def )) && linha_resumo "✖" "$VERMELHO" "${T[vc_s_defeito]}"    "${NEG}${n_def}${R}"
+  (( n_inc )) && linha_resumo "⚠" "$AMARELO"  "${T[vc_s_incompleto]}" "${NEG}${n_inc}${R}"
   linha_resumo "◷" "$DIM"      "${T[s_tempo]}"         "$seg"
   printf '\n'
   (( CANCELADO )) && return 130
@@ -6798,8 +6856,8 @@ resumo_conversao() {
   if (( CANCELADO )); then printf '\n  %s── %s ──%s\n' "$DIM" "${T[cv_s_parcial]}" "$R"
   else printf '\n  %s── %s ─────────────────────────────────────%s\n' "$DIM" "${T[cv_s_titulo]}" "$R"; fi
   linha_resumo "✔" "$VERDE"    "${T[cv_s_ok]}"      "${NEG}${CV_OK}${R}"
-  linha_resumo "↷" "$AMARELO"  "${T[cv_s_pulados]}" "${NEG}${CV_PULADOS}${R}"
-  linha_resumo "✖" "$VERMELHO" "${T[cv_s_erro]}"    "${NEG}${CV_ERROS}${R}"
+  (( CV_PULADOS )) && linha_resumo "↷" "$AMARELO"  "${T[cv_s_pulados]}" "${NEG}${CV_PULADOS}${R}"
+  (( CV_ERROS )) && linha_resumo "✖" "$VERMELHO" "${T[cv_s_erro]}"    "${NEG}${CV_ERROS}${R}"
   linha_resumo "◷" "$DIM"      "${T[s_tempo]}"      "$seg"
   printf '\n'
   (( CANCELADO )) && printf '  %s\n\n' "${T[cv_cancelado]}"
@@ -7192,6 +7250,7 @@ L||pt en|cmp_L
 h|help||cmp_h
 |proxy|?|cmp_proxy
 |simular simulate dry-run||cmp_simular
+|detalhes details||cmp_detalhes
 |desde since|?|cmp_desde
 |max|?|cmp_max
 |max-tamanho max-size|?|cmp_tamanho
@@ -7514,14 +7573,17 @@ if [[ -d $PASTA_SAIDA/.parciais/retomar ]]; then
     t kv_retomar "$n_ret" "$FMT"; kv "${T[kv_para_retomar]}" "$TXT"
   fi
 fi
+# No início, só o que muda o que vai acontecer. O resto fica em --detalhes; o que estiver faltando vira aviso.
 if (( CONFIG_CRIADO )); then
   t kv_config_criado "$VERDE" "$R" "${CONFIG_ARQ/#$HOME/\~}"; kv "${T[kv_config]}" "$TXT"
-elif [[ -f $CONFIG_ARQ ]]; then
+elif (( DETALHES )) && [[ -f $CONFIG_ARQ ]]; then
   t kv_config_ajustes "$N_AJUSTES_CONFIG"; kv "${T[kv_config]}" "$TXT"
 fi
 if (( USAR_HISTORICO )); then
-  n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0
-  t kv_hist_on "$n_registrados"; kv "${T[kv_historico]}" "$TXT"
+  if (( DETALHES )); then
+    n_registrados=$(grep -c '' "$ARQUIVO_HISTORICO" 2>/dev/null) || n_registrados=0
+    t kv_hist_on "$n_registrados"; kv "${T[kv_historico]}" "$TXT"
+  fi
 elif (( ! MODO_CURL )); then
   t kv_hist_off "$AMARELO" "$R"; kv "${T[kv_historico]}" "$TXT"
 fi
@@ -7530,11 +7592,13 @@ t kv_paralelo_v "$J" "$CONEXOES_POR_VIDEO"; txt_paralelo=$TXT
 kv "${T[kv_paralelo]}" "$txt_paralelo"
 if (( CAPTURA )); then t kv_clip "${CLIP_CMD[0]}" "$ARQ_CAPTURA"; kv "${T[kv_captura]}" "$TXT"
 elif (( FILA_VIVA )); then kv "${T[kv_fila_viva]}" "${T[kv_fv]}"; fi
-kv "${T[kv_extras]}"   "$txt_extras"
-FFMPEG_VER=${FFMPEG_VER:-?}
-kv "${T[kv_ferramentas]}" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
-if [[ -n $ARIA ]]; then txt_aria=ok; else txt_aria="${DIM}${T[js_nenhum]}${R}"; fi
-kv "${T[kv_recursos]}"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}${T[js_nenhum]}${R}} · aria2: $txt_aria"
+if (( DETALHES )); then
+  kv "${T[kv_extras]}"   "$txt_extras"
+  FFMPEG_VER=${FFMPEG_VER:-?}
+  kv "${T[kv_ferramentas]}" "yt-dlp ${YTDLP_VER:-?} · ffmpeg ${FFMPEG_VER%%-*}"
+  if [[ -n $ARIA ]]; then txt_aria=ok; else txt_aria="${DIM}${T[js_nenhum]}${R}"; fi
+  kv "${T[kv_recursos]}"    "impersonate: ${txt_imp} · js: ${JS_RUNTIME:-${AMARELO}${T[js_nenhum]}${R}} · aria2: $txt_aria"
+fi
 printf '\n'
 for a in "${AVISOS_CONFIG[@]}"; do t cfg_linha "${a%%:*}" "${a#*:}"; aviso "$TXT"; done
 if (( LIMITE_J > 0 )); then
@@ -7564,8 +7628,9 @@ if (( INTERATIVO )) && { exec 3</dev/tty; } 2>/dev/null; then
   if STTY_SAVE=$(stty -g <&3 2>/dev/null) && modo_teclas; then TECLAS=1; fi
 fi
 J_ALVO=$J
-printf '  %s%s%s\n' "$DIM" "${T[dica_ctrlc]}" "$R"
-(( TECLAS )) && printf '  %s%s%s\n' "$DIM" "${T[dica_teclas]}" "$R"
+txt_dica=${T[dica_ctrlc]}
+(( TECLAS )) && txt_dica+=${T[dica_teclas]}
+corta "$txt_dica" $(( COLS - 3 )); printf '  %s%s%s\n' "$DIM" "$FMT" "$R"
 printf '\n'
 
 # Redimensionou a janela? O painel se ajusta no próximo quadro. (O trap só entra

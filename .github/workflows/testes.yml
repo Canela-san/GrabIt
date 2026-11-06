@@ -13,7 +13,7 @@ jobs:
   completos:
     name: Testes completos (Ubuntu)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - name: Dependências
@@ -42,7 +42,7 @@ jobs:
   macos:
     name: macOS
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - name: O Bash 3.2 do sistema é recusado com uma mensagem clara
