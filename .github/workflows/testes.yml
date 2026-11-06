@@ -42,7 +42,7 @@ jobs:
   macos:
     name: macOS
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: O Bash 3.2 do sistema é recusado com uma mensagem clara
@@ -51,7 +51,11 @@ jobs:
           saida=$(/bin/bash grabit.sh -h 2>&1); rc=$?
           echo "$saida"
           [ "$rc" = 1 ] && echo "$saida" | grep -q "Bash 4.4"
-      - name: Testes rápidos com o Bash do Homebrew
+      - name: Dependências
         run: |
-          brew install bash
-          "$(brew --prefix)/bin/bash" testes/rodar.sh --rapido
+          brew install bash ffmpeg aria2 pipx
+          pipx install "yt-dlp[default]"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Testes completos com o Bash do Homebrew
+        run: |
+          "$(brew --prefix)/bin/bash" testes/rodar.sh

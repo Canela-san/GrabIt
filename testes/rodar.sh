@@ -1019,6 +1019,120 @@ for p in yt-dlp ffmpeg ffprobe python3; do
   command -v "$p" >/dev/null 2>&1 || { printf '\nFalta %s para os testes completos (use --rapido).\n' "$p"; exit 1; }
 done
 
+# ───── O painel e as teclas só existem num terminal: aqui, um de verdade (pseudo-terminal) ─────
+if command -v python3 >/dev/null 2>&1; then
+  secao "Painel e teclas, num terminal de verdade"
+  cat > "$TMP/terminal.py" <<'EOF'
+# terminal.py SAÍDA LINHAS ROTEIRO COMANDO...: roda o comando num terminal e segue o roteiro, separado por "|":
+#   espera:TEXTO  até TEXTO aparecer na tela    tecla:X  aperta uma tecla    pausa:S  espera S segundos
+#   ctrlc  aperta Ctrl+C    fim  espera o programa terminar
+import fcntl, os, pty, select, signal, struct, sys, termios, time
+saida, linhas, roteiro, cmd = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(cmd[0], cmd)
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", linhas, 120, 0, 0))
+os.kill(pid, signal.SIGWINCH)
+tudo, lido = b"", 0
+def le(ate):
+    global tudo
+    while time.time() < ate:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try:
+                d = os.read(fd, 65536)
+            except OSError:
+                return False
+            if not d:
+                return False
+            tudo += d
+    return True
+ok = True
+for passo in roteiro.split("|"):
+    tipo, _, valor = passo.partition(":")
+    if tipo == "espera":
+        limite = time.time() + 25
+        while valor.encode() not in tudo[lido:] and time.time() < limite and le(time.time() + 0.1):
+            pass
+        achou = tudo.find(valor.encode(), lido)
+        if achou < 0:
+            ok = False
+            print("NAO APARECEU:", valor)
+            break
+        lido = achou + len(valor.encode())
+    elif tipo == "tecla":
+        os.write(fd, valor.encode())
+    elif tipo == "ctrlc":
+        os.write(fd, b"\x03")
+    elif tipo == "pausa":
+        le(time.time() + float(valor))
+    elif tipo == "fim":
+        limite = time.time() + 30
+        while time.time() < limite and le(time.time() + 0.2):
+            pass
+fim = time.time() + 2
+while time.time() < fim:
+    p, st = os.waitpid(pid, os.WNOHANG)
+    if p:
+        rc = os.waitstatus_to_exitcode(st) if hasattr(os, "waitstatus_to_exitcode") else st >> 8
+        break
+    le(time.time() + 0.1)
+else:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    rc = 99
+with open(saida, "wb") as f:
+    f.write(tudo)
+print("rc", rc)
+sys.exit(0 if ok else 3)
+EOF
+  D="$TMP/painel"; mkdir -p "$D"; cd "$D" || exit 1
+  tela() { local s=$1 r=$2; shift 2; TERM=xterm-256color HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" python3 "$TMP/terminal.py" "$s" "${LINHAS_TELA:-40}" "$r" bash "$G" "$@" > "$s.rc" 2>&1; }
+  progresso='@@P@@1048576\03710485760\037524288\03718\037\037\037h264\0371080\03730\037mp4\037Filme de teste'
+  cat > "$TMP/prog.sh" <<EOF
+#!/bin/sh
+# um download que mostra progresso e demora
+printf '$progresso\n'
+sleep \${STUB_PAINEL:-4}
+printf '@@D@@1080\03730\037SDR\037h264\037aac\03760\037Filme de teste\037abc\037Downloads/Filme.mkv\n'
+EOF
+  sed 's/^if \[ -n "\${STUB_DORME:-}" \]; then.*$/[ -z "${STUB_PROG:-}" ] || . "$STUB_PROG"\n&/' "$STUB/yt-dlp" > "$STUB/yt-dlp.novo" && mv "$STUB/yt-dlp.novo" "$STUB/yt-dlp"; chmod +x "$STUB/yt-dlp"
+  export STUB_PROG="$TMP/prog.sh"
+  tela p1 'espera:Filme de teste|espera:1080p|espera:⇣ |fim' -L pt -j 1 http://a.invalid/painel1
+  espera "o painel mostra o título do vídeo" contem p1 "Filme de teste"
+  espera "…a barra de progresso" contem p1 "━"
+  espera "…a velocidade" contem p1 "⇣ "
+  espera "…o título da janela" contem p1 "· GrabIt"
+  espera "…as teclas" contem p1 "p pausa"
+  espera "…termina com código 0" contem p1.rc "rc 0"
+  espera "…e devolve o cursor" contem p1 $'\e[?25h'
+  espera "…e a quebra de linha" contem p1 $'\e[?7h'
+  : > "$STUB_LOG"; rm -f "$TMP/conc"
+  STUB_PAINEL=2 tela p2 'espera:Filme de teste|tecla:p|espera:pausado|pausa:3|tecla:p|fim' -L pt -j 1 http://a.invalid/p2a http://a.invalid/p2b
+  espera "p pausa, e o painel avisa" grep -qi "pausado" p2
+  espera "…p de novo continua, e tudo termina" contem p2.rc "rc 0"
+  espera "…os dois baixados" grep -qE '✔ +Baixados +2' p2
+  LINHAS_TELA=12 STUB_PAINEL=2 tela p3 'espera:Filme de teste|tecla:+|espera:2 download(s) ao mesmo tempo|tecla:-|espera:1 download(s) ao mesmo tempo|fim' -L pt -j 1 http://a.invalid/p3a http://a.invalid/p3b
+  espera "+ e - mudam quantos baixam ao mesmo tempo" contem p3.rc "rc 0"
+  STUB_PAINEL=2 tela p4 'espera:Filme de teste|tecla:q|espera:termina|fim' -L pt -j 1 http://a.invalid/p4a http://a.invalid/p4b http://a.invalid/p4c
+  espera "q termina os atuais e não começa os outros" grep -qE '✔ +Baixados +1' p4
+  STUB_PAINEL=30 tela p5 'espera:Filme de teste|tecla:q|espera:termina|tecla:q|fim' -L pt -j 1 http://a.invalid/p5a http://a.invalid/p5b
+  espera "q duas vezes é como Ctrl+C" grep -qE 'rc (130|-2)$' p5.rc
+  STUB_PAINEL=30 tela p6 'espera:Filme de teste|ctrlc|fim' -L pt -j 1 http://a.invalid/p6a http://a.invalid/p6b
+  espera "Ctrl+C cancela, com o código de saída certo" grep -qE 'rc (130|-2)$' p6.rc
+  espera "…e diz o que faltou" contem links_falhos.txt "a.invalid/p6b"
+  espera "…e devolve o cursor" contem p6 $'\e[?25h'
+  unset STUB_PROG
+  # as perguntas do instalador, respondidas no teclado
+  RES_INS="$TMP/casa-ins"; mkdir -p "$RES_INS"
+  TERM=xterm-256color HOME="$RES_INS" PATH="$GBREW:$STUB:$TMP/sem:/usr/bin:/bin" python3 "$TMP/terminal.py" p8 40 'espera:[S/n]|tecla:n
+|pausa:1|tecla:n
+|pausa:1|tecla:n
+|pausa:1|tecla:n
+|fim' bash "$G" -L pt --instalar > p8.rc 2>&1
+  espera "o instalador pergunta no terminal" contem p8 "[S/n]"
+fi
+
 secao "Contrato com o yt-dlp"
 espera "o yt-dlp informa os runtimes no formato esperado" sh -c "yt-dlp -v --ignore-config 2>&1 | grep -qE '^\[debug\] JS runtimes: '"
 if command -v pipx >/dev/null 2>&1 && pipx list --short 2>/dev/null | grep -q '^yt-dlp '; then
