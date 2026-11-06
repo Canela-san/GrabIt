@@ -41,6 +41,18 @@ fi
 unset utf8_teste loc
 export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
+# peso CODEC → NUM: quanto cada bit rende, em relação ao H.264 (100). É uma média: varia com o vídeo e com
+# o codificador. Medido com grabit comparar: veja "Comparar dois vídeos" no README.
+peso() {
+  case ${1,,} in
+    av1*|av01*) NUM=200 ;;
+    hevc*|h265*|hev1*|hvc1*|vp9*|vp09*) NUM=150 ;;
+    mpeg4*|mp4v*|msmpeg*|wmv*|vc1*|flv*|h263*|vp6*|vp8*|theora*) NUM=70 ;;
+    mpeg1*|mpeg2*|mp1v*|mp2v*|mjpeg*) NUM=50 ;;
+    *) NUM=100 ;;
+  esac
+}
+
 # Modo auxiliar da verificação completa (-v): o yt-dlp chama o GrabIt assim depois de
 # cada vídeo (--exec). O ffmpeg decodifica o arquivo inteiro e qualquer erro reprova o
 # vídeo: ele é guardado com outro nome (para não contar como "já baixado") e, com o
@@ -683,15 +695,6 @@ if [[ ${1:-} == --procura-direto ]]; then
   }
   # Quanto cada bit rende, em % do H.264: 5 Mb/s em HEVC valem mais que 5 Mb/s em H.264. É uma regra
   # de bolso, que só evita comparar codecs diferentes pelo número cru.
-  peso() {
-    case ${1,,} in
-      av1*|av01*) NUM=200 ;;
-      hevc*|h265*|hev1*|hvc1*|vp9*|vp09*) NUM=150 ;;
-      mpeg4*|mp4v*|msmpeg*|wmv*|vc1*|flv*|h263*|vp6*|vp8*|theora*) NUM=70 ;;
-      mpeg1*|mpeg2*|mp1v*|mp2v*|mjpeg*) NUM=50 ;;
-      *) NUM=100 ;;
-    esac
-  }
   rotulo() {                                  # rotulo LADO FPS KBPS → FMT: "1080p · 60 fps · 16 Mb/s"
     FMT="$1p"
     (( $2 > 0 )) && FMT+=" · $(( ($2 + 500) / 1000 )) fps"
@@ -1361,6 +1364,25 @@ idioma_pt() {
     [cmp_pronto]="Autocompletar instalado: vale nos terminais abertos daqui em diante."
     [cmp_zsh]="No zsh, ponha no ~/.zshrc, antes do compinit:  %s"
     [atu_pacote_grabit]="O GrabIt veio de um gerenciador de pacotes: para atualizá-lo, use  %s"
+    [cpv_titulo]="GrabIt · comparação de dois arquivos do mesmo vídeo"
+    [cpv_uso]="Diga os dois arquivos: grabit comparar A.mp4 B.mkv"
+    [cpv_ilegivel]="Não deu para ler o vídeo de '%s'."
+    [cpv_hdr]="Um arquivo é HDR e o outro não: a imagem é codificada de outro jeito, e a medida não diria nada."
+    [cpv_ref]="Referência"
+    [cpv_comp]="Comparado"
+    [cpv_metodo]="Método"
+    [cpv_metodo_vmaf]="VMAF, em %d trecho(s) de %d s"
+    [cpv_metodo_ssim]="SSIM e PSNR, em %d trecho(s) de %d s (com um ffmpeg que tenha libvmaf, usa o VMAF)"
+    [cpv_trecho]="comparando o trecho %d de %d…"
+    [cpv_duracao]="As durações são diferentes: pode não ser o mesmo corte, e os trechos não baterem."
+    [cpv_falhou]="O ffmpeg não conseguiu comparar os dois:"
+    [cpv_pior]="no pior trecho: %s"
+    [cpv_igual]="Praticamente iguais a olho nu"
+    [cpv_pequena]="Diferença pequena, que pode aparecer em cenas difíceis"
+    [cpv_visivel]="Diferença visível: a referência é melhor"
+    [cpv_outro]="Tão diferentes que não parecem o mesmo vídeo, ou não estão alinhados no tempo."
+    [cpv_menor]=", e o comparado ocupa %d%% menos."
+    [cpv_nota]="A medida diz quanto o comparado se afasta da referência, não qual dos dois está mais perto do original."
     [cmd_desconhecido]="Comando desconhecido: %s."
     [cmd_sugestao]="     Você quis dizer:  grabit %s"
     [des_titulo]="GrabIt · desinstalação"
@@ -1629,6 +1651,8 @@ que grabit --atualizar):
                      ou recomprime em outro codec; o original fica, a não ser com --substituir
   canais, channels [AÇÃO]
                      acompanha canais: adicionar LINK, baixar (só o que for novo), remover N
+  comparar, compare A B
+                     compara dois arquivos do mesmo vídeo: o quanto diferem aos olhos
   completar, completion fish|bash|zsh
                      imprime o autocompletar (o instalar já o põe no lugar)
   desinstalar, uninstall
@@ -2095,6 +2119,25 @@ idioma_en() {
     [cmp_pronto]="Autocompletion installed: it works in terminals opened from now on."
     [cmp_zsh]="On zsh, add this to ~/.zshrc, before compinit:  %s"
     [atu_pacote_grabit]="GrabIt came from a package manager: to update it, use  %s"
+    [cpv_titulo]="GrabIt · comparing two files of the same video"
+    [cpv_uso]="Name the two files: grabit compare A.mp4 B.mkv"
+    [cpv_ilegivel]="Couldn't read the video in '%s'."
+    [cpv_hdr]="One file is HDR and the other isn't: the image is encoded differently, and the measure would mean nothing."
+    [cpv_ref]="Reference"
+    [cpv_comp]="Compared"
+    [cpv_metodo]="Method"
+    [cpv_metodo_vmaf]="VMAF, on %d segment(s) of %d s"
+    [cpv_metodo_ssim]="SSIM and PSNR, on %d segment(s) of %d s (with an ffmpeg that has libvmaf, it uses VMAF)"
+    [cpv_trecho]="comparing segment %d of %d…"
+    [cpv_duracao]="The durations differ: it may not be the same cut, and the segments may not line up."
+    [cpv_falhou]="ffmpeg couldn't compare the two:"
+    [cpv_pior]="in the worst segment: %s"
+    [cpv_igual]="Practically identical to the naked eye"
+    [cpv_pequena]="A small difference, which may show in difficult scenes"
+    [cpv_visivel]="A visible difference: the reference is better"
+    [cpv_outro]="So different they don't look like the same video, or they are not lined up in time."
+    [cpv_menor]=", and the compared one takes up %d%% less."
+    [cpv_nota]="The measure says how far the compared one is from the reference, not which of the two is closer to the original."
     [cmd_desconhecido]="Unknown command: %s."
     [cmd_sugestao]="     Did you mean:  grabit %s"
     [des_titulo]="GrabIt · uninstall"
@@ -2363,6 +2406,8 @@ the same as grabit --atualizar):
                      identical) or re-encodes to another codec; the original stays, unless --replace
   channels, canais [ACTION]
                      follow channels: add LINK, download (only what's new), remove N
+  compare, comparar A B
+                     compare two files of the same video: how much they differ to the eye
   completion, completar fish|bash|zsh
                      print the autocompletion (install already puts it in place)
   uninstall, desinstalar
@@ -2587,12 +2632,13 @@ palavra_comando() {
     desinstalar|uninstall)            COMANDO=desinstalar ;;
     canais|channels)                  COMANDO=canais ;;
     completar|completion)             COMANDO=completar ;;
+    comparar|compare)                 COMANDO=comparar ;;
     seguir|follow)                    COMANDO=canais; SEGUIR=1 ;;
     *) return 1 ;;
   esac
 }
 PALAVRAS_COMANDO=(config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
-  versao version curl converter convert canais channels seguir follow completar completion)
+  versao version curl converter convert canais channels seguir follow completar completion comparar compare)
 
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
 # errado ("converte") nunca é um link: melhor dizer logo do que tentar baixar.
@@ -6830,6 +6876,122 @@ gerencia_baixados() {
   return 0
 }
 
+# ───────────────────────────── Comparar (grabit comparar) ─────────────────────
+# Quanto dois arquivos do mesmo vídeo diferem aos olhos, e não só nos números. Medidas assim precisam de
+# uma referência: vale a que tem mais dados, descontado o codec, e o resultado diz quanto a outra se afasta
+# dela. Por isso não dá para fazer isto sozinho na hora de escolher o que baixar: é preciso ter os dois
+# arquivos, e sem o original nenhum programa diz qual dos dois está mais perto dele.
+comparar() {
+  local a=${ARGS_LINKS[0]:-} b=${ARGS_LINKS[1]:-} n=${GRABIT_TRECHOS:-5} seg=10 ref dist i pos r_tam d_tam r_ef d_ef
+  local v1 v2 w h w2 h2 f tempo dur vmaf=0 filtro erros l media pior min_m nota s tipo trechos=() psnrs=() menos meta_r meta_d
+  if (( ${#ARGS_LINKS[@]} != 2 )); then erro "${T[cpv_uso]}"; return 2; fi
+  for f in "$a" "$b"; do
+    if [[ ! -f $f ]]; then t cv_nao_existe "$f"; erro "$TXT"; return 1; fi
+  done
+  if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+    t dep_faltando ffmpeg; erro "$TXT"; return 1
+  fi
+  atualiza_largura
+  printf '\n  %s%s%s\n\n' "$NEG" "${T[cpv_titulo]}" "$R"
+  sonda "$a" && [[ -n $S_VC ]] || { t cpv_ilegivel "$a"; erro "$TXT"; return 1; }
+  local a_h=$S_H a_fps=$S_FPS a_vc=$S_VC a_hdr=$S_HDR a_dur=$S_DUR a_tam=$S_TAM
+  sonda "$b" && [[ -n $S_VC ]] || { t cpv_ilegivel "$b"; erro "$TXT"; return 1; }
+  local b_h=$S_H b_fps=$S_FPS b_vc=$S_VC b_hdr=$S_HDR b_dur=$S_DUR b_tam=$S_TAM
+  if [[ ${a_hdr} != "$b_hdr" ]]; then erro "${T[cpv_hdr]}"; return 1; fi
+  # quanto cada um tem de dados, descontado o codec
+  peso "$a_vc"; r_ef=$(( a_tam * NUM / 100 / (a_dur > 0 ? a_dur : 1) ))
+  peso "$b_vc"; d_ef=$(( b_tam * NUM / 100 / (b_dur > 0 ? b_dur : 1) ))
+  if (( d_ef > r_ef )); then
+    ref=$b; dist=$a; r_tam=$b_tam; d_tam=$a_tam
+  else
+    ref=$a; dist=$b; r_tam=$a_tam; d_tam=$b_tam
+  fi
+  for f in a b; do
+    local -n _h=${f}_h _fps=${f}_fps _vc=${f}_vc _dur=${f}_dur _tam=${f}_tam
+    fmt_bytes "$_tam"
+    printf -v meta_d '%sp · %s fps · %s · %s · %s Mb/s' "$_h" "$_fps" "$_vc" "$FMT" "$(awk -v t="$_tam" -v d="$_dur" 'BEGIN { printf "%.1f", (d > 0 ? t * 8 / d / 1000000 : 0) }')"
+    if [[ $f == a ]]; then meta_r=$meta_d; fi
+    unset -n _h _fps _vc _dur _tam
+  done
+  if [[ $ref == "$a" ]]; then kv "${T[cpv_ref]}" "${a##*/}"; kv "" "$meta_r"; kv "${T[cpv_comp]}" "${b##*/}"; kv "" "$meta_d"
+  else kv "${T[cpv_ref]}" "${b##*/}"; kv "" "$meta_d"; kv "${T[cpv_comp]}" "${a##*/}"; kv "" "$meta_r"; fi
+
+  dur=$(( a_dur < b_dur ? a_dur : b_dur ))
+  s=$(( a_dur - b_dur )); (( s < 0 )) && s=$(( -s ))
+  (( s > 2 + dur / 50 )) && aviso "${T[cpv_duracao]}"
+  (( dur > 0 )) || { t cpv_ilegivel "$a"; erro "$TXT"; return 1; }
+  if (( dur <= n * seg )); then n=1; seg=$dur; fi
+
+  # Compara no tamanho maior e no ritmo da referência
+  v1=$(ffprobe -v error -select_streams V:0 -show_entries stream=width,height -of csv=p=0 -- "$a")
+  v2=$(ffprobe -v error -select_streams V:0 -show_entries stream=width,height -of csv=p=0 -- "$b")
+  w=${v1%%,*}; h=${v1##*,}; w2=${v2%%,*}; h2=${v2##*,}
+  if (( w2 * h2 > w * h )); then w=$w2; h=$h2; fi
+  f=$(ffprobe -v error -select_streams V:0 -show_entries stream=avg_frame_rate -of csv=p=0 -- "$ref")
+  tipo=ssim
+  if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' libvmaf '; then tipo=vmaf; fi
+  if [[ $tipo == vmaf ]]; then t cpv_metodo_vmaf "$n" "$seg"; else t cpv_metodo_ssim "$n" "$seg"; fi
+  kv "${T[cpv_metodo]}" "$TXT"
+  printf '\n'
+  # (o modelo do VMAF foi feito para 1080p)
+  local escala="scale=$w:$h:flags=bicubic"
+  if [[ $tipo == vmaf ]] && (( h > 1080 )); then escala="scale=-2:1080:flags=bicubic"; fi
+  local prep="fps=$f,$escala,format=yuv420p,setpts=PTS-STARTPTS"
+  erros=$(mktemp "${TMPDIR:-/tmp}/grabit.XXXXXX") || return 1
+  trap 'rm -f -- "$erros"' RETURN
+  for (( i = 0; i < n; i++ )); do
+    tempo=$(( n > 1 ? dur * (i + 1) / (n + 1) : 0 ))
+    if (( INTERATIVO )); then t cpv_trecho $(( i + 1 )) "$n"; printf '\r%s[K  %s%s%s' "$ESC" "$DIM" "$TXT" "$R"; fi
+    if [[ $tipo == vmaf ]]; then
+      filtro="[0:V:0]$prep[d];[1:V:0]$prep[r];[d][r]libvmaf=n_threads=4"
+      ffmpeg -nostdin -hide_banner -v info -ss "$tempo" -t "$seg" -i "file:$dist" -ss "$tempo" -t "$seg" -i "file:$ref" \
+        -lavfi "$filtro" -f null - 2>"$erros"
+      l=$(sed -n 's/.*VMAF score: *\([0-9.]*\).*/\1/p' "$erros" | tail -n 1)
+      if [[ -z $l ]]; then tipo=ssim; i=-1; trechos=(); (( INTERATIVO )) && printf '\r%s[K' "$ESC"; continue; fi
+      trechos+=("$l")
+    else
+      filtro="[0:V:0]$prep,split[d1][d2];[1:V:0]$prep,split[r1][r2];[d1][r1]ssim[s];[d2][r2]psnr[p]"
+      ffmpeg -nostdin -hide_banner -v info -ss "$tempo" -t "$seg" -i "file:$dist" -ss "$tempo" -t "$seg" -i "file:$ref" \
+        -lavfi "$filtro" -map '[s]' -f null - -map '[p]' -f null - 2>"$erros"
+      l=$(sed -n 's/.*SSIM .*All:\([0-9.]*\).*/\1/p' "$erros" | tail -n 1)
+      if [[ -z $l ]]; then
+        (( INTERATIVO )) && printf '\r%s[K' "$ESC"
+        erro "${T[cpv_falhou]}"; head -n 1 "$erros" >&2
+        return 1
+      fi
+      trechos+=("$l")
+      l=$(sed -n 's/.*PSNR .*average:\([0-9.a-z]*\).*/\1/p' "$erros" | tail -n 1)
+      [[ -n $l ]] && psnrs+=("$l")
+    fi
+  done
+  (( INTERATIVO )) && printf '\r%s[K' "$ESC"
+  media=$(printf '%s\n' "${trechos[@]}" | awk '{ s += $1 } END { printf "%.4f", s / NR }')
+  pior=$(printf '%s\n' "${trechos[@]}" | sort -n | head -n 1)
+  if [[ $tipo == vmaf ]]; then
+    media=$(awk -v m="$media" 'BEGIN { printf "%.1f", m }'); pior=$(awk -v m="$pior" 'BEGIN { printf "%.1f", m }')
+    kv "VMAF" "${NEG}$media${R}  ${DIM}$(t cpv_pior "$pior"; printf '%s' "$TXT")${R}"
+    nota=$(awk -v m="$media" 'BEGIN { print (m >= 95 ? "igual" : (m >= 88 ? "pequena" : (m >= 40 ? "visivel" : "outro"))) }')
+  else
+    pior=$(awk -v m="$pior" 'BEGIN { printf "%.4f", m }')
+    kv "SSIM" "${NEG}$media${R}  ${DIM}$(t cpv_pior "$pior"; printf '%s' "$TXT")${R}"
+    if (( ${#psnrs[@]} )); then
+      min_m=$(printf '%s\n' "${psnrs[@]}" | awk '$1 != "inf" { s += $1; n++ } END { if (n) printf "%.1f dB", s / n; else print "∞" }')
+      kv "PSNR" "$min_m"
+    fi
+    nota=$(awk -v m="$media" 'BEGIN { print (m >= 0.985 ? "igual" : (m >= 0.96 ? "pequena" : (m >= 0.6 ? "visivel" : "outro"))) }')
+  fi
+  printf '\n'
+  t "cpv_$nota"; l=$TXT
+  menos=0
+  if (( r_tam > 0 && d_tam < r_tam )); then menos=$(( (r_tam - d_tam) * 100 / r_tam )); fi
+  if [[ $nota != outro ]]; then
+    if (( menos >= 5 )); then t cpv_menor "$menos"; l+=$TXT; else l+=.; fi
+  fi
+  if [[ $nota == igual ]]; then printf '  %s✔%s %s\n' "$VERDE" "$R" "$l"; else printf '  %s↳%s %s\n' "$AMARELO" "$R" "$l"; fi
+  printf '  %s%s%s\n\n' "$DIM" "${T[cpv_nota]}" "$R"
+  return 0
+}
+
 # ───────────────────────────── Autocompletar ──────────────────────────────────
 # Uma tabela só, de onde saem os três shells: curta|longas|valores|descrição. Em valores: ARQ, PASTA, ?
 # para um valor livre, vazio para opção sem valor, ou a lista do que dá para escolher.
@@ -7078,6 +7240,7 @@ case $COMANDO in
   converter) conversao; exit $? ;;
   desinstalar) desinstalar; exit $? ;;
   completar) gera_completar "${ARGS_LINKS[0]:-}"; exit $? ;;
+  comparar) comparar; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM

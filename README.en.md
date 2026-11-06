@@ -417,6 +417,14 @@ grabit convert video.mkv -k h264 --gpu           # on the graphics card: much fa
 
 The **graphics card** (`--gpu`) is much faster, but for the same quality the file comes out larger. Before using it, GrabIt runs a brief test: with no card, or if it can't do that codec, it warns and carries on with the CPU. An **HDR** video re-encoded to H.264 or MPEG-4 has its colors converted to SDR, so they don't look washed out.
 
+### Compare two videos
+
+```bash
+grabit compare video-av1.mp4 video-h264.mp4
+```
+
+It says how much two files of the same video differ to the eye, instead of just comparing bitrates: it measures 5 segments of 10 s with VMAF, if your ffmpeg has `libvmaf`, or with SSIM and PSNR. The reference is the file with more data, and the result says how far the other one is from it and how much space it saves. Since it needs both files, this measure isn't part of the automatic choice of what to download.
+
 ## A summary at the end
 
 <p align="center">

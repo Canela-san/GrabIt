@@ -2060,6 +2060,46 @@ espera "…sem erro" codigo "$RC" 0
 XDG_DATA_HOME="$D/dados2" roda h4 -L pt canais adicionar "$B/pagina/index.html" --desde 1d
 espera "o canal entra com a data" grep -q "index.html" dados2/grabit/canais.txt
 
+secao "Comparar dois vídeos"
+D="$TMP/d15"; mkdir -p "$D"; cd "$D" || exit 1
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=24:duration=20" -c:v libx264 -preset ultrafast -crf 8 a.mp4
+ffmpeg -loglevel error -y -i a.mp4 -c:v libx264 -preset medium -crf 20 boa.mkv
+ffmpeg -loglevel error -y -i a.mp4 -c:v libx264 -preset ultrafast -crf 48 ruim.mp4
+ffmpeg -loglevel error -y -f lavfi -i "mandelbrot=size=640x360:rate=24" -t 20 -c:v libx264 -preset ultrafast -crf 8 outro.mp4
+export GRABIT_TRECHOS=2
+roda z0 -L pt comparar a.mp4
+espera "com um arquivo só: explica" codigo "$RC" 2
+roda z1 -L pt comparar a.mp4 nao-existe.mp4
+espera "arquivo que não existe" codigo "$RC" 1
+roda z2 -L pt comparar a.mp4 boa.mkv
+espera "o de mais dados é a referência" sh -c "grep 'Referência' z2 | grep -q 'a.mp4'"
+espera "a mesma imagem, com menos dados: iguais a olho nu" contem z2 "Praticamente iguais"
+espera "…e diz quanto economiza" grep -qE 'ocupa [0-9]+% menos' z2
+espera "…com a medida" grep -qE '(SSIM|VMAF) +[0-9.]+' z2
+roda z3 -L pt comparar ruim.mp4 a.mp4
+espera "comprimido demais: diferença visível" contem z3 "Diferença visível"
+espera "…a ordem dos arquivos não importa: a referência é a de mais dados" sh -c "grep 'Referência' z3 | grep -q 'a.mp4'"
+roda z4 -L en compare a.mp4 outro.mp4
+espera "vídeos diferentes: avisa" contem z4 "don't look like the same video"
+cp a.mp4 igual.mp4
+roda z5 -L pt comparar a.mp4 igual.mp4
+espera "o mesmo arquivo: iguais" contem z5 "Praticamente iguais"
+# com um ffmpeg que tenha o VMAF, é ele que vale
+mkdir -p "$TMP/ff-vmaf"
+cat > "$TMP/ff-vmaf/ffmpeg" <<EOF
+#!/bin/sh
+case "\$*" in
+  *-filters*) echo ' ... libvmaf  VV->V  Calculate the VMAF between two video streams.'; exit 0 ;;
+  *libvmaf*) echo '[Parsed_libvmaf_4 @ 0x1] VMAF score: 96.25' >&2; exit 0 ;;
+esac
+exec "$(command -v ffmpeg)" "\$@"
+EOF
+chmod +x "$TMP/ff-vmaf/ffmpeg"
+PATH="$TMP/ff-vmaf:$PATH" roda z6 -L pt comparar a.mp4 boa.mkv
+espera "com libvmaf, usa o VMAF" grep -qE 'VMAF +96.2' z6
+unset GRABIT_TRECHOS
+
+secao "Verificação da coleção (--verificar)"
 secao "Verificação da coleção (--verificar)"
 secao "Verificação da coleção (--verificar)"
 secao "Verificação da coleção (--verificar)"
