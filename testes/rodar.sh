@@ -151,7 +151,11 @@ STUB="$TMP/stub"; mkdir -p "$STUB" "$TMP/sem" "$TMP/com"
 export STUB_LOG="$TMP/stub.log" CLIP_ARQ="$TMP/clip" CLIP_LIDO="$TMP/clip.lido"
 cat > "$STUB/yt-dlp" <<'EOF'
 #!/bin/sh
-printf '%s\n' "$*" >> "$STUB_LOG"
+conf=""; ant=""
+for a in "$@"; do [ "$ant" = --config-locations ] && conf=$a; ant=$a; done
+# (o arquivo de opções entra no log como se viesse na linha de comando)
+if [ -n "$conf" ]; then printf '%s %s\n' "$*" "$(sed 's/"//g' "$conf" | tr '\n' ' ')" >> "$STUB_LOG"
+else printf '%s\n' "$*" >> "$STUB_LOG"; fi
 case " $* " in
   *" --version "*) echo "${STUB_VER:-2099.01.01}"; exit 0 ;;
   *" --list-impersonate-targets "*) echo "Chrome-133  Macos-15  curl_cffi"; exit 0 ;;
@@ -706,6 +710,25 @@ falso s2 -L pt lista.txt
 espera "lista.txt, sem caminho, não é um link" contem s2 "Nenhum link válido"
 falso s3 -L pt pasta/arquivo.txt
 espera "pasta/arquivo.txt também não" contem s3 "Nenhum link válido"
+
+secao "Privacidade"
+D="$TMP/privado"; mkdir -p "$D/Downloads/logs/2020-01-01_000000" "$D/Downloads/logs/novo"; cd "$D" || exit 1
+printf 'x\n' > Downloads/logs/2020-01-01_000000/1.log; touch -d 2020-01-02T03:04:05 Downloads/logs/2020-01-01_000000/1.log
+printf 'x\n' > Downloads/logs/novo/1.log
+: > "$STUB_LOG"
+falso c1 -L pt curl 'https://a.invalid/video.m3u8' -H 'Authorization: Bearer s3gredo' -H 'Cookie: a=1'
+espera "o cabeçalho chega ao yt-dlp" contem "$STUB_LOG" "--add-header Authorization:Bearer s3gredo"
+espera "…por um arquivo, fora da linha de comando" contem "$STUB_LOG" "--config-locations"
+conf_c1=$(grep -F -- '--config-locations' "$STUB_LOG" | head -n 1 | sed -E 's/.*--config-locations ([^ ]+).*/\1/')
+espera "…que fica guardado só enquanto roda" test ! -e "$conf_c1"
+falso c2 -L pt http://a.invalid/logs
+espera "logs de mais de 30 dias são apagados" test ! -e Downloads/logs/2020-01-01_000000
+espera "…os novos ficam" test -f Downloads/logs/novo/1.log
+if [[ $(stat -c %a Downloads/logs 2>/dev/null || stat -f %Lp Downloads/logs 2>/dev/null) == 700 ]]; then
+  espera "…e só você lê a pasta" true
+else
+  espera "…e só você lê a pasta" false
+fi
 
 secao "Vídeo passado por engano como lista"
 D="$TMP/nao-lista"; mkdir -p "$D"; cd "$D" || exit 1

@@ -2980,7 +2980,7 @@ desenha() {
 # ───────────────────────────── Resultado de cada link ─────────────────────────
 salva_log() {                                 # guarda o log de todas as tentativas (sem o spam de progresso)
   local idx=$1 t tent=${TENTATIVA[$1]:-1} nome
-  mkdir -p "$LOG_DIR" 2>/dev/null || return 0
+  ( umask 077; mkdir -p "$LOG_DIR" ) 2>/dev/null || return 0
   printf -v nome '%s/%0*d.log' "$LOG_DIR" "${#TOTAL}" "$idx"
   {
     printf '# %s\n' "${LINKS[$(( idx - 1 ))]}"
@@ -4760,13 +4760,16 @@ sys.stdout.write("\0".join([url] + cab) + "\0")' "${CURL_ARGS[@]}" <<<"$txt" 2>/
   ARGS_LINKS=("$url")
 }
 
+# Os cabeçalhos vão num arquivo de opções, como os cookies: na linha de comando, um Authorization
+# apareceria no "ps" para qualquer usuário da máquina.
 # cabecalhos_ytdlp URL ARQ_COOKIES LINHA… → CAB_ARGS (as opções do yt-dlp), CAB_REFERER,
 # N_CAB_CURL e N_COOK_CURL. Vão os cabeçalhos que dizem quem pede; os que descrevem aquele
 # pedido (Range…) ficam. Os cookies vão no arquivo, e só para o site do vídeo.
 cabecalhos_ytdlp() {
-  local url=$1 arq=$2 h nome valor cookies="" par pares=() site
+  local url=$1 arq=$2 h nome valor cookies="" par pares=() site conf=${2%.*}.conf
   shift 2
   CAB_ARGS=(); CAB_REFERER=""; N_CAB_CURL=0; N_COOK_CURL=0
+  ( umask 077; : > "$conf" )
   for h in "$@"; do
     [[ $h == *:* ]] || continue
     nome=${h%%:*}; valor=${h#*:}; valor=${valor# }
@@ -4776,8 +4779,10 @@ cabecalhos_ytdlp() {
       cookie) cookies=$valor; continue ;;
       referer) CAB_REFERER=$valor ;;
     esac
-    CAB_ARGS+=(--add-header "$nome:$valor"); N_CAB_CURL=$(( N_CAB_CURL + 1 ))
+    h="$nome:$valor"; h=${h//\\/\\\\}; h=${h//\"/\\\"}
+    printf -- '--add-header "%s"\n' "$h" >> "$conf"; N_CAB_CURL=$(( N_CAB_CURL + 1 ))
   done
+  (( N_CAB_CURL )) && CAB_ARGS+=(--config-locations "$conf")
   [[ -n $cookies ]] || return 0
   site=${url#*://}; site=${site%%[/?#]*}; site=${site##*@}; site=${site%%:*}
   printf '# Netscape HTTP Cookie File\n' > "$arq"
@@ -6137,6 +6142,12 @@ ler_links
 
 mkdir -p "$PASTA_SAIDA" || { t pasta_falhou "$PASTA_SAIDA"; erro "$TXT"; exit 1; }
 printf -v LOG_DIR '%s/logs/%(%Y-%m-%d_%H%M%S)T' "$PASTA_SAIDA" -1
+# Os logs têm os links, às vezes com o token de acesso: só você lê, e ficam por 30 dias
+if [[ -d $PASTA_SAIDA/logs ]]; then
+  chmod 700 "$PASTA_SAIDA/logs" 2>/dev/null
+  find "$PASTA_SAIDA/logs" -mindepth 1 -type f -mtime +30 -delete 2>/dev/null
+  find "$PASTA_SAIDA/logs" -mindepth 1 -type d -empty -delete 2>/dev/null
+fi
 prepara_parciais
 (( UPGRADE )) && recupera_antigos
 
