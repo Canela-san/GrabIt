@@ -446,7 +446,7 @@ if ! command -v aria2c >/dev/null 2>&1; then
   espera "sem aria2c, uma conexão por arquivo e nenhum erro" sem_pedido a.invalid/c5 "--downloader"
 fi
 : > "$STUB_LOG"; rm -f "$TMP/conc"
-STUB_DORME=3 STUB_PROGRESSO=1 STUB_CONC="$TMP/conc" comaria c6 -L pt -j 4 http://b.invalid/1 http://b.invalid/2 http://b.invalid/3 http://b.invalid/4
+STUB_DORME=5 STUB_PROGRESSO=1 STUB_CONC="$TMP/conc" comaria c6 -L pt -j 4 http://b.invalid/1 http://b.invalid/2 http://b.invalid/3 http://b.invalid/4
 espera "um site só não abre conexões sem fim: a soma para no dobro de -c" test "$(grep -c 'aria2c:-x3' "$STUB_LOG")" -eq 2
 espera "…e os demais vão com uma" test "$(grep -- '-- http://b.invalid/' "$STUB_LOG" | grep -c -- '-N 1 ')" -eq 2
 : > "$STUB_LOG"
@@ -629,6 +629,34 @@ falso s2 -L pt lista.txt
 espera "lista.txt, sem caminho, não é um link" contem s2 "Nenhum link válido"
 falso s3 -L pt pasta/arquivo.txt
 espera "pasta/arquivo.txt também não" contem s3 "Nenhum link válido"
+
+secao "Vídeo passado por engano como lista"
+D="$TMP/nao-lista"; mkdir -p "$D"; cd "$D" || exit 1
+printf 'ftypisom\0\0\0\1dados\nhttps://site.invalid/descricao\nmais dados\0\n' > video.mkv
+cp video.mkv video.orig
+: > "$STUB_LOG"
+falso s1 -L pt video.mkv
+espera "um arquivo binário é recusado" codigo "$RC" 2
+espera "…explicado" contem s1 "não é uma lista de links"
+espera "…com o comando certo" contem s1 "converter"
+espera "…e o yt-dlp nem é chamado para o link de dentro dele" nao_contem "$STUB_LOG" "site.invalid/descricao"
+espera "…e o arquivo fica intacto" cmp -s video.mkv video.orig
+falso s2 -L pt -l video.mkv
+espera "-l também recusa" codigo "$RC" 2
+espera "…e não mexe no arquivo" cmp -s video.mkv video.orig
+falso s3 -L pt https://site.invalid/outro video.mkv
+espera "junto de um link bom, também" codigo "$RC" 2
+espera "…e não baixa nada" nao_contem "$STUB_LOG" "site.invalid/outro"
+falso s4 -L pt -l video.mkv --baixados limpar </dev/null
+espera "--baixados também recusa" codigo "$RC" 2
+espera "…e não mexe no arquivo" cmp -s video.mkv video.orig
+printf '\377\376h\0t\0t\0p\0\n\0' > utf16.txt
+falso s5 -L pt utf16.txt
+espera "lista em UTF-16 é recusada com a explicação" contem s5 "UTF-16"
+printf 'https://site.invalid/ok   # comentário çãõ\r\n\thttps://site.invalid/tab\r\n' > texto.txt
+: > "$STUB_LOG"
+falso s6 -L pt texto.txt
+espera "lista de texto com acentos, tabulação e fim de linha do Windows continua valendo" contem "$STUB_LOG" "site.invalid/tab"
 
 secao "Vídeo achado pelo navegador (Firefox de mentira)"
 D="$TMP/navegador"; FF="$TMP/ff"; mkdir -p "$D" "$FF"; cd "$D" || exit 1

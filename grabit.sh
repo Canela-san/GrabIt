@@ -1057,6 +1057,7 @@ idioma_pt() {
     [atu_pronto]="Tudo na versão mais nova."
     [cmd_instalar]="--instalar"
     [cmd_atualizar]="--atualizar"
+    [cmd_converter]="converter"
     [atu_pacote]="Este yt-dlp veio do gerenciador de pacotes, que costuma ficar para trás: prefira pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparando com o vídeo já baixado"
     [r_sem_melhor]="nenhuma versão melhor que %sp"
@@ -1076,6 +1077,9 @@ idioma_pt() {
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
     [sem_arquivo2]="     Crie-o com um link por linha, use  -l CAMINHO  ou passe os links no próprio comando."
+    [lista_binaria]="'%s' não é uma lista de links: é um arquivo binário, como um vídeo. Nada foi alterado."
+    [lista_binaria2]="     Para mudar o formato de um vídeo:  %s"
+    [lista_utf16]="'%s' está em UTF-16. Salve a lista em UTF-8 para usá-la. Nada foi alterado."
     [nada_1]="Nada para baixar: o único link de %s já está na seção BAIXADOS."
     [nada_n]="Nada para baixar: os %d links de %s já estão na seção BAIXADOS."
     [sem_links]="Nenhum link válido (http/https) em: %s."
@@ -1637,6 +1641,7 @@ idioma_en() {
     [atu_pronto]="Everything is on the newest version."
     [cmd_instalar]="--install"
     [cmd_atualizar]="--update"
+    [cmd_converter]="convert"
     [atu_pacote]="This yt-dlp came from the package manager, which tends to lag behind: prefer pipx install \"yt-dlp[default,curl-cffi]\"."
     [et_upgrade]="comparing with the video already downloaded"
     [r_sem_melhor]="no version better than %sp"
@@ -1656,6 +1661,9 @@ idioma_en() {
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
     [sem_arquivo2]="     Create it with one link per line, use  -l PATH  or pass the links on the command line."
+    [lista_binaria]="'%s' is not a list of links: it is a binary file, such as a video. Nothing was changed."
+    [lista_binaria2]="     To change a video's format:  %s"
+    [lista_utf16]="'%s' is in UTF-16. Save the list as UTF-8 to use it. Nothing was changed."
     [nada_1]="Nothing to download: the only link in %s is already in the DOWNLOADED section."
     [nada_n]="Nothing to download: all %d links in %s are already in the DOWNLOADED section."
     [sem_links]="No valid (http/https) links in: %s."
@@ -4176,6 +4184,25 @@ links_da_linha() {
   return 0
 }
 
+# Uma lista de links é texto. Um vídeo passado por engano não pode entrar: qualquer "https://" solto
+# dentro dele viraria um link e, baixado esse link, a lista seria regravada por cima do vídeo.
+# Vale o conteúdo, não a extensão: bastam caracteres de controle no começo do arquivo.
+eh_texto() {
+  local ruido
+  ruido=$(head -c 65536 -- "$1" 2>/dev/null | LC_ALL=C tr -d '\011\012\014\015\040-\176\200-\377' | wc -c)
+  (( ${ruido:-0} == 0 ))
+}
+
+confere_lista() {                             # confere_lista ARQUIVO: sai com código 2 se não for texto
+  eh_texto "$1" && return 0
+  case $(head -c 2 -- "$1" 2>/dev/null | od -An -tx1 | tr -d ' ') in
+    fffe|feff) t lista_utf16 "$1"; erro "$TXT"; exit 2 ;;
+  esac
+  t lista_binaria "$1"; erro "$TXT"
+  comando_grabit "${T[cmd_converter]} ${1@Q} -e mp4"; t lista_binaria2 "$FMT"; printf '%s\n' "$TXT"
+  exit 2
+}
+
 # le_lista ARQUIVO: as linhas antes da seção BAIXADOS vão para "bruto" (de ler_links);
 # os links dentro da seção só são contados
 le_lista() {
@@ -4207,6 +4234,7 @@ ler_links() {
     if [[ $ARQUIVO_LINKS == - ]]; then
       le_lista /dev/stdin; fontes+=("${T[fonte_stdin]}")
     elif [[ -f $ARQUIVO_LINKS && -r $ARQUIVO_LINKS ]]; then
+      confere_lista "$ARQUIVO_LINKS"
       le_lista "$ARQUIVO_LINKS"; fontes+=("$ARQUIVO_LINKS"); ARQUIVOS_ENTRADA+=("$ARQUIVO_LINKS")
     else
       t sem_arquivo "$ARQUIVO_LINKS"; erro "$TXT"
@@ -4216,6 +4244,7 @@ ler_links() {
   fi
   for a in "${ARGS_LINKS[@]}"; do
     if [[ -f $a ]]; then
+      confere_lista "$a"
       le_lista "$a"; fontes+=("$a"); ARQUIVOS_ENTRADA+=("$a")
     else
       bruto+=("$a"); soltos=1
@@ -4289,6 +4318,7 @@ anota() {
 move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" e "nota" de move_baixados)
   local arq=$1 linha p todos secao=0 tem_secao=0 depois=0 bom="" eol="" n
   local conteudo=() ativa=() cauda=() resto=() movidas=()
+  eh_texto "$arq" || return 0                  # trocado durante a execução: nunca regrava o que não é lista
   mapfile -t conteudo < "$arq" || return 0
   (( ${#conteudo[@]} )) || return 0
   if [[ ${conteudo[0]} == $'\xef\xbb\xbf'* ]]; then bom=$'\xef\xbb\xbf'; conteudo[0]=${conteudo[0]#$'\xef\xbb\xbf'}; fi
@@ -5616,6 +5646,7 @@ pergunta_nao() {                              # pergunta_nao TEXTO → 0 só se 
 gerencia_baixados() {
   local arq=$ARQUIVO_LINKS acao=${ARGS_LINKS[0]:-listar} i n l lin url resto
   [[ -f $arq ]] || { t sem_arquivo "$arq"; erro "$TXT"; return 1; }
+  confere_lista "$arq"
   le_partes "$arq"
   n=${#P_SECAO[@]}
   case ${acao,,} in
