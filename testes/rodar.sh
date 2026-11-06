@@ -936,6 +936,18 @@ STUB_ERRO="HTTP Error 404: Not Found" falso k4 -L pt http://l.invalid/1 http://l
 espera "links que sumiram não param o site" test "$(vezes l.invalid/5)" -eq 1
 espera "…nem são repetidos" test "$(vezes l.invalid/1)" -eq 1
 
+lista_m() { local i; for (( i = 1; i <= 6; i++ )); do printf 'http://%s.invalid/%d ' "$1" "$i"; done; }
+ini=$SECONDS
+# shellcheck disable=SC2046
+STUB_D='[download] x: has already been recorded in the archive' falso k5 -L pt $(lista_m m)
+d1=$(( SECONDS - ini ))
+espera "já no histórico, sem acessar o site: o próximo não espera o intervalo ($d1 s)" test "$d1" -lt 5
+ini=$SECONDS
+# shellcheck disable=SC2046
+STUB_D=$'[generic] x: Extracting URL\n[download] x: has already been recorded in the archive' falso k6 -L pt $(lista_m n)
+d2=$(( SECONDS - ini ))
+espera "…se acessou o site para descobrir, espera ($d2 s)" test "$d2" -ge 5
+
 secao "Quando o site pede calma"
 : > "$STUB_LOG"
 INICIO=$SECONDS

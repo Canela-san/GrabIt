@@ -3612,6 +3612,16 @@ confere_recusa() {
   return 0
 }
 
+# libera_intervalo IDX: o link já estava no histórico e o yt-dlp nem precisou acessar o site, então o
+# próximo não tem por que esperar. Numa lista já baixada de um site só, a espera dava 1 link por segundo.
+libera_intervalo() {
+  local s=${SITE[$1]} f="$TMP/$1.log"
+  (( ${BLOQ_SITE[$s]:-0} )) && return 0
+  grep -aq 'has already been recorded in the archive' "$f" 2>/dev/null || return 0
+  grep -aqE 'Extracting URL|Downloading ' "$f" 2>/dev/null && return 0
+  PROX_INICIO_SITE[$s]=$SECONDS
+}
+
 # esquece_parte IDX: o que este download já tinha baixado não serve mais: veio estragado, ou o próximo
 # vai pelo yt-dlp, que escreveria por cima das partes do aria2c e deixaria o .aria2 mentindo.
 esquece_parte() {
@@ -6291,6 +6301,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     CONEX_SITE[${SITE[$idx]}]=$(( ${CONEX_SITE[${SITE[$idx]}]:-0} - ${CONEX_JOB[$idx]:-0} )); CONEX_JOB[$idx]=0
     if (( NAV_DONO == idx )); then NAV_DONO=0; rmdir "$TMP/navegador.trava" 2>/dev/null; fi
     if (( rc == 0 )) && [[ -z ${SAUDAVEL[$idx]:-} ]]; then SAUDAVEL[$idx]=1; site_aceitou "${SITE[$idx]}"; fi
+    (( rc == 0 )) && libera_intervalo "$idx"
     if (( rc != 0 )) && vale_repetir "$idx"; then continue; fi
     (( ${TENTATIVA[$idx]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
     BAIXOU=0
