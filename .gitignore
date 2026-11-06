@@ -6,6 +6,8 @@ Downloads/
 # Cópias e temporários das listas (--baixados limpar, editar e a seção BAIXADOS)
 *.txt.bak
 *.grabit-tmp
+*.grabit-bak
+*.grabit-trava/
 *.grabit-editar.txt
 
 # Restos de downloads interrompidos

@@ -1149,6 +1149,7 @@ idioma_pt() {
     [val_proxy]="%s: '%s' não é um endereço de proxy. Use http://host:porta ou socks5://host:porta (veio de: %s)."
     [proxy_socks]="Com proxy SOCKS, não há busca por arquivo direto nem várias conexões: o ffprobe e o aria2c não passam por ele."
     [kv_proxy]="Proxy"
+    [lista_presa]="Outro GrabIt está gravando nesta lista: tente de novo em instantes."
     [lista_binaria]="'%s' não é uma lista de links: é um arquivo binário, como um vídeo. Nada foi alterado."
     [lista_binaria2]="     Para mudar o formato de um vídeo:  %s"
     [lista_utf16]="'%s' está em UTF-16. Salve a lista em UTF-8 para usá-la. Nada foi alterado."
@@ -1759,6 +1760,7 @@ idioma_en() {
     [val_proxy]="%s: '%s' is not a proxy address. Use http://host:port or socks5://host:port (from: %s)."
     [proxy_socks]="With a SOCKS proxy there is no direct-file search or multiple connections: ffprobe and aria2c cannot go through it."
     [kv_proxy]="Proxy"
+    [lista_presa]="Another GrabIt is writing to this list: try again in a moment."
     [lista_binaria]="'%s' is not a list of links: it is a binary file, such as a video. Nothing was changed."
     [lista_binaria2]="     To change a video's format:  %s"
     [lista_utf16]="'%s' is in UTF-16. Save the list as UTF-8 to use it. Nothing was changed."
@@ -4492,6 +4494,34 @@ ler_links() {
   fi
 }
 
+# ───── Regravar uma lista. A lista é o que a pessoa tem de mais difícil de refazer: uma queda de luz no
+# ───── meio da escrita não pode deixá-la pela metade, e dois GrabIt abertos não podem apagar o que o
+# ───── outro acabou de gravar. Por isso: uma trava enquanto ela é lida e escrita, o texto novo em outro
+# ───── arquivo, que só então toma o lugar do antigo, e uma cópia de como ela estava antes da execução.
+trava_lista() {                               # trava_lista ARQUIVO (espera até 10 s; o dono morto não conta)
+  local t="$1.grabit-trava" i dono
+  [[ -w $(dirname -- "$1") ]] || return 0
+  for (( i = 0; i < 100; i++ )); do
+    if mkdir "$t" 2>/dev/null; then printf '%s\n' "$$" > "$t/pid"; return 0; fi
+    dono=$(cat "$t/pid" 2>/dev/null)
+    if [[ -n $dono ]] && ! kill -0 "$dono" 2>/dev/null; then rm -f -- "$t/pid"; rmdir "$t" 2>/dev/null; continue; fi
+    sleep 0.1
+  done
+  return 1
+}
+solta_lista() { rm -f -- "$1.grabit-trava/pid"; rmdir "$1.grabit-trava" 2>/dev/null; return 0; }
+
+# prepara_troca ARQUIVO → TROCA: o arquivo temporário, com as permissões do original, e a cópia de segurança
+# (uma por execução). Com um link simbólico, quem muda é o arquivo para o qual ele aponta.
+declare -A COPIA_FEITA=()
+prepara_troca() {
+  local alvo=$1
+  [[ -L $alvo ]] && { resolve_caminho "$alvo"; alvo=$CAMINHO_REAL; }
+  ALVO_TROCA=$alvo; TROCA="$alvo.grabit-tmp"
+  if [[ -z ${COPIA_FEITA[$alvo]:-} ]]; then cp -p -- "$alvo" "$alvo.grabit-bak" 2>/dev/null; COPIA_FEITA[$alvo]=1; fi
+  cp -p -- "$alvo" "$TROCA"
+}
+
 # move_baixados: nos arquivos de links usados, as linhas cujos links terminaram todos com
 # sucesso saem da parte de cima e vão para o fim da seção BAIXADOS (criada se preciso).
 # O arquivo é relido agora: o que você acrescentou durante a execução não se perde.
@@ -4529,6 +4559,12 @@ anota() {
 }
 
 move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" e "nota" de move_baixados)
+  trava_lista "$1" || return 0                # outro GrabIt preso nela: fica para a próxima gravação
+  regrava_lista "$1"
+  solta_lista "$1"
+}
+
+regrava_lista() {
   local arq=$1 linha p todos secao=0 tem_secao=0 depois=0 bom="" eol="" n
   local conteudo=() ativa=() cauda=() resto=() movidas=()
   eh_texto "$arq" || return 0                  # trocado durante a execução: nunca regrava o que não é lista
@@ -4562,9 +4598,10 @@ move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok
   ativa+=("${cauda[@]}")
   (( ${#ativa[@]} )) && ativa+=("$eol")
   (( tem_secao )) || resto=("${MARCA_BAIXADOS}${eol}" "${T[marca_desc]}${eol}")
-  { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}" "${T[marca_fim]}${eol}"; } > "$arq.grabit-tmp" &&
-    cat "$arq.grabit-tmp" > "$arq"
-  rm -f -- "$arq.grabit-tmp"
+  prepara_troca "$arq"
+  { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}" "${T[marca_fim]}${eol}"; } > "$TROCA" &&
+    mv -f -- "$TROCA" "$ALVO_TROCA"
+  rm -f -- "$TROCA"
   N_MOVIDOS=$(( N_MOVIDOS + ${#movidas[@]} ))
 }
 
@@ -5991,9 +6028,12 @@ grava_partes() {                              # grava_partes ARQUIVO: o inverso 
     (( ${#P_CAB[@]} )) || P_CAB=("${MARCA_BAIXADOS}${P_EOL}" "${T[marca_desc]}${P_EOL}")
     saida+=("${P_CAB[@]}" "${P_SECAO[@]}" "${T[marca_fim]}${P_EOL}")
   fi
-  { printf '%s' "$P_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$arq.grabit-tmp" &&
-    cat "$arq.grabit-tmp" > "$arq"
-  rm -f -- "$arq.grabit-tmp"
+  trava_lista "$arq" || { aviso "${T[lista_presa]}"; return 1; }
+  prepara_troca "$arq"
+  { printf '%s' "$P_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$TROCA" &&
+    mv -f -- "$TROCA" "$ALVO_TROCA"
+  rm -f -- "$TROCA"
+  solta_lista "$arq"
 }
 
 sem_anotacao() {                              # sem_anotacao LINHA → FMT: a linha sem o "✔ data · título"

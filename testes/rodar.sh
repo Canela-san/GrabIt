@@ -711,6 +711,29 @@ espera "lista.txt, sem caminho, não é um link" contem s2 "Nenhum link válido"
 falso s3 -L pt pasta/arquivo.txt
 espera "pasta/arquivo.txt também não" contem s3 "Nenhum link válido"
 
+secao "Regravar a lista com segurança"
+D="$TMP/lista-segura"; mkdir -p "$D/longe"; cd "$D" || exit 1
+printf '# minha lista\nhttp://a.invalid/1\nhttp://a.invalid/2\n' > l1.txt; chmod 640 l1.txt
+cp l1.txt l1.orig
+falso a1 -L pt l1.txt
+espera "os baixados vão para a seção" contem l1.txt "BAIXADOS"
+espera "…as permissões da lista continuam" test "$(stat -c %a l1.txt 2>/dev/null || stat -f %Lp l1.txt 2>/dev/null)" = 640
+espera "…fica uma cópia de como ela estava" cmp -s l1.txt.grabit-bak l1.orig
+espera "…sem trava nem temporário sobrando" test ! -e l1.txt.grabit-trava -a ! -e l1.txt.grabit-tmp
+printf 'http://a.invalid/3\n' > longe/l2.txt; ln -s longe/l2.txt l2.txt
+falso a2 -L pt l2.txt
+espera "link simbólico continua sendo link" test -L l2.txt
+espera "…e o arquivo de verdade é que muda" contem longe/l2.txt "BAIXADOS"
+printf 'http://a.invalid/4\n' > l3.txt; mkdir l3.txt.grabit-trava; printf '999999\n' > l3.txt.grabit-trava/pid
+falso a3 -L pt l3.txt
+espera "trava de um GrabIt que morreu não prende a lista" contem l3.txt "BAIXADOS"
+espera "…e sai" test ! -e l3.txt.grabit-trava
+printf 'http://a.invalid/5\n' > l4.txt; mkdir l4.txt.grabit-trava; sleep 30 & DONO=$!; printf '%s\n' "$DONO" > l4.txt.grabit-trava/pid
+( sleep 2; rm -f l4.txt.grabit-trava/pid; rmdir l4.txt.grabit-trava ) &
+falso a4 -L pt l4.txt
+kill "$DONO" 2>/dev/null; wait "$DONO" 2>/dev/null
+espera "trava de outro GrabIt vivo: espera ele terminar" contem l4.txt "BAIXADOS"
+
 secao "Privacidade"
 D="$TMP/privado"; mkdir -p "$D/Downloads/logs/2020-01-01_000000" "$D/Downloads/logs/novo"; cd "$D" || exit 1
 printf 'x\n' > Downloads/logs/2020-01-01_000000/1.log; touch -d 2020-01-02T03:04:05 Downloads/logs/2020-01-01_000000/1.log
