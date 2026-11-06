@@ -49,6 +49,18 @@ secao "Sintaxe e ajuda"
 espera "bash -n" bash -n "$G"
 roda "$TMP/ajuda" -L pt -h
 espera "ajuda em português" contem "$TMP/ajuda" "Uso:  grabit"
+espera "…curta: cabe numa tela" test "$(wc -l < "$TMP/ajuda")" -le 26
+espera "…e em 80 colunas" test "$(awk '{ print length($0) }' "$TMP/ajuda" | sort -n | tail -n 1)" -le 80
+espera "…e diz como ver tudo" contem "$TMP/ajuda" "grabit ajuda completa"
+roda "$TMP/ajuda_c" -L pt ajuda completa
+espera "a ajuda completa tem todas as opções" contem "$TMP/ajuda_c" "--max-tamanho"
+roda "$TMP/ajuda_c2" -L en --help-all
+espera "…também em inglês" contem "$TMP/ajuda_c2" "--max-size"
+mkdir -p "$TMP/so-grabit"; ( cd "$TMP/so-grabit" && printf 'http://a.invalid/1\n' > links.txt && bash "$G" -L pt > saida 2>&1; echo "$?" > rc )
+espera "só grabit: mostra a ajuda" contem "$TMP/so-grabit/saida" "grabit download"
+espera "…mesmo com um links.txt na pasta" nao_contem "$TMP/so-grabit/saida" "a.invalid"
+espera "…sem erro" contem "$TMP/so-grabit/rc" "0"
+espera "…e não mexe na lista" test "$(cat "$TMP/so-grabit/links.txt")" = "http://a.invalid/1"
 roda "$TMP/ajuda_en" -L en --help
 espera "ajuda em inglês" contem "$TMP/ajuda_en" "Usage:  grabit"
 roda "$TMP/ajuda_lang" -sLen -h
@@ -294,7 +306,7 @@ falso e2 -L pt http://a.invalid/e2
 espera "com espaço, nenhum aviso" nao_contem e2 "livres em"
 printf '%s\n' http://b.invalid/1 http://b.invalid/2 http://b.invalid/3 > links.txt
 rm -f links_falhos.txt; : > "$STUB_LOG"
-STUB_ERRO="unable to write data: [Errno 28] No space left on device" DOWNLOADS_SIMULTANEOS=1 falso e3 -L pt
+STUB_ERRO="unable to write data: [Errno 28] No space left on device" DOWNLOADS_SIMULTANEOS=1 falso e3 -L pt download
 espera "disco cheio é explicado" contem e3 "disco cheio"
 espera "…e nenhum download novo começa" test "$(grep -c 'b.invalid/' "$STUB_LOG")" -eq 1
 espera "…os que faltam vão para a lista de falhas" test "$(grep -c 'b.invalid/' links_falhos.txt)" -eq 3
@@ -768,6 +780,31 @@ else
   espera "…e só você lê a pasta" false
 fi
 
+secao "grabit download"
+D="$TMP/baixar"; mkdir -p "$D"; cd "$D" || exit 1
+printf 'http://d.invalid/1\n' > links.txt
+: > "$STUB_LOG"
+falso d1 -L pt -j 2
+espera "só opções, sem nada para baixar: a ajuda" contem d1 "grabit download"
+espera "…e não baixa a lista" nao_contem "$STUB_LOG" "d.invalid/1"
+falso d2 -L pt download
+espera "grabit download baixa o links.txt" contem "$STUB_LOG" "-- http://d.invalid/1"
+espera "…e a lista anda" contem links.txt "BAIXADOS"
+printf 'http://d.invalid/2\n' > links.txt; : > "$STUB_LOG"
+falso d3 -L pt baixar -j 2
+espera "em português, com opções" contem "$STUB_LOG" "-- http://d.invalid/2"
+printf 'http://d.invalid/3\n' > outra.txt; : > "$STUB_LOG"
+falso d4 -L pt download -l outra.txt
+espera "com -l, a lista pedida" contem "$STUB_LOG" "-- http://d.invalid/3"
+rm -f links.txt
+falso d5 -L pt download
+espera "sem o links.txt: explica" contem d5 "não foi encontrado"
+espera "…com um exemplo" contem d5 "grabit https://"
+espera "…e sai com código 1" codigo "$RC" 1
+printf '# só comentários\n' > links.txt
+falso d6 -L pt download
+espera "lista sem nenhum link: explica, com um exemplo" contem d6 "grabit https://"
+
 secao "Comando digitado errado"
 D="$TMP/errado"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
@@ -1069,7 +1106,7 @@ nav() { HOME="$TMP/casa" XDG_DATA_HOME="$TMP/navdados" USAR_NAVEGADOR=1 GRABIT_N
 printf '%s\n' 'n.invalid/player?temporada=7&episodio=1' > links.txt
 : > "$STUB_LOG"
 STUB_ERRO="[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again" \
-  STUB_ERRO2="[generic] x: Unable to download webpage: HTTP Error 403: Forbidden" nav n1 -L pt
+  STUB_ERRO2="[generic] x: Unable to download webpage: HTTP Error 403: Forbidden" nav n1 -L pt download
 espera "verificação anti-robô: abre o navegador, com o aviso" contem n1 "vou abrir o Firefox"
 espera "…uma vez só" test "$(grep -c '^firefox --no-remote' "$STUB_LOG")" -eq 1
 espera "…num perfil só do GrabIt" contem "$STUB_LOG" "--no-remote --profile $TMP/navdados/grabit/firefox/perfil"
@@ -1258,7 +1295,7 @@ espera 'um link com "$(…)" no nome do site não executa nada' test ! -e invadi
 secao "Progresso salvo"
 D="$TMP/salva"; mkdir -p "$D"; cd "$D" || exit 1
 printf '%s\n' http://v.invalid/1 http://w.invalid/2 > links.txt
-HOME="$TMP/casa" PATH="$STUB:$PATH" GRABIT_SALVA_A_CADA=1 STUB_DORME=6 STUB_DORME_SO=w.invalid bash "$G" -L pt > saida 2>&1 & P=$!
+HOME="$TMP/casa" PATH="$STUB:$PATH" GRABIT_SALVA_A_CADA=1 STUB_DORME=6 STUB_DORME_SO=w.invalid bash "$G" -L pt download > saida 2>&1 & P=$!
 espera "o link baixado vai para a seção BAIXADOS antes de a lista terminar" ate grep -qF "v.invalid/1  # ✔" links.txt
 espera "…com o outro ainda baixando" kill -0 "$P"
 wait "$P" 2>/dev/null
@@ -1560,7 +1597,7 @@ secao "Download, histórico e seção BAIXADOS"
 D="$TMP/d1"; mkdir -p "$D"; cd "$D" || exit 1
 printf '# minha lista\n%s\n%s  # anotação\n%s\nlinha sem link\n%s\n' \
   "$B/curto.mp4" "$B/longo.mp4" "$B/nao-existe.mp4" "$B/curto.mp4" > links.txt
-roda saida1 -L pt
+roda saida1 -L pt download
 espera "com um link quebrado, sai com código 1" codigo "$RC" 1
 espera "os vídeos viram MKV" test -f "Downloads/curto [curto].mkv"
 espera "…e o MKV abre no ffprobe" altura "Downloads/longo [longo].mkv"
@@ -1581,7 +1618,7 @@ espera "o link acrescentado depois da seção é lido" contem saida3 "Links     
 secao "Inglês"
 D="$TMP/d2"; mkdir -p "$D"; cd "$D" || exit 1
 printf '%s\n' "$B/curto.mp4" > links.txt
-roda saida -L en
+roda saida -L en download
 espera "resumo em inglês" contem saida "── Summary"
 espera "seção DOWNLOADED" contem links.txt "# ==================== DOWNLOADED ===================="
 

@@ -116,8 +116,10 @@ https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
 E rode na mesma pasta:
 
 ```bash
-grabit
+grabit download
 ```
+
+O `grabit` sozinho mostra a ajuda: a lista só é baixada quando você pede. Para ver todas as opções, use `grabit ajuda completa`.
 
 Os links baixados com sucesso **saem da lista e vão para a seção `BAIXADOS`**, no fim do próprio `links.txt`, exatamente como você os escreveu (anotações incluídas), com a data e o título do que foi baixado no fim da linha. Tudo o que está nessa seção é ignorado: ela vira o seu histórico de links, e o GrabIt não perde tempo reprocessando nem listando o que já foi baixado. Os que falharam continuam em cima, prontos para a próxima vez.
 

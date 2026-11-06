@@ -1291,7 +1291,8 @@ idioma_pt() {
     [dep_faltando]="Faltando: %s"
     [dep_instale]="instale '%s' pelo gerenciador de pacotes do sistema"
     [sem_arquivo]="O arquivo '%s' não foi encontrado."
-    [sem_arquivo2]="     Crie-o com um link por linha, use  -l CAMINHO  ou passe os links no próprio comando."
+    [sem_arquivo2]="     Crie-o com um link por linha, ou baixe direto:  grabit https://…"
+    [sem_links2]="     Ponha um link por linha no arquivo, ou baixe direto:  grabit https://…"
     [val_proxy]="%s: '%s' não é um endereço de proxy. Use http://host:porta ou socks5://host:porta (veio de: %s)."
     [proxy_socks]="Com proxy SOCKS, não há busca por arquivo direto nem várias conexões: o ffprobe e o aria2c não passam por ele."
     [kv_proxy]="Proxy"
@@ -1584,8 +1585,34 @@ idioma_pt() {
     [tmp_falhou]="Não consegui criar a pasta temporária."
     [pasta_falhou]="Não consegui criar a pasta '%s'."
   )
+  T[ajuda_curta]=$(cat <<'EOF'
+Uso:  grabit LINK [LINK…]         baixa estes links
+      grabit download             baixa a lista do arquivo links.txt
+      grabit outra-lista.txt      baixa a lista de outro arquivo
+
+Opções mais usadas:
+  -o PASTA        onde salvar                       (padrão: ./Downloads)
+  -r ALTURA       resolução máxima: 720, 1080, 4k…  (padrão: a melhor)
+  -e FORMATO      formato do arquivo: mp4, webm…    (padrão: mkv)
+  -O              mantém o formato do site
+  -x              só o áudio
+  -b NAVEGADOR    usa o login do navegador: firefox, chrome…
+  --simular       mostra o que seria baixado, sem baixar
+
+Comandos:
+  instalar        instala o que falta
+  atualizar       deixa tudo na versão mais nova
+  converter       muda o formato de um vídeo já baixado
+  verificar       confere os vídeos já baixados
+  canais          acompanha canais e baixa só o que for novo
+  config          mostra as configurações em uso
+
+Todas as opções e comandos:  grabit ajuda completa
+EOF
+)
   T[ajuda]=$(cat <<'EOF'
-Uso:  grabit [opções] [LINK ou ARQUIVO ...]
+Uso:  grabit [opções] LINK ou ARQUIVO ...
+      grabit download [opções]    baixa a lista do arquivo links.txt
 
   -l ARQUIVO    arquivo com os links ("-" = entrada padrão)  (padrão: links.txt)
   -o PASTA      pasta onde os vídeos serão salvos            (padrão: ./Downloads)
@@ -1631,6 +1658,7 @@ Uso:  grabit [opções] [LINK ou ARQUIVO ...]
 Comandos, em português ou inglês, com ou sem os traços (grabit update é o mesmo
 que grabit --atualizar):
 
+  baixar, download   baixa a lista do arquivo links.txt (ou do que estiver em -l)
   config             mostra o grabit.config e os valores em uso
   instalar, install  instala o que falta (ffmpeg, yt-dlp…) e o comando grabit, e pergunta
                      sobre o que é opcional; com -y, instala tudo sem perguntar (navegador, só
@@ -1704,7 +1732,7 @@ EOF
 # Idioma das mensagens: pt, en ou auto (pelo idioma do sistema) (-L)
 #IDIOMA=auto
 
-# Lista de links lida quando você roda só "grabit"
+# Lista de links que o "grabit download" baixa
 #ARQUIVO_LINKS=links.txt
 
 # Pasta onde os vídeos são salvos
@@ -2046,7 +2074,8 @@ idioma_en() {
     [dep_faltando]="Missing: %s"
     [dep_instale]="install '%s' with your system's package manager"
     [sem_arquivo]="File '%s' not found."
-    [sem_arquivo2]="     Create it with one link per line, use  -l PATH  or pass the links on the command line."
+    [sem_arquivo2]="     Create it with one link per line, or download directly:  grabit https://…"
+    [sem_links2]="     Put one link per line in the file, or download directly:  grabit https://…"
     [val_proxy]="%s: '%s' is not a proxy address. Use http://host:port or socks5://host:port (from: %s)."
     [proxy_socks]="With a SOCKS proxy there is no direct-file search or multiple connections: ffprobe and aria2c cannot go through it."
     [kv_proxy]="Proxy"
@@ -2339,8 +2368,35 @@ idioma_en() {
     [tmp_falhou]="Couldn't create the temporary folder."
     [pasta_falhou]="Couldn't create folder '%s'."
   )
+  T[ajuda_curta]=$(cat <<'EOF'
+Usage:  grabit LINK [LINK…]       download these links
+        grabit download           download the list in the links.txt file
+        grabit other-list.txt     download the list in another file
+
+Most used options:
+  -o FOLDER       where to save                     (default: ./Downloads)
+  -r HEIGHT       maximum resolution: 720, 1080, 4k… (default: the best)
+  -e FORMAT       file format: mp4, webm…           (default: mkv)
+  -O              keep the site's format
+  -x              audio only
+  -b BROWSER      use the browser's login: firefox, chrome…
+  --simulate      show what would be downloaded, without downloading
+
+Commands:
+  install         install what's missing
+  update          bring everything to the newest version
+  convert         change the format of a video you already have
+  check           check the videos you already have
+  channels        follow channels and download only what's new
+  download, baixar   download the list in the links.txt file (or the one in -l)
+  config          show the settings in use
+
+All options and commands:  grabit help full
+EOF
+)
   T[ajuda]=$(cat <<'EOF'
-Usage:  grabit [options] [LINK or FILE ...]
+Usage:  grabit [options] LINK or FILE ...
+        grabit download [options]   download the list in the links.txt file
 
   -l FILE       file with the links ("-" = stdin)    (default: links.txt)
   -o FOLDER     where videos are saved               (default: ./Downloads)
@@ -2464,7 +2520,7 @@ EOF
 # Language of the messages: pt, en or auto (follows the system) (-L)
 #IDIOMA=auto
 
-# Link list read when you run just "grabit"
+# The list of links that "grabit download" downloads
 #ARQUIVO_LINKS=links.txt
 
 # Folder where videos are saved
@@ -2611,7 +2667,12 @@ fi
 
 erro()  { printf '  %s✖%s %s\n' "$VERMELHO" "$R" "$*" >&2; }
 aviso() { printf '  %s⚠%s %s\n' "$AMARELO" "$R" "$*"; }
-uso()   { printf '%s\n' "${T[ajuda]}"; }
+uso()   { printf '%s\n' "${T[ajuda_curta]}"; }
+# A ajuda completa é longa: num terminal, vai pelo paginador, que sai sozinho se ela couber na tela
+uso_completo() {
+  if (( INTERATIVO )) && command -v less >/dev/null 2>&1; then printf '%s\n' "${T[ajuda]}" | less -FRX
+  else printf '%s\n' "${T[ajuda]}"; fi
+}
 
 # Primeira execução: cria o grabit.config, com os padrões comentados, no idioma atual
 if [[ ! -e $CONFIG_ARQ && -w ${CONFIG_ARQ%/*} ]]; then
@@ -2630,6 +2691,7 @@ palavra_comando() {
     versao|versão|version)            COMANDO=versao ;;
     curl)                             COMANDO=curl ;;
     converter|convert)                COMANDO=converter ;;
+    baixar|download)                  COMANDO=baixar ;;
     desinstalar|uninstall)            COMANDO=desinstalar ;;
     canais|channels)                  COMANDO=canais ;;
     completar|completion)             COMANDO=completar ;;
@@ -2638,7 +2700,7 @@ palavra_comando() {
     *) return 1 ;;
   esac
 }
-PALAVRAS_COMANDO=(config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
+PALAVRAS_COMANDO=(baixar download config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
   versao version curl converter convert canais channels seguir follow completar completion comparar compare)
 
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
@@ -2668,7 +2730,7 @@ sugere_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0
 while (( $# )); do
   a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
@@ -2677,6 +2739,7 @@ while (( $# )); do
     --yes|--sim) ASSUME_SIM=1 ;;
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
+    --ajuda-completa|--help-all) COMANDO=ajuda; AJUDA_COMPLETA=1 ;;
     --simular|--simulate|--dry-run) SIMULAR=1 ;;
     --todos|--all) CANAL_TODOS=1 ;;
     --desde=*|--since=*) FILTRO_DESDE=${a#*=}; ORIGEM[FILTRO_DESDE]=opção ;;
@@ -2786,7 +2849,16 @@ if [[ -z $ARQUIVO_HISTORICO ]]; then
   else ARQUIVO_HISTORICO="$PASTA_SAIDA/.grabit-historico.txt"; fi
 fi
 
-[[ $COMANDO == ajuda ]] && { uso; exit 0; }
+# Só "grabit": a ajuda. A lista só é baixada se pedida: "grabit download", -l, ou um modo que trabalha com
+# ela (-f, -C, -U). Opções soltas, sem nada para baixar, também levam à ajuda.
+if [[ -z $COMANDO ]] && (( ${#ARGS_LINKS[@]} == 0 && ! LISTA_EXPLICITA && ! CAPTURA && ! FILA_VIVA && ! UPGRADE )); then
+  COMANDO=ajuda
+fi
+if [[ $COMANDO == ajuda ]]; then
+  case ${ARGS_LINKS[0]:-} in completa|completo|tudo|full|all) AJUDA_COMPLETA=1 ;; esac
+  if (( AJUDA_COMPLETA )); then uso_completo; else uso; fi
+  exit 0
+fi
 if (( UPGRADE && SO_AUDIO )); then aviso "${T[up_audio]}"; UPGRADE=0; fi
 if (( UPGRADE && FILA_VIVA )); then aviso "${T[up_fila]}"; FILA_VIVA=0; CAPTURA=0; fi
 
@@ -5059,6 +5131,7 @@ ler_links() {
       exit 0
     fi
     t sem_links "${FONTE_LINKS:-${T[nada]}}"; erro "$TXT"
+    printf '%s\n\n' "${T[sem_links2]}"
     exit 1
   fi
 }

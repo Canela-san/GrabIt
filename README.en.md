@@ -116,8 +116,10 @@ https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
 And run it in the same folder:
 
 ```bash
-grabit
+grabit download
 ```
+
+`grabit` on its own shows the help: the list only gets downloaded when you ask. To see all the options, use `grabit help full`.
 
 Successfully downloaded links **leave the list and move to the `DOWNLOADED` section**, at the end of the same `links.txt`, exactly as you wrote them (notes included), with the date and the title of what was downloaded at the end of the line. Everything in that section is ignored: it becomes your link history, and GrabIt doesn't waste time reprocessing or listing what's already done. The ones that failed stay at the top, ready for next time.
 
