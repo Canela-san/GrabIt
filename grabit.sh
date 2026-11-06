@@ -193,7 +193,7 @@ if [[ ${1:-} == --baixa-partes ]]; then
     ID_ARQ="$tam ${marca_v:-$data}"
   }
   traduz() {
-    local l b t v e c vistos=" " re='^\[#[0-9a-f]+ ([0-9.]+[KMGT]?i?B)/([0-9.]+[KMGT]?i?B)' soma=0 n=0 ini=$SECONDS sondar=$sonda_ligada
+    local l b t v e c sem_espaco=0 vistos=" " re='^\[#[0-9a-f]+ ([0-9.]+[KMGT]?i?B)/([0-9.]+[KMGT]?i?B)' soma=0 n=0 ini=$SECONDS sondar=$sonda_ligada
     while IFS= read -r l; do
       l=${l//$'\r'/}
       if [[ $l =~ $re ]]; then
@@ -231,6 +231,12 @@ if [[ ${1:-} == --baixa-partes ]]; then
             fi
           fi
         fi
+      elif [[ $l == *"No space left"* ]]; then
+        # (as mensagens seguintes só dizem que não deu para gravar: é esta que explica)
+        (( sem_espaco )) || printf '@@R@@%s\n' "No space left on device"
+        sem_espaco=1
+      elif (( sem_espaco )); then
+        continue
       elif [[ $l =~ status=([0-9]{3}) ]]; then
         c=${BASH_REMATCH[1]}
         [[ $vistos == *" $c "* ]] && continue

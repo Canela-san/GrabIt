@@ -555,6 +555,18 @@ ate grep -q 'HTTP Error 429' traduzido
 espera "o progresso do aria2c vira a linha do painel" contem traduzido "$(printf '@@P@@20971520\x1f62914560\x1f10485760\x1f63\x1f\x1f\x1f?\x1f\x1f\x1f\x1fUm titulo')"
 espera "…e a recusa, um aviso para o GrabIt" contem traduzido "[grabit] recusou 429"
 
+mkdir -p "$TMP/aria-cheio"
+cat > "$TMP/aria-cheio/aria2c" <<'EOF'
+#!/bin/sh
+echo 'Exception: [AbstractDiskWriter.cc:453] errNum=28 errorCode=9 Failed to write into the file o/x.part, cause: No space left on device'
+echo 'Exception: [AbstractCommand.cc:403] errorCode=9 URI=http://a.invalid/x'
+echo '  -> [DownloadCommand.cc:124] errorCode=9 Write disk cache flush failure index=0'
+exit 9
+EOF
+chmod +x "$TMP/aria-cheio/aria2c"
+PATH="$TMP/aria-cheio:$PATH" bash "$G" --baixa-partes --dir o --out x.part -- http://a.invalid/x > cheio.log 2>&1; sleep 0.3
+espera "disco cheio no aria2c: fica a mensagem que explica" test "$(grep '^@@R@@' cheio.log | tail -n 1)" = "@@R@@No space left on device"
+
 secao "Formato do arquivo"
 D="$TMP/formato"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
