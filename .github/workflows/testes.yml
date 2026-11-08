@@ -5,6 +5,13 @@ on:
     branches: ["**"]
   pull_request:
   workflow_call:
+  # À mão, dá para rodar no macOS os testes completos, que sem isso só rodam antes de publicar
+  workflow_dispatch:
+    inputs:
+      completo:
+        description: "macOS com os testes completos"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,17 +66,17 @@ jobs:
           [ "$rc" = 1 ] && echo "$saida" | grep -q "Bash 4.4"
       # A cada envio, os testes rápidos; antes de publicar uma versão, todos
       - name: Testes rápidos com o Bash do Homebrew
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.completo }}
         run: |
           brew install bash
           "$(brew --prefix)/bin/bash" testes/rodar.sh --rapido
       - name: Dependências dos testes completos
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.completo }}
         run: |
           brew install bash ffmpeg aria2 pipx
           pipx install "yt-dlp[default]"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Testes completos com o Bash do Homebrew
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.completo }}
         run: |
           "$(brew --prefix)/bin/bash" testes/rodar.sh

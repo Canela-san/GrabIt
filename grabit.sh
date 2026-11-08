@@ -4362,8 +4362,13 @@ escolhe_da_pagina() {
   rm -f -- "$info" "$lista"
   yt-dlp --ignore-config --no-warnings -J --playlist-items 1:30 -f "$FORMATO" \
     --print-to-file "%(playlist_index|0)s${SEP}%(duration|0)s${SEP}%(requested_formats.0.url,url|)s" "${lista//%/%%}" \
-    "${args[@]}" "$@" -- "$url" > "$info" 2>/dev/null
-  [[ -s $info && -s $lista ]] || return 1
+    "${args[@]}" "$@" -- "$url" > "$info" 2>"$info.erro"
+  if [[ ! -s $info || ! -s $lista ]]; then         # (no log, o porquê; sem "ERROR:", que contaria como falha do link)
+    grep -a 'ERROR' "$info.erro" | tail -n 3 | sed 's/^/[grabit] pagina: /'
+    rm -f -- "$info.erro"
+    return 1
+  fi
+  rm -f -- "$info.erro"
   while IFS=$SEP read -r idx dur link; do
     num "$idx"; idx=$NUM
     (( idx > 0 )) || continue

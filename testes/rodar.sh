@@ -47,6 +47,21 @@ roda() {                                      # roda SAÍDA [ARGS...] → RC (a 
   RC=$?
 }
 secao() { printf '\n%s\n' "$1"; }
+# explica SAÍDA [PASTA]: se alguma checagem falhou desde a última vez, mostra a saída do comando e os logs
+# dele (numa CI, é o que diz o porquê)
+N_EXPLICADAS=0
+explica() {
+  local f
+  if (( ${#FALHAS[@]} > N_EXPLICADAS )); then
+    printf '    ┄ saída de %s:\n' "$1"; sed 's/^/    ┆ /' "$1" | tail -n 40
+    if [[ -n ${2:-} ]]; then
+      while IFS= read -r f; do
+        printf '    ┄ %s:\n' "$f"; grep -av '^@@P@@' "$f" | sed 's/^/    ┆ /' | tail -n 60
+      done < <(find "$2" -path '*/logs/*' -name '*.log' 2>/dev/null)
+    fi
+  fi
+  N_EXPLICADAS=${#FALHAS[@]}
+}
 gitq() { git -c user.name=t -c user.email=t@t.invalid -c commit.gpgsign=false "$@"; }
 
 # ───── Grupos em paralelo. Cada um é um ( … ) &, que herda tudo o que foi preparado até ali; no fim, a saída
@@ -1973,22 +1988,26 @@ espera "sem versão dentro do limite, falha com aviso" contem saida4 "nenhuma ve
 
 secao "Página com vários vídeos: só o dela"
 D="$TMP/dpag"; mkdir -p "$D"; cd "$D" || exit 1
+N_EXPLICADAS=${#FALHAS[@]}
 roda p1 -L pt -o ./P1 "$B/v/x7k2q9w/"
 espera "baixa só o vídeo da página, pelo código dela no endereço" test "$(find P1 -name '*.mkv' | wc -l)" -eq 1
 espera "…que é o vídeo dela" test -n "$(find P1 -name '*x7k2q9w-2*.mkv')"
 espera "…sem o (2) que separava os itens" test -n "$(find P1 -name 'Clipe de Teste - Sitezinho \[*')"
 espera "…sem erro pelo pedaço de código" codigo "$RC" 0
 espera "…e diz o que ficou de fora" contem p1 "ficou 1 de 3 itens"
+explica p1 P1
 roda p1b -L pt -o ./P1 "$B/v/x7k2q9w/"
 espera "de novo: já baixado, sem erro" contem p1b "já baixado antes"
 espera "…e sai com código 0" codigo "$RC" 0
 roda p2 -L pt -o ./P2 "$B/pagina3/index.html"
 espera "sem o código no endereço, fica de fora o que dura bem menos" test "$(find P2 -name '*.mkv' | wc -l)" -eq 1
 espera "…e fica o mais longo" contem p2 "00:04"
+explica p2 P2
 roda p3 -L pt -o ./P3 "$B/so-codigo/index.html"
 espera "página em que nada é vídeo: diz isso" contem p3 "nenhum vídeo reconhecido"
 espera "…sem baixar nada" test -z "$(find P3 -name '*.mkv' 2>/dev/null)"
 espera "…e sai com código 1" codigo "$RC" 1
+explica p3 P3
 roda p4 -L pt -x -o ./P4 "$B/v/x7k2q9w/"
 espera "-x também fica só com o da página" test "$(find P4 -type f ! -path '*/logs/*' ! -name '.grabit*' | wc -l)" -eq 1
 
