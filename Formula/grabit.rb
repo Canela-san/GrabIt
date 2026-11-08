@@ -1,9 +1,9 @@
 class Grabit < Formula
   desc "Batch video downloader on top of yt-dlp, always at the highest quality"
   homepage "https://github.com/Canela-san/GrabIt"
-  url "https://github.com/Canela-san/GrabIt/releases/download/v1.0.0/grabit.sh"
-  version "1.0.0"
-  sha256 "cea2005435dba8832b9aa39f869d2bea563826507ceeb77877014d79ea2f7504"
+  url "https://github.com/Canela-san/GrabIt/releases/download/v1.1.0/grabit.sh"
+  version "1.1.0"
+  sha256 "b4548baaa79a837cfc063c421696c2cb35d6b75472232c1e353e92814d471a1f"
   license "MIT"
 
   depends_on "aria2"
