@@ -1989,27 +1989,27 @@ espera "sem versão dentro do limite, falha com aviso" contem saida4 "nenhuma ve
 secao "Página com vários vídeos: só o dela"
 D="$TMP/dpag"; mkdir -p "$D"; cd "$D" || exit 1
 N_EXPLICADAS=${#FALHAS[@]}
-roda p1 -L pt -o ./P1 "$B/v/x7k2q9w/"
-espera "baixa só o vídeo da página, pelo código dela no endereço" test "$(find P1 -name '*.mkv' | wc -l)" -eq 1
-espera "…que é o vídeo dela" test -n "$(find P1 -name '*x7k2q9w-2*.mkv')"
-espera "…sem o (2) que separava os itens" test -n "$(find P1 -name 'Clipe de Teste - Sitezinho \[*')"
+roda p1 -L pt -o ./Pag1 "$B/v/x7k2q9w/"
+espera "baixa só o vídeo da página, pelo código dela no endereço" test "$(find Pag1 -name '*.mkv' | wc -l)" -eq 1
+espera "…que é o vídeo dela" test -n "$(find Pag1 -name '*x7k2q9w-2*.mkv')"
+espera "…sem o (2) que separava os itens" test -n "$(find Pag1 -name 'Clipe de Teste - Sitezinho \[*')"
 espera "…sem erro pelo pedaço de código" codigo "$RC" 0
 espera "…e diz o que ficou de fora" contem p1 "ficou 1 de 3 itens"
-explica p1 P1
-roda p1b -L pt -o ./P1 "$B/v/x7k2q9w/"
+explica p1 Pag1
+roda p1b -L pt -o ./Pag1 "$B/v/x7k2q9w/"
 espera "de novo: já baixado, sem erro" contem p1b "já baixado antes"
 espera "…e sai com código 0" codigo "$RC" 0
-roda p2 -L pt -o ./P2 "$B/pagina3/index.html"
-espera "sem o código no endereço, fica de fora o que dura bem menos" test "$(find P2 -name '*.mkv' | wc -l)" -eq 1
+roda p2 -L pt -o ./Pag2 "$B/pagina3/index.html"
+espera "sem o código no endereço, fica de fora o que dura bem menos" test "$(find Pag2 -name '*.mkv' | wc -l)" -eq 1
 espera "…e fica o mais longo" contem p2 "00:04"
-explica p2 P2
-roda p3 -L pt -o ./P3 "$B/so-codigo/index.html"
+explica p2 Pag2
+roda p3 -L pt -o ./Pag3 "$B/so-codigo/index.html"
 espera "página em que nada é vídeo: diz isso" contem p3 "nenhum vídeo reconhecido"
-espera "…sem baixar nada" test -z "$(find P3 -name '*.mkv' 2>/dev/null)"
+espera "…sem baixar nada" test -z "$(find Pag3 -name '*.mkv' 2>/dev/null)"
 espera "…e sai com código 1" codigo "$RC" 1
-explica p3 P3
-roda p4 -L pt -x -o ./P4 "$B/v/x7k2q9w/"
-espera "-x também fica só com o da página" test "$(find P4 -type f ! -path '*/logs/*' ! -name '.grabit*' | wc -l)" -eq 1
+explica p3 Pag3
+roda p4 -L pt -x -o ./Pag4 "$B/v/x7k2q9w/"
+espera "-x também fica só com o da página" test "$(find Pag4 -type f -name '*.m4a' | wc -l)" -eq 1
 
 secao "Só áudio, vídeo principal, Jellyfin/Plex/Kodi e verificação"
 D="$TMP/d4"; mkdir -p "$D"; cd "$D" || exit 1
