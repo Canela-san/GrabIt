@@ -10,7 +10,14 @@ Só o que muda para quem usa. As versões seguem `MAIOR.MENOR.CORREÇÃO`.
 - `grabit download --repetir` tenta de novo os da `FALHARAM`. Sem a opção, eles ficam de fora, e o fim da execução mostra o comando certo para continuar.
 - O seu comentário numa linha nunca muda, em seção nenhuma: o GrabIt só acrescenta e tira o ✔ (ou o ✖), a data e a nota dele.
 - `grabit lista` mostra o arquivo por partes, com os links numerados, e muda links de seção: `voltar`, `baixado`, `pular`, `limpar notas|falhas|baixados`, `organizar` e `editar` (o arquivo inteiro). Substitui o `grabit --baixados`, que continua funcionando.
+- `grabit lista cursos.txt` vale para outro arquivo de links, além do `-l`. O autocompletar oferece os arquivos.
 - Links adiados porque o site pediu calma, e os que pararam com o disco cheio, continuam na lista de baixar: não foram culpa do link.
+
+### Correções
+
+- Mudar a seção `BAIXADOS` sem conseguir gravar a lista (sem permissão, disco cheio) aparecia como feito; agora o GrabIt avisa que nada mudou.
+- Numa lista salva pelo Bloco de Notas do Windows (com BOM), uma seção na primeira linha do arquivo deixava de ser reconhecida, e os links dela voltavam a ser conferidos a cada execução.
+- A ajuda curta em inglês tinha uma linha de comando sobrando.
 
 ## 1.0.0
 
