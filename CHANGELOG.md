@@ -13,6 +13,13 @@ Só o que muda para quem usa. As versões seguem `MAIOR.MENOR.CORREÇÃO`.
 - `grabit lista cursos.txt` vale para outro arquivo de links, além do `-l`. O autocompletar oferece os arquivos.
 - Links adiados porque o site pediu calma, e os que pararam com o disco cheio, continuam na lista de baixar: não foram culpa do link.
 
+### O vídeo certo
+
+- Página de site sem extrator próprio com mais de um vídeo: fica só o dela, pelo código do vídeo no endereço, pela cara de prévia ou de anúncio e pela duração. Um pedaço de código que o yt-dlp tomava por vídeo deixa de dar erro, e o título perde o `(1)` e o nome do site no fim.
+- Pelo navegador, depois da verificação, quem lê a página é o yt-dlp, com a sessão da janela: vem o vídeo certo, com o título. Antes, o GrabIt baixava o primeiro vídeo que a página pedia, muitas vezes um anúncio.
+- Nos próximos links do site, a sessão guardada no perfil do GrabIt vale antes de abrir a janela: enquanto a verificação valer, nada de janela.
+- Quando só o que a janela pediu resolve, o GrabIt junta tudo o que a página tocou, mede, e fica com o que vem do próprio site ou dura mais, deixando de fora anúncios e prévias. Endereços terminados em `.mp4/` também contam, e o que chega só vale se for vídeo de verdade.
+
 ### Correções
 
 - Mudar a seção `BAIXADOS` sem conseguir gravar a lista (sem permissão, disco cheio) aparecia como feito; agora o GrabIt avisa que nada mudou.

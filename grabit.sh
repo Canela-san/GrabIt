@@ -640,6 +640,84 @@ if [[ ${1:-} == --acabamento ]]; then
   exit 0
 fi
 
+# ───── O vídeo de uma página, e o que só aparece nela. Numa página sem extrator próprio, o
+# ───── yt-dlp toma por vídeo cada <video> que acha: o dela, mas também a prévia de outro vídeo,
+# ───── o anúncio e até um pedaço de código com cara de endereço. Isto aqui ajuda a separar.
+link_valido() {                               # link_valido LINK: um endereço de verdade?
+  # ('…/' + e.querySelector('.player').getAttribute('data-video') + '' é código, não endereço)
+  local ruins=$' \t\n\r"<>\\`{}|^'
+  [[ $1 =~ ^https?://[^/?#]+ && $1 != *["$ruins"]* ]]
+}
+
+# parece_extra LINK: o endereço diz que é prévia, trailer, capa animada ou anúncio, e não o vídeo
+parece_extra() {
+  local l=${1,,}
+  l=${l%%#*}
+  [[ $l =~ [/_.-](trailers?|teasers?|previews?|samples?|thumbs?|thumbnails?|sprites?|logo|intro|banners?|ads?|adverts?|vast|promos?|preroll|creatives?)[/_.=-] ]] && return 0
+  # Anúncio em vídeo costuma vir sem som, e nos tamanhos dos banners
+  [[ $l =~ [/_.,=-]no[_-]?audio([/_.,=-]|$)|[/_.,:=-](300x250|728x90|160x600|320x50|300x600|970x250|336x280|468x60|120x600|320x100|250x250)([/_.,:=-]|$) ]]
+}
+
+# base_do_site LINK → FMT: o domínio sem os prefixos (video.site.com → site.com, a.b.co.uk → b.co.uk)
+base_do_site() {
+  local h=${1#*://} partes=() n
+  h=${h%%[/?#]*}; h=${h##*@}; h=${h%%:*}; h=${h,,}
+  IFS=. read -ra partes <<<"$h"
+  n=${#partes[@]}
+  if (( n > 2 )) && [[ ${partes[n-2]} =~ ^(co|com|org|net|gov|edu|ac|or|ne|go)$ ]]; then
+    FMT=${partes[n-3]}.${partes[n-2]}.${partes[n-1]}
+  elif (( n >= 2 )); then FMT=${partes[n-2]}.${partes[n-1]}
+  else FMT=$h; fi
+}
+
+# fichas_da_pagina PÁGINA → FICHAS: os pedaços do endereço da página que podem ser o código do vídeo
+# (o "x7k2q9w" de site.com/video/x7k2q9w/titulo). O arquivo do vídeo dela costuma trazer o mesmo
+# código; a prévia de outro vídeo e o anúncio, não.
+fichas_da_pagina() {
+  local p=${1#*://} f partes=()
+  FICHAS=()
+  [[ $p == */* ]] || return 0
+  p=${p#*/}; p=${p%%#*}
+  IFS='/?&=;' read -ra partes <<<"$p"
+  for f in "${partes[@]}"; do
+    f=${f,,}; [[ $f =~ ^(.+)\.[a-z0-9]{1,5}$ ]] && f=${BASH_REMATCH[1]}
+    [[ $f =~ ^[a-z0-9_-]{6,}$ ]] || continue
+    case $f in
+      videos|embed|player|movies|stream|streams|search|playlist|episode|episodes|season|series|channel|channels|\
+      category|categories|latest|popular|trending|public|assets|static|content|contents|upload|uploads|mobile|\
+      desktop|assistir|filmes|temporada|episodio|online|download|downloads|viewer|watch|index|video-*) continue ;;
+    esac
+    FICHAS+=("$f")
+  done
+}
+
+# sufixo_do_site PÁGINA → FMT: a expressão que tira do fim do título o nome do site ("Título - Site"),
+# que o título da página costuma trazer e o nome do arquivo não precisa. Vazio se o nome for curto.
+sufixo_do_site() {
+  local h r="" i
+  base_do_site "$1"; h=${FMT%%.*}; FMT=""
+  [[ $h =~ ^[a-z0-9]{4,}$ && $h == *[a-z]* ]] || return 0
+  for (( i = 0; i < ${#h}; i++ )); do r+="${r:+[\\s._-]?}${h:i:1}"; done
+  FMT="(?i)\\s+[-|–—·•]\\s*$r(\\.[a-z]{2,6})*\\s*\$"
+}
+
+# Modo auxiliar: o yt-dlp chama o GrabIt assim antes de baixar cada vídeo de uma página (veja
+# baixa_link). Uma página sem extrator próprio que fala de mais de um vídeo, ou cujo único "vídeo"
+# nem é endereço: avisa o JOB, que interrompe este yt-dlp e escolhe o que baixar (baixa_da_pagina).
+pagina_confusa() {                            # pagina_confusa EXTRATOR ENTRADAS LINK
+  [[ ${GRABIT_PAGINA:-0} == 1 ]] || return 1
+  case $1 in Generic|HTML5MediaEmbed) ;; *) return 1 ;; esac
+  [[ $2 =~ ^[0-9]+$ ]] && (( $2 > 1 )) && return 0
+  ! link_valido "$3"
+}
+if [[ ${1:-} == --confere-pagina ]]; then     # --confere-pagina MARCA JOB EXTRATOR ENTRADAS LINK
+  if pagina_confusa "$4" "$5" "$6"; then
+    : > "$2.pagina"
+    (( $3 > 0 )) && kill -USR1 "$3" 2>/dev/null
+  fi
+  exit 0
+fi
+
 # Modo auxiliar da busca pelo arquivo direto: o yt-dlp chama o GrabIt assim depois de escolher
 # o formato e antes de baixar. Um stream nem sempre é o melhor que o site tem: um arquivo que chega
 # sem altura nem fps informados perde para qualquer stream com esses dados, por pior que o stream
@@ -658,6 +736,11 @@ if [[ ${1:-} == --procura-direto ]]; then
   proto=${12} alt=${13} larg=${14} fps=${15} tbr=${16} dur=${17} dr=${18} acodec=${19} entradas=${20} ua=${21:-}
   vcodec_s=${22:-NA}
   [[ $ua == NA ]] && ua=""
+  if pagina_confusa "$extrator" "$entradas" "$escolhido"; then
+    : > "$marca.pagina"
+    (( job > 0 )) && kill -USR1 "$job" 2>/dev/null
+    exit 0
+  fi
   command -v ffprobe >/dev/null 2>&1 || exit 0
   case ${http_proxy:-} in socks*) exit 0 ;; esac      # o ffprobe iria direto ao site, sem passar pelo proxy
   case $entradas in NA|0|1) ;; *) exit 0 ;; esac      # um vídeo de uma lista: a página fala de vários
@@ -733,7 +816,7 @@ if [[ ${1:-} == --procura-direto ]]; then
     esac
     ABS=${ABS%%#*}
     # o que claramente não é o vídeo nem merece um pedido (a duração pegaria de qualquer jeito)
-    [[ ! ${ABS,,} =~ [/_.-](trailer|teaser|preview|sample|thumb|thumbnail|sprite|logo|intro|banner|ads?|vast|poster)[/_.-] ]]
+    link_valido "$ABS" && ! parece_extra "$ABS" && [[ ! ${ABS,,} =~ [/_.-]poster[/_.-] ]]
   }
 
   inteiro "$alt"; a=$NUM; inteiro "$larg"; lado "$a" "$NUM"; lado_s=$NUM
@@ -1451,6 +1534,7 @@ idioma_pt() {
     [et_existe]="arquivo já existe"
     [et_iniciando]="iniciando download"
     [et_principal]="procurando o vídeo principal da página"
+    [et_pagina]="escolhendo o vídeo da página"
     [et_verificando]="verificando o arquivo"
     [et_processando]="processando"
     [et_item]="obtendo informações · item %s/%s"
@@ -1489,9 +1573,10 @@ idioma_pt() {
     [curl_colar]="     Também dá para colar o comando depois de grabit:  grabit curl 'https://…' -H …"
     [clip_wayland]="No Wayland, ler a área de transferência precisa do wl-clipboard. Para instalar:  %s"
     [et_navegador]="no navegador · faça a verificação ou dê play, se precisar"
+    [et_sessao]="lendo a página com a sessão do navegador"
     [et_procura]="comparando com um arquivo direto do site"
     [et_direto]="baixando o arquivo direto: é melhor que o stream"
-    [nav_abrindo]="Este site precisa de um navegador: vou abrir o %s. Se aparecer uma verificação, é só fazê-la na janela."
+    [nav_abrindo]="Este site precisa de um navegador: vou abrir o %s. Se aparecer uma verificação, é só fazê-la na janela; se o vídeo não começar sozinho, dê play nele."
     [k_conexoes]="%s recusou as conexões extras: os próximos downloads vão com uma só"
     [k_lento]="%s rende mais com uma conexão só: seguindo assim nesse site"
     [k_freio]="%s pediu para ir mais devagar: no máximo %d download(s) ao mesmo tempo desse site, e o próximo daqui a %d s"
@@ -1510,6 +1595,8 @@ idioma_pt() {
     [ins_nav_ja]="O %s já está instalado."
     [ins_nav_site]="O %s não está no gerenciador de pacotes deste sistema. Baixe em: %s"
     [nav_sem_video]="nenhum vídeo apareceu no navegador (a janela fechou ou o tempo acabou)"
+    [nav_so_anuncios]="no navegador só apareceram anúncios e prévias; da próxima vez, dê play no vídeo na janela"
+    [nav_nao_video]="o vídeo que o navegador pediu não veio: o site devolveu outra coisa, que ficou de fora"
     [nav_sem_navegador]="     Com o Firefox ou o Chrome instalado, o GrabIt faz isso sozinho."
     [curl_sem_clip]="Não consegui ler a área de transferência. Guarde o comando num arquivo e rode:  %s"
     [curl_sem_arquivo]="O arquivo '%s' não foi encontrado."
@@ -1575,6 +1662,11 @@ idioma_pt() {
     [r_baixa_det]="%dp era a melhor versão disponível (com login, -b, às vezes há mais)"
     [r_direto]="arquivo direto:"
     [r_direto_det]="%s, melhor que a opção padrão (%s)"
+    [r_pagina]="página:"
+    [r_pagina_det]="ficou %d de %d itens; os outros eram prévias, anúncios ou nem eram vídeo"
+    [r_nav_escolha]="navegador:"
+    [r_nav_escolha_det]="a página pediu %d vídeos; ficou o de %s, os outros eram anúncios ou prévias"
+    [r_nav_escolha_det0]="a página pediu %d vídeos; ficou o que tinha cara de ser o dela"
     [r_curto]="mais curto:"
     [r_curto_det]="o arquivo tem %s, e o site informa %s; confira se veio inteiro"
     [s_baixa]="Baixa resolução"
@@ -2256,6 +2348,7 @@ idioma_en() {
     [et_existe]="file already exists"
     [et_iniciando]="starting download"
     [et_principal]="looking for the page's main video"
+    [et_pagina]="picking the page's own video"
     [et_verificando]="checking the file"
     [et_processando]="processing"
     [et_item]="fetching info · item %s/%s"
@@ -2294,9 +2387,10 @@ idioma_en() {
     [curl_colar]="     You can also paste the command after grabit:  grabit curl 'https://…' -H …"
     [clip_wayland]="On Wayland, reading the clipboard needs wl-clipboard. To install it:  %s"
     [et_navegador]="in the browser · do the check or press play, if needed"
+    [et_sessao]="reading the page with the browser's session"
     [et_procura]="comparing with a direct file from the site"
     [et_direto]="downloading the direct file: it beats the stream"
-    [nav_abrindo]="This site needs a browser: I'll open %s. If a check shows up, just do it in the window."
+    [nav_abrindo]="This site needs a browser: I'll open %s. If a check shows up, just do it in the window; if the video doesn't start on its own, press play."
     [k_conexoes]="%s refused the extra connections: the next downloads use only one"
     [k_lento]="%s is faster over a single connection: carrying on that way for that site"
     [k_freio]="%s asked to slow down: at most %d download(s) at once from that site, and the next one in %d s"
@@ -2315,6 +2409,8 @@ idioma_en() {
     [ins_nav_ja]="%s is already installed."
     [ins_nav_site]="%s isn't in this system's package manager. Download it from: %s"
     [nav_sem_video]="no video showed up in the browser (the window closed or time ran out)"
+    [nav_so_anuncios]="only ads and previews showed up in the browser; next time, press play on the video in the window"
+    [nav_nao_video]="the video the browser requested didn't come: the site sent something else, which was left out"
     [nav_sem_navegador]="     With Firefox or Chrome installed, GrabIt does this by itself."
     [curl_sem_clip]="I couldn't read the clipboard. Save the command to a file and run:  %s"
     [curl_sem_arquivo]="The file '%s' wasn't found."
@@ -2380,6 +2476,11 @@ idioma_en() {
     [r_baixa_det]="%dp was the best version available (logged in, -b, there may be more)"
     [r_direto]="direct file:"
     [r_direto_det]="%s, better than the default choice (%s)"
+    [r_pagina]="page:"
+    [r_pagina_det]="kept %d of %d items; the others were previews, ads or not videos at all"
+    [r_nav_escolha]="browser:"
+    [r_nav_escolha_det]="the page requested %d videos; kept the %s one, the others were ads or previews"
+    [r_nav_escolha_det0]="the page requested %d videos; kept the one that looked like its own"
     [r_curto]="shorter:"
     [r_curto_det]="the file runs %s, and the site says %s; check that it came whole"
     [s_baixa]="Low resolution"
@@ -3478,7 +3579,9 @@ etapa_da_linha() {                            # o que uma linha do log diz sobre
     *"aren't any"*|*"are no "*|*"Not remuxing"*|"Deleting original"*|WARNING:*) ;;   # "nada a fazer"
     @@D@@*|"[MoveFiles]"*)                                         ETAPA=${T[et_finalizando]} ;;
     "[grabit] principal"*)                                         ETAPA=${T[et_principal]} ;;
+    "[grabit] pagina"*)                                            ETAPA=${T[et_pagina]} ;;
     "[grabit] navegador"*)                                         ETAPA=${T[et_navegador]} ;;
+    "[grabit] sessao"*)                                            ETAPA=${T[et_sessao]} ;;
     "[grabit] procura"*)                                           ETAPA=${T[et_procura]} ;;
     "[grabit] direto"*)                                            ETAPA=${T[et_direto]} ;;
     "[Exec]"*"--nfo "*)                                            ETAPA=${T[et_nfo]} ;;
@@ -3913,6 +4016,29 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       fi
     fi
   done
+  # A página falava de mais de um vídeo: quantos ficaram, e por quê
+  if (( n_done > 0 )); then
+    local k_pag n_pag
+    l=$(cat "${logs[@]}" 2>/dev/null | grep -a -e '^\[grabit\] pagina: ' -e '^\[grabit\] escolha: ' | tail -n 1)
+    case $l in
+      "[grabit] pagina: "*)
+        IFS=$SEP read -r _ k_pag n_pag <<<"${l#\[grabit\] pagina: }"
+        num "$k_pag"; k_pag=$NUM; num "$n_pag"; n_pag=$NUM
+        if (( k_pag < n_pag )); then
+          t r_pagina_det "$k_pag" "$n_pag"; corta "$TXT" $(( COLS - 13 - ${#T[r_pagina]} ))
+          PERM+=("         ${VERDE}↳ ${T[r_pagina]}${R}${DIM} ${FMT}${R}")
+        fi ;;
+      "[grabit] escolha: "*)
+        IFS=$SEP read -r n_pag k_pag <<<"${l#\[grabit\] escolha: }"
+        num "$n_pag"; n_pag=$NUM; num "$k_pag"; k_pag=$NUM
+        if (( n_pag > 1 )); then
+          if (( k_pag > 0 )); then fmt_dur "$k_pag"; t r_nav_escolha_det "$n_pag" "$FMT"
+          else t r_nav_escolha_det0 "$n_pag"; fi
+          corta "$TXT" $(( COLS - 13 - ${#T[r_nav_escolha]} ))
+          PERM+=("         ${VERDE}↳ ${T[r_nav_escolha]}${R}${DIM} ${FMT}${R}")
+        fi ;;
+    esac
+  fi
 
   # Pulados pelo histórico: o yt-dlp nem abre o vídeo, então não há @@D@@.
   # A linha é "<id>: has already…" (pulado antes de acessar o site) ou
@@ -4104,7 +4230,7 @@ lanca_job() {                                 # lanca_job IDX
     if (( ! NAV_AVISADO )); then
       NAV_AVISADO=1; t nav_abrindo "$NAV_ROTULO"; PERM+=("  ${CIANO}↗${R} $TXT")
     fi
-    baixa_pelo_navegador "$url" "$i" </dev/null >"$TMP/$i.log" 2>&1 &
+    baixa_pelo_navegador "$url" "$i" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
   else
     baixa_link "$url" "${extra[@]}" </dev/null >"$TMP/$i.log" 2>&1 &
   fi
@@ -4120,38 +4246,54 @@ lanca_job() {                                 # lanca_job IDX
 # baixa_link URL [OPÇÕES EXTRAS…]: roda em segundo plano, com a saída indo para o log.
 # Com -u, antes descobre qual é o vídeo principal da página e pede só ele.
 baixa_link() {
-  local url=$1 escolha=() marca arq_site fmts cmd yt rc lim=${LIM_JOB:-$RESOLUCAO_MAXIMA}
+  local url=$1 escolha=() marca arq_site fmts cmd yt rc lim=${LIM_JOB:-$RESOLUCAO_MAXIMA} procura=1 pedir=() sem_video=0
   shift
   if (( UPGRADE )); then upgrade_link "$url" "$@"; exit $?; fi
   if (( SO_PRINCIPAL )); then
     printf '[grabit] principal\n'
     escolhe_principal "$url" "$@" && escolha=(--playlist-items "$PRINCIPAL")
-  fi
-  # Quem escolheu o link do vídeo, só o áudio ou o vídeo principal da página não tem o que procurar.
-  # E a biblioteca do -m se organiza pelo canal e pela data, que um arquivo solto não informa.
-  if (( ! PROCURAR_ARQUIVO || MODO_CURL || SO_AUDIO || SO_PRINCIPAL || MIDIA )); then
     exec yt-dlp "${YTDLP_ARGS[@]}" "$@" "${escolha[@]}" -- "$url"
   fi
+  (( MODO_CURL )) && exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url"
+  # Quem escolheu o link do vídeo ou só o áudio não tem o que procurar. E a biblioteca do -m se
+  # organiza pelo canal e pela data, que um arquivo solto não informa.
+  (( ! PROCURAR_ARQUIVO || SO_AUDIO || MIDIA )) && procura=0
 
-  # O aviso de que achou um arquivo direto melhor chega por sinal: veja --procura-direto
+  # Os avisos chegam por sinal: o de um arquivo direto melhor (veja --procura-direto) e o de uma
+  # página que fala de mais de um vídeo, ou de um que nem é vídeo (veja --confere-pagina)
   site_de "$url"
   marca="$TMP/direto-$IDX_JOB"; arq_site="$TMP/direto-site.$FMT"; fmts="$TMP/formatos-$IDX_JOB"
   # Na tentativa passada, o arquivo escolhido não veio: esta não procura de novo
-  [[ -e $marca.falhou ]] && exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url"
-  rm -f -- "$marca" "$fmts"
+  [[ -e $marca.falhou ]] && procura=0
+  rm -f -- "$marca" "$marca.pagina" "$fmts"
+  # Quem escolheu os itens da página (-I, --playlist-items) já disse o que quer dela
+  GRABIT_PAGINA=1; escolheu_itens "${YTDLP_ARGS[@]}" "$@" && GRABIT_PAGINA=0
+  export GRABIT_PAGINA
   # (no --exec, um "%" dos caminhos viraria campo do modelo do yt-dlp)
-  printf -v cmd 'bash %q --procura-direto %q %d %q %q %d' "${GRABIT_SCRIPT//%/%%}" "${marca//%/%%}" "$BASHPID" \
-    "${arq_site//%/%%}" "${fmts//%/%%}" "$lim"
-  cmd+=' %(webpage_url)q %(title|NA)q %(extractor_key|NA)q %(id|NA)q %(requested_formats.0.url,url|NA)q %(protocol|NA)q'
-  cmd+=' %(height|0)q %(width|0)q %(fps|0)q %(tbr|0)q %(duration|0)q %(dynamic_range|NA)q %(acodec|NA)q %(n_entries|NA)q'
-  cmd+=' %(http_headers.User-Agent|NA)q %(vcodec|NA)q'
+  if (( procura )); then
+    printf -v cmd 'bash %q --procura-direto %q %d %q %q %d' "${GRABIT_SCRIPT//%/%%}" "${marca//%/%%}" "$BASHPID" \
+      "${arq_site//%/%%}" "${fmts//%/%%}" "$lim"
+    cmd+=' %(webpage_url)q %(title|NA)q %(extractor_key|NA)q %(id|NA)q %(requested_formats.0.url,url|NA)q %(protocol|NA)q'
+    cmd+=' %(height|0)q %(width|0)q %(fps|0)q %(tbr|0)q %(duration|0)q %(dynamic_range|NA)q %(acodec|NA)q %(n_entries|NA)q'
+    cmd+=' %(http_headers.User-Agent|NA)q %(vcodec|NA)q'
+    pedir=(--print-to-file 'after_filter:%(formats.:.{format_id,url,protocol,height,fps,tbr,vcodec})j' "${fmts//%/%%}")
+  else
+    printf -v cmd 'bash %q --confere-pagina %q %d' "${GRABIT_SCRIPT//%/%%}" "${marca//%/%%}" "$BASHPID"
+    cmd+=' %(extractor_key|NA)q %(n_entries|NA)q %(requested_formats.0.url,url|NA)q'
+  fi
   trap 'mata_arvore "$yt"' USR1
-  yt-dlp "${YTDLP_ARGS[@]}" "$@" \
-    --print-to-file 'after_filter:%(formats.:.{format_id,url,protocol,height,fps,tbr,vcodec})j' "${fmts//%/%%}" \
-    --exec "video:$cmd" -- "$url" &
+  yt-dlp "${YTDLP_ARGS[@]}" "$@" "${pedir[@]}" --exec "video:$cmd" -- "$url" &
   yt=$!
   wait "$yt"; rc=$?
   trap - USR1
+  if [[ -e $marca.pagina ]]; then
+    wait "$yt" 2>/dev/null                    # (o sinal interrompe o wait lá de cima)
+    baixa_da_pagina "$url" "$@"; rc=$?
+    (( rc == 3 )) || exit "$rc"
+    # Nada ali é vídeo: para o GrabIt, é como uma página que o yt-dlp não reconhece
+    printf 'ERROR: [grabit] Unsupported URL: %s\n' "$url"
+    rc=1; sem_video=1
+  fi
   if [[ -s $marca ]]; then
     wait "$yt" 2>/dev/null                    # (o sinal interrompe o wait lá de cima)
     baixa_direto "$marca" "$url" "$@" && exit 0
@@ -4160,7 +4302,7 @@ baixa_link() {
     exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url"
   fi
   # A página não abriu no yt-dlp. Antes de abrir um navegador, vale ver se ela cita um arquivo.
-  if (( rc != 0 )) && grep -aq 'Unsupported URL: ' "$TMP/$IDX_JOB.log" 2>/dev/null; then
+  if (( procura && rc != 0 && ! ${PELA_SESSAO:-0} )) && { (( sem_video )) || grep -aq 'Unsupported URL: ' "$TMP/$IDX_JOB.log" 2>/dev/null; }; then
     bash "$GRABIT_SCRIPT" --procura-direto "$marca" 0 "$arq_site" "" "$lim" "$url" "$(titulo_da_pagina "$url")" "" "" "" - \
       0 0 0 0 0 NA NA NA ""
     if [[ -s $marca ]]; then
@@ -4169,6 +4311,102 @@ baixa_link() {
     fi
   fi
   exit "$rc"
+}
+
+escolheu_itens() {                            # escolheu_itens OPÇÃO…: alguma escolhe os itens da página?
+  local o
+  for o in "$@"; do
+    case $o in -I|-I?*|--playlist-items|--playlist-items=*) return 0 ;; esac
+  done
+  return 1
+}
+
+# baixa_da_pagina URL [OPÇÕES…]: a página não tem extrator próprio e o yt-dlp achou nela mais de um
+# "vídeo", ou um que nem é endereço. Lê a página uma vez, escolhe (escolhe_da_pagina) e baixa só o
+# escolhido a partir do que leu: sem pedir a página de novo, e sem que ela mude entre a escolha e o
+# download. Sai com 3 se nada ali for vídeo. Se nem der para ler a página, baixa como antes.
+baixa_da_pagina() {
+  local url=$1 info="$TMP/pagina-$IDX_JOB.json" titulo=()
+  shift
+  printf '[grabit] pagina\n'
+  escolhe_da_pagina "$url" "$info" "$@"
+  case $? in
+    0) ;;
+    2) return 3 ;;
+    *) GRABIT_PAGINA=0 exec yt-dlp "${YTDLP_ARGS[@]}" "$@" -- "$url" ;;
+  esac
+  printf '[grabit] pagina: %s%s%d%s%d\n' "$ITENS_PAGINA" "$SEP" "$N_ESCOLHIDOS" "$SEP" "$N_PAGINA"
+  # Um só: o "(1)" que o yt-dlp põe para separar os itens da página não quer dizer mais nada
+  (( N_ESCOLHIDOS == 1 )) && titulo=(--replace-in-metadata title '\s+\(\d+\)$' '')
+  sufixo_do_site "$url"
+  [[ -n $FMT ]] && titulo+=(--replace-in-metadata title "$FMT" '')
+  yt-dlp "${YTDLP_ARGS[@]}" "$@" "${titulo[@]}" --playlist-items "$ITENS_PAGINA" --load-info-json "$info"
+}
+
+# escolhe_da_pagina URL INFO [OPÇÕES…] → ITENS_PAGINA (ex.: "2" ou "1,3"), N_ESCOLHIDOS e N_PAGINA (quantos
+# itens a página tinha). Grava em INFO o que o yt-dlp leu dela. Fica de fora o que não é endereço; depois, se
+# algum item traz no endereço o código do vídeo da página, só ele; se não, o que não tem cara de prévia nem
+# de anúncio; e, entre os que sobram, os que duram pelo menos metade do mais longo. Uma prévia ou um
+# anúncio dura bem menos que o vídeo; a parte 2 de um vídeo, não. Sai com 2 se nenhum item for vídeo, e
+# com 1 se nem der para ler a página.
+escolhe_da_pagina() {
+  local url=$1 info=$2 lista=$2.itens idx dur link p f d maior=0 args=() resto=() sel=() suas=()
+  local idxs=() durs=() links=()
+  shift 2
+  N_PAGINA=0; N_ESCOLHIDOS=0; ITENS_PAGINA=""
+  [[ -n $COOKIES_NAVEGADOR ]] && args+=(--cookies-from-browser "$COOKIES_NAVEGADOR")
+  [[ -n $USER_AGENT ]] && args+=(--user-agent "$USER_AGENT")
+  (( TEM_JS_RUNTIMES )) && [[ -n $JS_RUNTIME ]] && args+=(--js-runtimes "$JS_RUNTIME:$JS_PATH")
+  read -ra suas <<<"$OPCOES_YTDLP"            # (um --cookies seu, por exemplo, muda o que a página mostra)
+  args+=("${suas[@]}")
+  rm -f -- "$info" "$lista"
+  yt-dlp --ignore-config --no-warnings -J --playlist-items 1:30 -f "$FORMATO" \
+    --print-to-file "%(playlist_index|0)s${SEP}%(duration|0)s${SEP}%(requested_formats.0.url,url|)s" "${lista//%/%%}" \
+    "${args[@]}" "$@" -- "$url" > "$info" 2>/dev/null
+  [[ -s $info && -s $lista ]] || return 1
+  while IFS=$SEP read -r idx dur link; do
+    num "$idx"; idx=$NUM
+    (( idx > 0 )) || continue
+    N_PAGINA=$(( N_PAGINA + 1 ))
+    link_valido "$link" || continue
+    num "${dur%%.*}"
+    idxs+=("$idx"); durs+=("$NUM"); links+=("$link"); resto+=($(( ${#idxs[@]} - 1 )))
+  done < "$lista"
+  rm -f -- "$lista"
+  (( ${#idxs[@]} )) || return 2
+
+  fichas_da_pagina "$url"
+  sel=()
+  for p in "${resto[@]}"; do
+    for f in "${FICHAS[@]}"; do
+      if [[ ${links[$p],,} == *"$f"* ]]; then sel+=("$p"); break; fi
+    done
+  done
+  (( ${#sel[@]} )) && resto=("${sel[@]}")
+  if (( ${#resto[@]} > 1 )); then
+    sel=()
+    for p in "${resto[@]}"; do parece_extra "${links[$p]}" || sel+=("$p"); done
+    (( ${#sel[@]} )) && resto=("${sel[@]}")
+  fi
+  if (( ${#resto[@]} > 1 )); then
+    # (o ffprobe lê só o começo do arquivo; por um proxy SOCKS, ele iria direto ao site)
+    for p in "${resto[@]}"; do
+      if (( durs[p] == 0 && ! PROXY_SOCKS )) && command -v ffprobe >/dev/null 2>&1; then
+        d=$(ffprobe -v error -rw_timeout 15000000 ${USER_AGENT:+-user_agent "$USER_AGENT"} -headers "Referer: $url"$'\r\n' \
+              -show_entries format=duration -of csv=p=0 -- "${links[$p]}" 2>/dev/null)
+        num "${d%%.*}"; durs[p]=$NUM
+      fi
+      (( durs[p] > maior )) && maior=${durs[p]}
+    done
+    if (( maior > 0 )); then
+      sel=()
+      for p in "${resto[@]}"; do (( durs[p] * 2 >= maior )) && sel+=("$p"); done
+      resto=("${sel[@]}")
+    fi
+  fi
+  for p in "${resto[@]}"; do ITENS_PAGINA+="${ITENS_PAGINA:+,}${idxs[$p]}"; done
+  N_ESCOLHIDOS=${#resto[@]}
+  return 0
 }
 
 titulo_da_pagina() {                          # titulo_da_pagina URL: o <title>, ou nada
@@ -4306,6 +4544,7 @@ escolhe_principal() {
   while IFS=$SEP read -r idx dur alt link; do
     num "$idx"; idx=$NUM
     (( idx > 0 )) || continue
+    [[ -z $link ]] || link_valido "$link" || continue      # um pedaço de código não é o principal
     n=$(( n + 1 ))
     num "$dur"; dur=$NUM
     if (( dur == 0 && ! PROXY_SOCKS )) && [[ $link == http* ]] && command -v ffprobe >/dev/null 2>&1; then
@@ -6024,7 +6263,9 @@ proxy_do_firefox() {
   printf '%s\n' "$linhas" > "$u"
 }
 
-# O log → a 1ª linha é "2 LINK" (playlist) ou "1 LINK" (arquivo de vídeo); depois, os cabeçalhos
+# O log → os vídeos que o navegador pediu, na ordem e cada um uma vez: uma linha "@@C@@ TIPO LINK"
+# (2 = playlist, 1 = arquivo de vídeo) seguida dos cabeçalhos daquele pedido. Há sites em que o
+# endereço do vídeo termina com uma barra (…/12345.mp4/?…): ela não muda o que ele é.
 AWK_PEDIDO_VIDEO='
 /E\/nsHttp uri=/ {
   u = $0; sub(/^.*E\/nsHttp uri=/, "", u); p = u; sub(/^[a-z]+:\/\/[^\/]*/, "", p); uri[p] = u
@@ -6032,11 +6273,10 @@ AWK_PEDIDO_VIDEO='
 }
 /E\/nsHttp   GET / {
   l = $0; sub(/^.*E\/nsHttp   GET /, "", l); sub(/ HTTP\/[0-9.]+.*$/, "", l)
-  b = l; sub(/[?#].*$/, "", b)
+  b = l; sub(/[?#].*$/, "", b); sub(/\/$/, "", b)
   t = (b ~ /\.(m3u8|mpd)$/) ? 2 : ((b ~ /\.(mp4|webm|m4v|mkv|mov)$/) ? 1 : 0)
-  if (t == 2 || (t == 1 && salvo == "")) {
-    em = 1; tipo = t; cam = l; cab = ""; host = ""; pre = $0; sub(/E\/nsHttp.*$/, "", pre)
-  } else em = 0
+  if (t) { em = 1; tipo = t; cam = l; cab = ""; host = ""; pre = $0; sub(/E\/nsHttp.*$/, "", pre) }
+  else em = 0
   next
 }
 em {
@@ -6049,21 +6289,14 @@ em {
   }
   em = 0
   link = (cam in uri) ? uri[cam] : "https://" host cam
-  if (tipo == 2) { printf "2 %s\n%s", link, cab; saiu = 1; exit }
-  salvo = "1 " link "\n" cab
-}
-END { if (!saiu && salvo != "") printf "%s", salvo }'
+  if (!(link in visto)) { visto[link] = 1; printf "@@C@@ %d %s\n%s", tipo, link, cab }
+}'
 
 # O mesmo, para o NetLog da família do Chrome: um evento JSON por linha, com o nome de cada tipo
 # de evento na primeira. O arquivo está sendo escrito: uma linha pela metade fica para a próxima.
 PY_PEDIDO_NETLOG='
 import json, re, sys
-tipos, urls, salvo = {}, {}, None
-def mostra(t, url, cab):
-    print(t, url)
-    for h in cab:
-        if not h.startswith(":"):
-            print(h)
+tipos, urls, vistos = {}, {}, set()
 with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
     for l in f:
         l = l.strip().rstrip(",")
@@ -6088,21 +6321,187 @@ with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
         cab = p.get("headers") or []
         metodo = p.get("line", "").split(" ")[0] or next((h[9:] for h in cab if h.startswith(":method: ")), "")
         url = urls.get(fonte, "")
-        if metodo != "GET" or not url:
+        if metodo != "GET" or not url or url in vistos:
             continue
-        b = re.sub(r"[?#].*$", "", url)
-        if re.search(r"\.(m3u8|mpd)$", b, re.I):
-            mostra(2, url, cab)
-            sys.exit(0)
-        if salvo is None and re.search(r"\.(mp4|webm|m4v|mkv|mov)$", b, re.I):
-            salvo = (1, url, cab)
-if salvo:
-    mostra(*salvo)'
+        b = re.sub(r"[?#].*$", "", url).rstrip("/")
+        t = 2 if re.search(r"\.(m3u8|mpd)$", b, re.I) else 1 if re.search(r"\.(mp4|webm|m4v|mkv|mov)$", b, re.I) else 0
+        if t:
+            vistos.add(url)
+            print("@@C@@ %d %s" % (t, url))
+            for h in cab:
+                if not h.startswith(":"):
+                    print(h)'
 
+# le_pedidos LOG → C_TIPO C_URL C_CAB C_NOTA C_DUR: os vídeos que o navegador pediu até agora
+le_pedidos() {
+  local l k=-1
+  C_TIPO=(); C_URL=(); C_CAB=(); C_NOTA=(); C_DUR=()
+  while IFS= read -r l; do
+    if [[ $l == '@@C@@ '* ]]; then
+      l=${l#@@C@@ }; k=$(( k + 1 )); C_TIPO[k]=${l%% *}; C_URL[k]=${l#* }; C_CAB[k]=""
+    elif (( k >= 0 )); then C_CAB[k]+=$l$'\n'; fi
+  done < <(if [[ $NAV_TIPO == firefox ]]; then cat "$1"* 2>/dev/null | awk "$AWK_PEDIDO_VIDEO"
+           else python3 -I -c "$PY_PEDIDO_NETLOG" "$1.json" 2>/dev/null; fi)
+  for (( k = 0; k < ${#C_URL[@]}; k++ )); do
+    nota_pedido "$k"; C_NOTA[k]=$NUM; C_DUR[k]=${DUR_URL[${C_URL[k]}]:-0}
+  done
+}
+
+# nota_pedido K → NUM: quanto o pedido K tem cara de ser o vídeo da página. Negativo: de anúncio ou
+# de prévia. 20 se o endereço traz o código do vídeo da página, 10 se vem do próprio site, 0 se de
+# outro; mais 1 se for uma playlist. (O que a página toca enquanto o vídeo não começa, os anúncios,
+# costuma vir de outro domínio.)
+nota_pedido() {
+  local u=${C_URL[$1],,} f
+  NUM=0
+  if parece_extra "$u"; then NUM=-100; return 0; fi
+  for f in "${FICHAS[@]}"; do
+    if [[ $u == *"$f"* ]]; then NUM=20; break; fi
+  done
+  if (( NUM == 0 )); then base_do_site "$u"; [[ $FMT == "$BASE_PAGINA" ]] && NUM=10; fi
+  (( C_TIPO[$1] == 2 )) && NUM=$(( NUM + 1 ))
+  return 0
+}
+
+iso_dur() {                                   # iso_dur PT1H2M5.5S → NUM: em segundos (0 = não deu)
+  NUM=0
+  [[ $1 =~ ^P(([0-9]+)D)?T?(([0-9]+)H)?(([0-9]+)M)?(([0-9]+)(\.[0-9]*)?S)?$ ]] || return 1
+  NUM=$(( 10#${BASH_REMATCH[2]:-0} * 86400 + 10#${BASH_REMATCH[4]:-0} * 3600 + 10#${BASH_REMATCH[6]:-0} * 60 + 10#${BASH_REMATCH[8]:-0} ))
+}
+
+# mede_pedido K: quanto dura o vídeo do pedido K, pedido com os cabeçalhos que o navegador usou (os
+# cookies vão num arquivo, nunca na linha de comando). Fica em DUR_URL; 0 = não deu para saber. De um
+# arquivo, só o começo: é ali que fica a duração, na maioria dos vídeos da web.
+mede_pedido() {
+  local url=${C_URL[$1]} cab="$TMP/medida-$IDX_JOB.cab" h d="" txt var base resp=""
+  MEDIDO[$url]=1; DUR_URL[$url]=0
+  command -v curl >/dev/null 2>&1 || return 0
+  ( umask 077; : > "$cab" )
+  while IFS= read -r h; do
+    case ${h%%:*} in ''|:*) continue ;; esac
+    case ${h%%:*} in [Hh]ost|[Rr]ange|[Aa]ccept-[Ee]ncoding|[Cc]onnection|[Cc]ontent-[Ll]ength|[Ii]f-*|[Tt][Ee]|[Pp]riority) continue ;; esac
+    printf '%s\n' "$h" >> "$cab"
+  done <<<"${C_CAB[$1]}"
+  if (( C_TIPO[$1] == 2 )); then
+    txt=$(curl -fsSL -m 8 --max-filesize 3000000 --proto =http,https --proto-redir =http,https -H @"$cab" --url "$url" 2>/dev/null)
+    if [[ $txt == *mediaPresentationDuration=* ]]; then
+      d=${txt#*mediaPresentationDuration=?}; d=${d%%[\"\']*}
+      iso_dur "$d"; d=$NUM
+    else
+      if [[ $txt == *'#EXT-X-STREAM-INF'* ]]; then  # a lista das versões: a primeira serve
+        var=$(awk '/^#EXT-X-STREAM-INF/ { p = 1; next } p && /^[^#[:space:]]/ { print; exit }' <<<"$txt"); var=${var%$'\r'}
+        case $var in
+          http://*|https://*) ;;
+          //*) var=${url%%://*}:$var ;;
+          /*)  base=${url#*://}; var=${url%%://*}://${base%%/*}$var ;;
+          *)   base=${url%%[?#]*}; var=${base%/*}/$var ;;
+        esac
+        txt=$(curl -fsSL -m 8 --max-filesize 3000000 --proto =http,https --proto-redir =http,https -H @"$cab" --url "$var" 2>/dev/null)
+      fi
+      d=$(awk -F'[:,]' '/^#EXTINF:/ { s += $2 } END { printf "%d", s }' <<<"$txt")
+    fi
+  elif command -v ffprobe >/dev/null 2>&1; then
+    resp=$(curl -sSL -m 12 -r 0-5000000 --proto =http,https --proto-redir =http,https -H @"$cab" \
+             -o "$cab.amostra" -w '%{http_code} %{content_type} %{size_download}' --url "$url" 2>/dev/null)
+    d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 -i "$cab.amostra" 2>/dev/null)
+    rm -f -- "$cab.amostra"
+  fi
+  rm -f -- "$cab"
+  num "${d%%.*}"; DUR_URL[$url]=$NUM
+  printf '[grabit] medida: %ss %s %s\n' "$NUM" "${resp:--}" "${url%%[?#]*}"
+}
+
+# melhor_que K M: o pedido K tem mais cara de ser o vídeo da página que o M? Fora o que tem cara de
+# anúncio; um vídeo três vezes mais longo que o outro ganha (uma prévia dura segundos); depois vale de
+# onde vem (o código do vídeo da página, o próprio site), a duração e, por fim, ser playlist. Empate:
+# fica o que veio antes.
+melhor_que() {
+  local nk=${C_NOTA[$1]} nm=${C_NOTA[$2]} dk=${C_DUR[$1]} dm=${C_DUR[$2]}
+  if (( (nk < 0) != (nm < 0) )); then (( nm < 0 )); return; fi
+  if (( dk > 0 && dm > 0 )); then
+    (( dk >= 3 * dm )) && return 0
+    (( dm >= 3 * dk )) && return 1
+  fi
+  if (( nk / 10 != nm / 10 )); then (( nk > nm )); return; fi
+  if (( dk > 0 && dm > 0 && (dk > dm + 2 || dm > dk + 2) )); then (( dk > dm )); return; fi
+  (( nk > nm ))
+}
+
+escolhe_pedido() {                            # → ESC: o pedido que tem mais cara de ser o vídeo
+  local k
+  ESC=0
+  for (( k = 1; k < ${#C_URL[@]}; k++ )); do melhor_que "$k" "$ESC" && ESC=$k; done
+  return 0
+}
+
+# mede_proximo LIMITE: mede um pedido que ainda não foi medido, primeiro os que não têm cara de
+# anúncio (cada medida é um pedido ao site). Sai com 1 se não havia o que medir.
+mede_proximo() {
+  local k alvo=-1
+  (( MEDIDAS < $1 )) || return 1
+  for (( k = 0; k < ${#C_URL[@]}; k++ )); do
+    [[ -n ${MEDIDO[${C_URL[k]}]:-} ]] && continue
+    if (( alvo < 0 )) || (( C_NOTA[k] >= 0 && C_NOTA[alvo] < 0 )) || (( (C_NOTA[k] < 0) == (C_NOTA[alvo] < 0) && C_NOTA[k] > C_NOTA[alvo] )); then
+      alvo=$k
+    fi
+  done
+  (( alvo >= 0 )) || return 1
+  mede_pedido "$alvo"; MEDIDAS=$(( MEDIDAS + 1 )); C_DUR[alvo]=${DUR_URL[${C_URL[alvo]}]}
+}
+
+# pela_sessao URL NAVEGADOR [OPÇÕES…]: a página, lida pelo yt-dlp com a sessão do perfil do GrabIt naquele
+# navegador. Uma verificação de idade ou anti-robô feita na janela fica nos cookies dele: com eles, a
+# página mostra o player, e o yt-dlp acha o vídeo como acharia sem a verificação, com o título e um
+# endereço novo. (O endereço que o player pediu costuma valer só para ele: pedido de novo, o site
+# devolve outra coisa.) Sai com 0 se baixou; com 2 se nem com a sessão o yt-dlp achou um vídeo ali.
+pela_sessao() {
+  local url=$1 nav=$2 ini rc
+  shift 2
+  ini=$(wc -l < "$TMP/$IDX_JOB.log" 2>/dev/null); num "$ini"; ini=$NUM
+  printf '[grabit] sessao\n'
+  ( PELA_SESSAO=1; baixa_link "$url" "$@" --cookies-from-browser "$nav:$PASTA_NAV/perfil" ); rc=$?
+  (( rc == 0 )) && return 0
+  tail -n +$(( ini + 1 )) "$TMP/$IDX_JOB.log" 2>/dev/null | grep -aq 'Unsupported URL: ' && return 2
+  return 1
+}
+
+e_video() {                                   # e_video ARQUIVO: tem som ou imagem que se mexe, por 1 s ou mais?
+  local l c="" v=0 d=0
+  command -v ffprobe >/dev/null 2>&1 || return 0
+  while IFS= read -r l; do
+    case $l in
+      codec_name=*) c=${l#*=} ;;              # (o ffprobe informa o codec antes do tipo da faixa)
+      codec_type=audio) v=1 ;;
+      codec_type=video) case $c in gif|png|apng|mjpeg|bmp|webp) ;; *) v=1 ;; esac ;;
+      duration=*) d=${l#*=} ;;
+    esac
+  done < <(ffprobe -v error -show_entries stream=codec_name,codec_type:format=duration -of default=nw=1 -- "$1" 2>/dev/null)
+  num "${d%%.*}"
+  (( v && NUM >= 1 ))
+}
+
+# A página pede o vídeo dela, mas também anúncios, que tocam antes ou ao lado dele, e as prévias de
+# outros vídeos. A janela fica aberta até aparecer um que é claramente o da página (do próprio site, ou
+# com mais de 2 minutos); sem isso, até a página ficar uns segundos sem pedir nada novo. Se só houver
+# anúncio, espera mais: às vezes o vídeo só começa quando a pessoa dá play.
+# Antes e depois da janela, vale a página com a sessão do navegador (pela_sessao): é ela que traz o
+# vídeo certo. O que a janela pediu fica para quando nem assim o yt-dlp acha o vídeo (um player que é um
+# programa da página); e o que vier dali só conta se for vídeo de verdade.
 baixa_pelo_navegador() {
-  local url=$1 idx=$2 log pid pedido=() opcoes=() proxy_chrome=() inicio primeiro=0 media
+  local url=$1 idx=$2 log pid opcoes=() proxy_chrome=() inicio primeiro=0 novo=0 n_ant=0 media k cab=()
+  local assenta=${GRABIT_NAVEGADOR_ASSENTA:-5} nav_yt="" js ua="" rc i args=() feito="$TMP/feito-$2" caminho
+  local -A DUR_URL=() MEDIDO=()
+  shift 2
+  MEDIDAS=0
   printf '[grabit] navegador\n'
   pasta_navegador
+  case $NAV_ROTULO in Firefox|Chromium|Chrome|Brave|Edge|Vivaldi|Opera) nav_yt=${NAV_ROTULO,,} ;; esac
+  site_de "$url"; js="$TMP/so-pela-janela.$FMT"
+  # A sessão que o perfil já guarda, de uma verificação feita antes, pode bastar: aí nem abre a janela
+  if [[ -n $nav_yt && ! -e $js && -d $PASTA_NAV/perfil ]]; then
+    pela_sessao "$url" "$nav_yt" "$@" && exit 0
+  fi
+  fichas_da_pagina "$url"; base_do_site "$url"; BASE_PAGINA=$FMT
   log="$PASTA_NAV/http"                       # tem os cookies: só vive enquanto a janela está aberta
   rm -f -- "$log"*
   read -ra opcoes <<<"${GRABIT_NAVEGADOR_OPCOES:-}"
@@ -6123,15 +6522,21 @@ baixa_pelo_navegador() {
   trap 'mata_arvore "$pid"; rm -f -- "$log"*; exit 143' TERM INT HUP
   inicio=$SECONDS
   while (( SECONDS - inicio < ${GRABIT_NAVEGADOR_ESPERA:-300} )); do
-    if [[ $NAV_TIPO == firefox ]]; then
-      mapfile -t pedido < <(cat "$log"* 2>/dev/null | awk "$AWK_PEDIDO_VIDEO")
-    else
-      mapfile -t pedido < <(python3 -I -c "$PY_PEDIDO_NETLOG" "$log.json" 2>/dev/null)
-    fi
-    [[ ${pedido[0]:-} == 2\ * ]] && break
-    if [[ ${pedido[0]:-} == 1\ * ]]; then      # só um arquivo: uma playlist, se vier, é o vídeo de verdade
-      (( primeiro )) || primeiro=$SECONDS
-      (( SECONDS - primeiro >= 8 )) && break
+    le_pedidos "$log"
+    if (( ${#C_URL[@]} )); then
+      if (( ${#C_URL[@]} > n_ant )); then
+        n_ant=${#C_URL[@]}; novo=$SECONDS
+        (( primeiro )) || primeiro=$SECONDS
+      fi
+      mede_proximo 10
+      escolhe_pedido; k=$ESC
+      if (( SECONDS - primeiro >= assenta )); then
+        if (( C_NOTA[k] >= 0 )); then
+          (( C_NOTA[k] >= 10 )) && break
+          (( C_DUR[k] >= 120 || SECONDS - novo >= 3 * assenta )) && break
+        fi
+        (( SECONDS - primeiro >= 12 * assenta )) && break
+      fi
     fi
     kill -0 "$pid" 2>/dev/null || break        # a pessoa fechou a janela
     sleep 1
@@ -6140,15 +6545,53 @@ baixa_pelo_navegador() {
   for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.3; done
   kill -KILL "$pid" 2>/dev/null
   trap - TERM INT HUP
+  # O que chegou no fim também conta, e o que tem cara de ser o vídeo é medido antes da escolha
+  le_pedidos "$log"
+  while mede_proximo 6; do :; done
   rm -f -- "$log"*
   rmdir "$TMP/navegador.trava" 2>/dev/null
-  if [[ ${pedido[0]:-} != [12]\ * ]]; then printf 'ERROR: [grabit] %s\n' "${T[nav_sem_video]}"; exit 1; fi
-  media=${pedido[0]#* }
-  cabecalhos_ytdlp "$media" "$TMP/cookies-$idx.txt" "${pedido[@]:1}"
+  if (( ${#C_URL[@]} )); then
+    escolhe_pedido; k=$ESC
+    ua=$(grep -ai -m 1 '^user-agent: ' <<<"${C_CAB[k]}"); ua=${ua#*: }
+  fi
+  # Com a sessão desta janela. Se nem assim o yt-dlp achar um vídeo na página, o player é um programa
+  # dela: os próximos links do site, nesta execução, vão direto ao que a janela pedir.
+  if [[ -n $nav_yt && ! -e $js ]]; then
+    pela_sessao "$url" "$nav_yt" "$@" ${ua:+--user-agent "$ua"}
+    case $? in 0) exit 0 ;; 2) : > "$js" ;; esac
+  fi
+  if (( ! ${#C_URL[@]} )); then printf 'ERROR: [grabit] %s\n' "${T[nav_sem_video]}"; exit 1; fi
+  for (( media = 0; media < ${#C_URL[@]}; media++ )); do        # (no log: o que foi visto, sem os cabeçalhos)
+    printf '[grabit] visto: %s %ss %s %s\n' "${C_TIPO[media]}" "${C_DUR[media]}" "${C_NOTA[media]}" "${C_URL[media]}"
+  done
+  # Só anúncio e prévia: baixar um deles seria entregar o vídeo errado
+  if (( C_NOTA[k] < 0 && C_DUR[k] < 120 )); then printf 'ERROR: [grabit] %s\n' "${T[nav_so_anuncios]}"; exit 1; fi
+  printf '[grabit] escolha: %d%s%d\n' "${#C_URL[@]}" "$SEP" "${C_DUR[k]}"
+  media=${C_URL[k]}
+  mapfile -t cab <<<"${C_CAB[k]%$'\n'}"
+  cabecalhos_ytdlp "$media" "$TMP/cookies-$idx.txt" "${cab[@]}"
   nome_pela_pagina "$url" "$media"
+  # A linha do vídeo pronto (@@D@@) só sai depois de conferir que ele é vídeo mesmo
+  for (( i = 0; i < ${#YTDLP_ARGS[@]}; i++ )); do
+    if [[ ${YTDLP_ARGS[i]} == --print && ${YTDLP_ARGS[i+1]:-} == after_move:@@D@@* ]]; then
+      args+=(--print-to-file "${YTDLP_ARGS[i+1]}" "${feito//%/%%}"); i=$(( i + 1 )); continue
+    fi
+    args+=("${YTDLP_ARGS[i]}")
+  done
+  rm -f -- "$feito"
   # Sem o histórico: o vídeo costuma se chamar "master", e o próximo "master" pareceria já baixado
-  exec yt-dlp "${YTDLP_ARGS[@]}" "${CAB_ARGS[@]}" --no-download-archive \
-    --parse-metadata "$ROTULO_CURL:%(title)s" -o "$SAIDA_PAGINA" -- "$media"
+  yt-dlp "${args[@]}" "${CAB_ARGS[@]}" "$@" --no-download-archive \
+    --parse-metadata "$ROTULO_CURL:%(title)s" -o "$SAIDA_PAGINA" -- "$media"; rc=$?
+  if [[ -s $feito ]]; then
+    caminho=$(tail -n 1 "$feito"); caminho=${caminho##*"$SEP"}
+    if [[ -f $caminho ]] && ! e_video "$caminho"; then
+      rm -f -- "$caminho" "$feito"
+      printf 'ERROR: [grabit] %s\n' "${T[nav_nao_video]}"
+      exit 1
+    fi
+    cat "$feito"; rm -f -- "$feito"
+  fi
+  exit "$rc"
 }
 
 # notifica: avisa que o lote acabou — sino e notificação na área de trabalho (se levou 1 min

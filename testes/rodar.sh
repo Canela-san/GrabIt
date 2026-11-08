@@ -280,6 +280,9 @@ case " $* " in *" --referer "*)                                                 
   [ -z "${STUB_SO_SEM_REFERER:-}" ] || STUB_ERRO="" ;;
 esac
 case " $* " in *" -- https://video.n.invalid/"*) STUB_ERRO="" ;; esac                 # o vídeo achado pelo navegador
+case " $* " in *" -- https://a.invalid/get_file/"*)                                   # …e o da página com anúncios
+  STUB_ERRO=""; printf '@@D@@720\03730\037SDR\037h264\037aac\03731\037Um clipe\037c1\037Downloads/Um clipe.mkv\n' ;;
+esac
 if [ -n "${STUB_429_UMA:-}" ] && [ ! -e "$STUB_429_UMA" ]; then                       # pede calma uma vez só
   case " $* " in *" -- http://c1.invalid/"*) : > "$STUB_429_UMA"; echo "ERROR: HTTP Error 429: Too Many Requests"; exit 1 ;; esac
 fi
@@ -379,6 +382,37 @@ cat > "$FF/firefox" <<'EOF'
 printf 'firefox %s\n' "$*" >> "$STUB_LOG"
 [ -z "${STUB_FF_FECHA:-}" ] || exit 0
 trap 'echo "firefox fechado" >> "$STUB_LOG"; exit 0' TERM
+# STUB_FF_ANUNCIO: a página toca anúncios (um stream sem som e um arquivo de outro domínio) antes do
+# vídeo dela, que tem uma barra no fim do endereço. Com "so", só os anúncios.
+if [ -n "${STUB_FF_ANUNCIO:-}" ]; then
+  cat > "$MOZ_LOG_FILE.moz_log" <<'LOG'
+[Parent 1: Main Thread]: E/nsHttp uri=https://xv.anuncio.invalid/c/e14f-noaudio/360x360.mp4.m3u8
+[Parent 1: Main Thread]: E/nsHttp   GET /c/e14f-noaudio/360x360.mp4.m3u8 HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: xv.anuncio.invalid
+[Parent 1: Main Thread]: E/nsHttp   User-Agent: Firefox/159.0 (X11; Linux)
+[Parent 1: Main Thread]: E/nsHttp ]
+LOG
+  [ "$STUB_FF_ANUNCIO" = so ] || cat >> "$MOZ_LOG_FILE.moz_log" <<'LOG'
+[Parent 1: Main Thread]: E/nsHttp uri=https://cdn.outro.invalid/files2204/394/clipe_1280x720.mp4
+[Parent 1: Main Thread]: E/nsHttp   GET /files2204/394/clipe_1280x720.mp4 HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: cdn.outro.invalid
+[Parent 1: Main Thread]: E/nsHttp ]
+[Parent 1: Main Thread]: E/nsHttp uri=https://a.invalid/get_file/5/9c51/13188000/13188533/13188533.mp4/?rnd=7
+[Parent 1: Main Thread]: E/nsHttp   GET /get_file/5/9c51/13188000/13188533/13188533.mp4/?rnd=7 HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: a.invalid
+[Parent 1: Main Thread]: E/nsHttp   User-Agent: Firefox/159.0 (X11; Linux)
+[Parent 1: Main Thread]: E/nsHttp   Referer: https://a.invalid/videos/um-clipe/
+[Parent 1: Main Thread]: E/nsHttp   Cookie: kt_agecheck=1
+[Parent 1: Main Thread]: E/nsHttp   Range: bytes=0-
+[Parent 1: Main Thread]: E/nsHttp ]
+[Parent 1: Main Thread]: E/nsHttp uri=https://a.invalid/get_file/5/9c51/13188000/13188533/13188533.mp4/?rnd=7
+[Parent 1: Main Thread]: E/nsHttp   GET /get_file/5/9c51/13188000/13188533/13188533.mp4/?rnd=7 HTTP/1.1
+[Parent 1: Main Thread]: E/nsHttp   Host: a.invalid
+[Parent 1: Main Thread]: E/nsHttp   Range: bytes=500-
+[Parent 1: Main Thread]: E/nsHttp ]
+LOG
+  while :; do sleep 1 & wait $!; done
+fi
 cat > "$MOZ_LOG_FILE.moz_log" <<'LOG'
 [Parent 1: Main Thread]: E/nsHttp uri=https://n.invalid/style.css
 [Parent 1: Main Thread]: E/nsHttp   GET /style.css HTTP/1.1
@@ -1344,7 +1378,7 @@ vaga; (
 grupo_ini navegador
 secao "Vídeo achado pelo navegador (Firefox de mentira)"
 D="$TMP/navegador"; mkdir -p "$D"; cd "$D" || exit 1
-nav() { HOME="$TMP/casa" XDG_DATA_HOME="$TMP/navdados" USAR_NAVEGADOR=1 GRABIT_NAVEGADOR_OPCOES=--headless GRABIT_NAVEGADOR_ESPERA=15 PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
+nav() { HOME="$TMP/casa" XDG_DATA_HOME="$TMP/navdados" USAR_NAVEGADOR=1 GRABIT_NAVEGADOR_OPCOES=--headless GRABIT_NAVEGADOR_ESPERA=15 GRABIT_NAVEGADOR_ASSENTA=0 PATH="$FF:$STUB:$GBREW:$TMP/sem:$PATH" roda "$@"; }
 printf '%s\n' 'n.invalid/player?temporada=7&episodio=1' > links.txt
 : > "$STUB_LOG"
 STUB_ERRO="[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again" \
@@ -1365,16 +1399,38 @@ espera "o link vai para a seção BAIXADOS" grep -qE '^n\.invalid/player.*# ✔'
 espera "e sai com código 0" codigo "$RC" 0
 espera "o método que funcionou fica lembrado" grep -q '^n\.invalid 2 ' "$TMP/navdados/grabit/metodos.txt"
 : > "$STUB_LOG"
-nav n7 -L pt https://n.invalid/outro
-espera "o próximo link do site vai direto ao navegador" nao_contem "$STUB_LOG" "-- https://n.invalid/outro"
-espera "…e baixa" tentou video.n.invalid "--no-download-archive"
+# (sem_sessao: os pedidos da página que não usaram a sessão do navegador)
+sem_sessao() { grep -F -- "-- $1" "$STUB_LOG" | grep -cvF -- '--cookies-from-browser'; }
+nav n7b -L pt https://n.invalid/sessao
+espera "o próximo link do site: primeiro a sessão que o perfil guarda" tentou "-- https://n.invalid/sessao" "--cookies-from-browser firefox:$TMP/navdados/grabit/firefox/perfil"
+espera "…sem passar de novo pelo yt-dlp sozinho" test "$(sem_sessao https://n.invalid/sessao)" -eq 0
+espera "…e, se ela basta, nem abre a janela" nao_contem "$STUB_LOG" "firefox --no-remote"
 : > "$STUB_LOG"
-STUB_FF_FECHA=1 nav n8 -L pt https://n.invalid/outra
+STUB_ERRO="Unsupported URL: https://n.invalid/outro" nav n7 -L pt https://n.invalid/outro
+espera "a sessão não basta: abre o navegador" contem "$STUB_LOG" "firefox --no-remote"
+espera "…sem passar de novo pelo yt-dlp sozinho" test "$(sem_sessao https://n.invalid/outro)" -eq 0
+espera "…e baixa o que a janela pediu" tentou video.n.invalid "--no-download-archive"
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://n.invalid/outra" STUB_FF_FECHA=1 nav n8 -L pt https://n.invalid/outra
 espera "o método lembrado que falha é esquecido" nao_contem "$TMP/navdados/grabit/metodos.txt" "n.invalid"
 : > "$STUB_LOG"
 STUB_ERRO="Unsupported URL: https://j.invalid/js" nav n2 -L pt https://j.invalid/js
-espera "player em JavaScript: vai direto ao navegador" test "$(grep -c -- '-- https://j.invalid/js' "$STUB_LOG")" -eq 1
-espera "…e baixa" tentou video.n.invalid "--no-download-archive"
+espera "player em JavaScript: vai direto ao navegador" test "$(sem_sessao https://j.invalid/js)" -eq 1
+espera "…depois da janela, lê a página com a sessão dela" test "$(grep -F -- '-- https://j.invalid/js' "$STUB_LOG" | grep -cF -- '--cookies-from-browser firefox:')" -eq 2
+espera "…com o User-Agent da janela" tentou "-- https://j.invalid/js" "--user-agent Firefox/159.0 (X11; Linux)"
+espera "…e, sem vídeo nela, baixa o que a janela pediu" tentou video.n.invalid "--no-download-archive"
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://a.invalid/videos/um-clipe/" STUB_FF_ANUNCIO=1 nav n-an -L pt https://a.invalid/videos/um-clipe/
+espera "página com anúncios: baixa o vídeo do site, com a barra no fim do endereço" tentou "-- https://a.invalid/get_file/5/9c51/13188000/13188533/13188533.mp4/?rnd=7" "--no-download-archive"
+espera "…e não o anúncio sem som" nao_contem "$STUB_LOG" "anuncio.invalid"
+espera "…nem o arquivo de outro domínio" nao_contem "$STUB_LOG" "cdn.outro.invalid"
+espera "…com os cabeçalhos do primeiro pedido dele" tentou 13188533.mp4 "--add-header User-Agent:Firefox/159.0 (X11; Linux) --add-header Referer:https://a.invalid/videos/um-clipe/"
+espera "…e diz que escolheu" contem n-an "a página pediu 3 vídeos"
+: > "$STUB_LOG"
+STUB_ERRO="Unsupported URL: https://b.invalid/videos/so-anuncio/" STUB_FF_ANUNCIO=so nav n-so -L pt https://b.invalid/videos/so-anuncio/
+espera "só anúncio no navegador: não baixa o anúncio" nao_contem "$STUB_LOG" "-- https://xv.anuncio.invalid"
+espera "…e explica" contem n-so "só apareceram anúncios e prévias"
+espera "…e sai com código 1" codigo "$RC" 1
 : > "$STUB_LOG"
 STUB_ERRO="HTTP Error 404: Not Found" nav n3 -L pt https://o.invalid/404
 espera "erro que um navegador não resolve não abre janela" nao_contem "$STUB_LOG" "firefox "
@@ -1743,6 +1799,27 @@ cat > "$W/pagina/index.html" <<'EOF'
 <!doctype html><html><head><title>Pagina de teste</title></head><body>
 <video src="previa.mp4"></video><video src="principal.mp4"></video></body></html>
 EOF
+# Como a página de um site sem extrator: um anúncio, o vídeo dela (com o código da página no endereço)
+# e um pedaço de JavaScript que o yt-dlp toma por vídeo
+mkdir -p "$W/v/x7k2q9w" "$W/pagina3" "$W/so-codigo"
+cp "$W/curto.mp4" "$W/v/anuncio.mp4"; cp "$W/longo.mp4" "$W/v/x7k2q9w/x7k2q9w_1-video.mp4"
+cat > "$W/v/x7k2q9w/index.html" <<'EOF'
+<!doctype html><html><head><title>Clipe de Teste - Sitezinho</title></head><body>
+<video class="slider" autoplay muted><source src="/v/anuncio.mp4" type="video/mp4"></video>
+<video class="v-player"><source src="/v/x7k2q9w/x7k2q9w_1-video.mp4" type="video/mp4"/></video>
+<script>var h = '<video autoplay muted src="' + e.querySelector('.player').getAttribute('data-video') + '"></video>';</script>
+</body></html>
+EOF
+video "$W/pagina3/relance.mp4" 640x360 1; cp "$W/longo.mp4" "$W/pagina3/filme.mp4"
+cat > "$W/pagina3/index.html" <<'EOF'
+<!doctype html><html><head><title>Sem codigo</title></head><body>
+<video src="relance.mp4"></video><video src="filme.mp4"></video></body></html>
+EOF
+cat > "$W/so-codigo/index.html" <<'EOF'
+<!doctype html><html><head><title>So codigo</title></head><body>
+<script>var h = '<video autoplay muted src="' + e.querySelector('.player').getAttribute('data-video') + '"></video>';</script>
+</body></html>
+EOF
 PORTA=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 cat > "$TMP/servidor.py" <<'EOF'
 import functools, http.server, os, re, sys, time
@@ -1893,6 +1970,27 @@ roda saida3 -L pt -U "$B/res/mestre.m3u8"
 espera "-U de novo não baixa nada" contem saida3 "nenhuma versão melhor que 720p"
 roda saida4 -L pt -r 240 -i "$B/res/mestre.m3u8"
 espera "sem versão dentro do limite, falha com aviso" contem saida4 "nenhuma versão até 240p (-r)"
+
+secao "Página com vários vídeos: só o dela"
+D="$TMP/dpag"; mkdir -p "$D"; cd "$D" || exit 1
+roda p1 -L pt -o ./P1 "$B/v/x7k2q9w/"
+espera "baixa só o vídeo da página, pelo código dela no endereço" test "$(find P1 -name '*.mkv' | wc -l)" -eq 1
+espera "…que é o vídeo dela" test -n "$(find P1 -name '*x7k2q9w-2*.mkv')"
+espera "…sem o (2) que separava os itens" test -n "$(find P1 -name 'Clipe de Teste - Sitezinho \[*')"
+espera "…sem erro pelo pedaço de código" codigo "$RC" 0
+espera "…e diz o que ficou de fora" contem p1 "ficou 1 de 3 itens"
+roda p1b -L pt -o ./P1 "$B/v/x7k2q9w/"
+espera "de novo: já baixado, sem erro" contem p1b "já baixado antes"
+espera "…e sai com código 0" codigo "$RC" 0
+roda p2 -L pt -o ./P2 "$B/pagina3/index.html"
+espera "sem o código no endereço, fica de fora o que dura bem menos" test "$(find P2 -name '*.mkv' | wc -l)" -eq 1
+espera "…e fica o mais longo" contem p2 "00:04"
+roda p3 -L pt -o ./P3 "$B/so-codigo/index.html"
+espera "página em que nada é vídeo: diz isso" contem p3 "nenhum vídeo reconhecido"
+espera "…sem baixar nada" test -z "$(find P3 -name '*.mkv' 2>/dev/null)"
+espera "…e sai com código 1" codigo "$RC" 1
+roda p4 -L pt -x -o ./P4 "$B/v/x7k2q9w/"
+espera "-x também fica só com o da página" test "$(find P4 -type f ! -path '*/logs/*' ! -name '.grabit*' | wc -l)" -eq 1
 
 secao "Só áudio, vídeo principal, Jellyfin/Plex/Kodi e verificação"
 D="$TMP/d4"; mkdir -p "$D"; cd "$D" || exit 1
