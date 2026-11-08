@@ -217,6 +217,8 @@ espera "organizar tira as linhas repetidas" test "$(grep -c 'a.exemplo/r' "$TMP/
 espera "…e fica com a primeira, com o seu comentário" grep -qx 'https://a.exemplo/r  # primeiro' "$TMP/org.txt"
 espera "…também dentro das seções" test "$(grep -c 'a.exemplo/t' "$TMP/org.txt")" -eq 1
 espera "…sem apagar os seus comentários de lá" test "$(grep -cxE '# (nota minha|outra nota)' "$TMP/org.txt")" -eq 2
+roda "$TMP/ls9c" -L pt lista "$TMP/org.txt"
+espera "o arquivo também vale logo depois de lista, sem -l" contem "$TMP/ls9c" "Para baixar · 2"
 cp "$TMP/org.txt" "$TMP/org.antes"; chmod 444 "$TMP/org.txt"
 if [[ ! -w $TMP/org.txt ]]; then                # (como root, tudo pode ser escrito)
   roda "$TMP/ls9b" -L pt -l "$TMP/org.txt" lista baixado 1

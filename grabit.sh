@@ -1403,6 +1403,7 @@ idioma_pt() {
     [f_pendentes]="%d link(s) não chegaram a ser baixados e continuam em %s"
     [f_soltos]="%d link(s) do comando não foram baixados"
     [s_movidos_f]="%d para a seção FALHARAM"
+    [s_movidos_f0]="%d link(s) movidos para a seção FALHARAM"
     [cmd_baixar]="download"
     [ls_baixar]="Para baixar"
     [ls_falhas]="Falharam"
@@ -1427,7 +1428,7 @@ idioma_pt() {
   grabit lista limpar notas     tira as anotações do GrabIt; seus comentários ficam
   grabit lista organizar        põe cada parte no lugar e tira as linhas repetidas
   grabit lista editar           abre o arquivo no editor
-  Para outro arquivo de links: grabit -l ARQUIVO lista …"
+  Para outro arquivo de links: grabit lista ARQUIVO …"
     [tentativa_n]="%dª tentativa · "
     [ni_tentativa]="(%dª tentativa)"
     [log_tentativa]="# ── tentativa %d ──"
@@ -1693,7 +1694,8 @@ que grabit --atualizar):
   verificar, check [PASTA]
                      confere os vídeos já baixados (defeitos e incompletos)
                      e oferece baixar de novo os que tiverem problema
-  lista, list [AÇÃO] mostra o arquivo de links por partes: a baixar, FALHARAM e BAIXADOS;
+  lista, list [ARQUIVO] [AÇÃO]
+                     mostra o arquivo de links por partes: a baixar, FALHARAM e BAIXADOS;
                      ações: voltar N…, baixado N…, pular N…, limpar falhas|baixados|notas,
                      organizar, editar
   converter, convert ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
@@ -2206,6 +2208,7 @@ idioma_en() {
     [f_pendentes]="%d link(s) weren't downloaded and stay in %s"
     [f_soltos]="%d link(s) from the command weren't downloaded"
     [s_movidos_f]="%d to the FAILED section"
+    [s_movidos_f0]="%d link(s) moved to the FAILED section"
     [cmd_baixar]="download"
     [ls_baixar]="To download"
     [ls_falhas]="Failed"
@@ -2230,7 +2233,7 @@ idioma_en() {
   grabit list clear notes       remove GrabIt's notes; your comments stay
   grabit list tidy              put each part in its place and remove repeated lines
   grabit list edit              open the file in the editor
-  For another link file: grabit -l FILE list …"
+  For another link file: grabit list FILE …"
     [tentativa_n]="attempt %d · "
     [ni_tentativa]="(attempt %d)"
     [log_tentativa]="# ── attempt %d ──"
@@ -2495,7 +2498,7 @@ the same as grabit --atualizar):
   check, verificar [FOLDER]
                      check the videos already downloaded (defects and incomplete files)
                      and offer to download the problem ones again
-  list, lista [ACTION]
+  list, lista [FILE] [ACTION]
                      show the link file by parts: to download, FAILED and DOWNLOADED;
                      actions: back N…, downloaded N…, skip N…, clear failed|downloaded|notes,
                      tidy, edit
@@ -4951,7 +4954,8 @@ resumo() {
     TXT=""
     if (( N_MOVIDOS > 0 )); then t s_movidos "$N_MOVIDOS"; fi
     l=$TXT
-    if (( N_MOVIDOS_F > 0 )); then t s_movidos_f "$N_MOVIDOS_F"; l+="${l:+ · }$TXT"; fi
+    if (( N_MOVIDOS_F > 0 && N_MOVIDOS > 0 )); then t s_movidos_f "$N_MOVIDOS_F"; l+=" · $TXT"
+    elif (( N_MOVIDOS_F > 0 )); then t s_movidos_f0 "$N_MOVIDOS_F"; l=$TXT; fi
     linha_resumo "✎" "$DIM" "${T[s_lista]}" "$l"
   fi
   resumo_pendencias
@@ -7186,7 +7190,13 @@ lista_marca() {
 # grabit lista: o arquivo de links por partes, numerado, e o que fazer com cada link. Mudar um link de parte
 # troca só a anotação do GrabIt (o ✔ ou o ✖ com a data e a nota); o seu comentário continua igual.
 gerencia_lista() {
-  local arq=$ARQUIVO_LINKS acao=${ARGS_LINKS[0]:-listar} args=("${ARGS_LINKS[@]:1}") i l n p todos ed=()
+  local arq=$ARQUIVO_LINKS acao args=("${ARGS_LINKS[@]}") i l n p todos ed=()
+  # "grabit lista cursos.txt voltar 3": o arquivo também pode vir logo depois do comando, no lugar de -l
+  case ${args[0]:-} in
+    ""|listar|list|mostrar|show|editar|edit|voltar|back|restore|baixado|downloaded|marcar|add|mark|pular|skip|limpar|clear|organizar|tidy) ;;
+    *) [[ -f ${args[0]} ]] && { arq=${args[0]}; args=("${args[@]:1}"); } ;;
+  esac
+  acao=${args[0]:-listar}; args=("${args[@]:1}")
   local topo=() falha=() baixa=() volta=() rc=0
   local -A SEL=() marca=() visto=()
   [[ -f $arq ]] || { t sem_arquivo "$arq"; erro "$TXT"; printf '%s\n\n' "${T[sem_arquivo2]}"; return 1; }
@@ -7484,7 +7494,7 @@ gera_completar() {
       printf 'set -l grabit_comandos %s\n' "$pal"
       printf 'complete -c grabit -n "not __fish_seen_subcommand_from $grabit_comandos" -a "$grabit_comandos"\n'
       printf "complete -c grabit -n '__fish_seen_subcommand_from canais channels seguir follow' -f -a '%s'\n" "$acoes_cn"
-      printf "complete -c grabit -n '__fish_seen_subcommand_from lista list baixados downloaded' -f -a '%s'\n" "$acoes_bx"
+      printf "complete -c grabit -n '__fish_seen_subcommand_from lista list baixados downloaded' -a '%s'\n" "$acoes_bx"
       printf "complete -c grabit -n '__fish_seen_subcommand_from completar completion' -f -a 'fish bash zsh'\n"
       while IFS='|' read -r curta longas vals chave; do
         d=${T[$chave]}; printf 'complete -c grabit'
@@ -7523,7 +7533,7 @@ gera_completar() {
       printf '  if (( COMP_CWORD == 1 )); then COMPREPLY=($(compgen -W "%s" -- "$cur")); compopt -o default; return; fi\n' "$pal"
       printf '  case ${COMP_WORDS[1]} in\n'
       printf '    canais|channels|seguir|follow) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_cn"
-      printf '    lista|list|baixados|downloaded) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_bx"
+      printf '    lista|list|baixados|downloaded) COMPREPLY=($(compgen -W "%s" -- "$cur")); compopt -o default; return ;;\n' "$acoes_bx"
       printf '    completar|completion) COMPREPLY=($(compgen -W "fish bash zsh" -- "$cur")); return ;;\n'
       printf '  esac\n  compopt -o default\n}\ncomplete -F _grabit grabit\n' ;;
     zsh)
