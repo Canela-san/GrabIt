@@ -170,7 +170,7 @@ grabit list tidy               # each part in its place, without repeated lines
 grabit list edit               # open the file in your editor ($VISUAL, $EDITOR, nano or vim)
 ```
 
-Moving a link between sections only touches what GrabIt wrote: the ✔ or the ✖, the date and the note. **Your comment stays as it was**, in any section, so you can keep recognizing the video by its link. Use `-l FILE` for another link file (`grabit -l courses.txt list`). The video history doesn't change: to download again something already downloaded, run with `-i`.
+Moving a link between sections only touches what GrabIt wrote: the ✔ or the ✖, the date and the note. **Your comment stays as it was**, in any section, so you can keep recognizing the video by its link. For it to travel with the link, write it on the same line (`https://… # the wedding one`): a comment line on its own stays where it is. Use `-l FILE` for another link file (`grabit -l courses.txt list`). The video history doesn't change: to download again something already downloaded, run with `-i`.
 
 > In Portuguese the sections are called `FALHARAM` and `BAIXADOS`; GrabIt recognizes both languages, so switching languages doesn't mess up your list.
 >

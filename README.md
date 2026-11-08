@@ -170,7 +170,7 @@ grabit lista organizar         # cada parte no lugar, sem linhas repetidas
 grabit lista editar            # abre o arquivo no seu editor ($VISUAL, $EDITOR, nano ou vim)
 ```
 
-Mudar um link de seção mexe só no que o GrabIt escreveu: o ✔ ou o ✖, a data e a nota. **O seu comentário fica como estava**, em qualquer seção, para você continuar reconhecendo o vídeo pelo link. Use `-l ARQUIVO` para outro arquivo de links (`grabit -l cursos.txt lista`). O histórico de vídeos não muda: para baixar de novo algo que já foi baixado, rode com `-i`.
+Mudar um link de seção mexe só no que o GrabIt escreveu: o ✔ ou o ✖, a data e a nota. **O seu comentário fica como estava**, em qualquer seção, para você continuar reconhecendo o vídeo pelo link. Para ele acompanhar o link, escreva-o na mesma linha (`https://… # o do casamento`): uma linha de comentário sozinha fica onde está. Use `-l ARQUIVO` para outro arquivo de links (`grabit -l cursos.txt lista`). O histórico de vídeos não muda: para baixar de novo algo que já foi baixado, rode com `-i`.
 
 > Em inglês, as seções se chamam `FAILED` e `DOWNLOADED`; o GrabIt reconhece os dois idiomas, então trocar de idioma não bagunça a lista.
 >

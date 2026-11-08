@@ -209,10 +209,21 @@ espera "limpar confirmado esvazia a seção" nao_contem "$L" "BAIXADOS"
 espera "…e guarda a cópia .bak" cmp -s "$L.bak" "$TMP/secao.antes"
 roda "$TMP/ls8" -L pt -l "$L" lista sumir
 espera "ação desconhecida é recusada" codigo "$RC" 2
-printf '%s\n' "# x" "https://a.exemplo/r  # primeiro" "https://a.exemplo/r" "https://a.exemplo/s" > "$TMP/org.txt"
+printf '%s\n' "# x" "https://a.exemplo/r  # primeiro" "https://a.exemplo/r" "https://a.exemplo/s" "" \
+  "# ==================== BAIXADOS ====================" "# desc" "https://a.exemplo/t" "# nota minha" "# outra nota" \
+  "https://a.exemplo/t" "# ================ FIM DOS BAIXADOS ================" > "$TMP/org.txt"
 roda "$TMP/ls9" -L pt -l "$TMP/org.txt" lista organizar
 espera "organizar tira as linhas repetidas" test "$(grep -c 'a.exemplo/r' "$TMP/org.txt")" -eq 1
 espera "…e fica com a primeira, com o seu comentário" grep -qx 'https://a.exemplo/r  # primeiro' "$TMP/org.txt"
+espera "…também dentro das seções" test "$(grep -c 'a.exemplo/t' "$TMP/org.txt")" -eq 1
+espera "…sem apagar os seus comentários de lá" test "$(grep -cxE '# (nota minha|outra nota)' "$TMP/org.txt")" -eq 2
+cp "$TMP/org.txt" "$TMP/org.antes"; chmod 444 "$TMP/org.txt"
+if [[ ! -w $TMP/org.txt ]]; then                # (como root, tudo pode ser escrito)
+  roda "$TMP/ls9b" -L pt -l "$TMP/org.txt" lista baixado 1
+  espera "lista só de leitura: avisa e não diz que mudou" grep -q 'nada mudou' "$TMP/ls9b"
+  espera "…e sai com código 1" codigo "$RC" 1
+fi
+chmod 644 "$TMP/org.txt"
 printf '\xef\xbb\xbf# lista\r\nhttps://a.exemplo/w  # do Windows\r\nhttps://a.exemplo/v\r\n' > "$TMP/win.txt"
 roda "$TMP/ls10" -L pt -l "$TMP/win.txt" lista baixado 1
 espera "lista do Windows: o BOM continua no começo" test "$(head -c 3 "$TMP/win.txt" | od -An -tx1 | tr -d ' ')" = efbbbf
@@ -544,6 +555,11 @@ if [[ ! -w so-leitura.txt ]]; then             # (como root, tudo pode ser escri
   STUB_ERRO="HTTP Error 404" falso f8 -L pt so-leitura.txt
   espera "lista só de leitura: o link volta no comando" grep -qE 'Para continuar: +.*http://c.invalid/9$' f8
 fi
+printf '\xef\xbb\xbfhttp://c.invalid/b1\r\n' > bom.txt     # do Bloco de Notas: tudo falha, e a seção vira a 1ª linha
+STUB_ERRO="HTTP Error 404" falso f10 -L pt bom.txt
+: > "$STUB_LOG"
+falso f11 -L pt bom.txt
+espera "lista com BOM e só a FALHARAM: nada é tentado de novo sem --repetir" test "$(vezes c.invalid/b1)" -eq 0
 printf '%s\n' "http://c.invalid/10" "http://c.invalid/11" > l3.txt
 STUB_ERRO="HTTP Error 404" falso f9 -L pt -l l3.txt http://c.invalid/12
 espera "links do comando junto de uma lista: -l no lugar de download" grep -qE 'Para continuar: +.*-L pt http://c.invalid/12 -l l3.txt --repetir$' f9

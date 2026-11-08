@@ -1413,6 +1413,7 @@ idioma_pt() {
     [ls_voltar_uso]="Diga quais: grabit lista voltar 3 5, ou falhas, baixados, tudo (os números saem em grabit lista)."
     [ls_marcar_uso]="Diga quais: grabit lista %s 3 5, ou LINK…"
     [ls_a_mao_f]="deixado de lado à mão"
+    [ls_nao_gravou]="Não deu para gravar em %s (sem permissão ou sem espaço): nada mudou."
     [ls_pulou]="%d link(s) na seção FALHARAM: o grabit download só volta a tentá-los com --repetir."
     [ls_voltou]="%d link(s) de volta à lista de baixar, sem as anotações do GrabIt."
     [ls_limpar_uso]="Diga o que limpar: falhas, baixados ou notas."
@@ -1613,12 +1614,14 @@ Opções mais usadas:
   -x              só o áudio
   -b NAVEGADOR    usa o login do navegador: firefox, chrome…
   --simular       mostra o que seria baixado, sem baixar
+  --repetir       tenta de novo também os que falharam (a seção FALHARAM)
 
 Comandos:
   instalar        instala o que falta
   atualizar       deixa tudo na versão mais nova
   converter       muda o formato de um vídeo já baixado
   verificar       confere os vídeos já baixados
+  lista           mostra a lista por partes e muda links de seção
   canais          acompanha canais e baixa só o que for novo
   config          mostra as configurações em uso
 
@@ -2213,6 +2216,7 @@ idioma_en() {
     [ls_voltar_uso]="Say which: grabit list back 3 5, or failed, downloaded, all (the numbers come from grabit list)."
     [ls_marcar_uso]="Say which: grabit list %s 3 5, or LINK…"
     [ls_a_mao_f]="set aside by hand"
+    [ls_nao_gravou]="Couldn't write to %s (no permission or no space): nothing changed."
     [ls_pulou]="%d link(s) in the FAILED section: grabit download only tries them again with --retry."
     [ls_voltou]="%d link(s) back in the list to download, without GrabIt's notes."
     [ls_limpar_uso]="Say what to clear: failed, downloaded or notes."
@@ -2413,14 +2417,15 @@ Most used options:
   -x              audio only
   -b BROWSER      use the browser's login: firefox, chrome…
   --simulate      show what would be downloaded, without downloading
+  --retry         also try again the ones that failed (the FAILED section)
 
 Commands:
   install         install what's missing
   update          bring everything to the newest version
   convert         change the format of a video you already have
   check           check the videos you already have
+  list            show the list by parts and move links between sections
   channels        follow channels and download only what's new
-  download, baixar   download the list in the links.txt file (or the one in -l)
   config          show the settings in use
 
 All options and commands:  grabit help full
@@ -5208,17 +5213,17 @@ sonda() {
 #   # ==================== BAIXADOS ====================   (ou DOWNLOADED, em inglês)
 # e vai até o fim do arquivo: o GrabIt ignora tudo o que estiver nela.
 eh_marca_baixados() {
-  local l=${1%$'\r'}
+  local l=${1%$'\r'}; l=${l#$'\xef\xbb\xbf'}       # (a seção pode ser a 1ª linha, depois do BOM)
   [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(baixados|downloaded)[[:space:]]*=+[[:space:]]*$ ]]
 }
 
 # A seção FALHARAM, logo acima da BAIXADOS, tem as mesmas regras
 eh_marca_falhas() {
-  local l=${1%$'\r'}
+  local l=${1%$'\r'}; l=${l#$'\xef\xbb\xbf'}       # (a seção pode ser a 1ª linha, depois do BOM)
   [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(falharam|failed)[[:space:]]*=+[[:space:]]*$ ]]
 }
 eh_fim_falhas() {
-  local l=${1%$'\r'}
+  local l=${1%$'\r'}; l=${l#$'\xef\xbb\xbf'}       # (a seção pode ser a 1ª linha, depois do BOM)
   [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(fim[[:space:]]+dos[[:space:]]+que[[:space:]]+falharam|end[[:space:]]+of[[:space:]]+failed)[[:space:]]*=+[[:space:]]*$ ]]
 }
 # fim_secao CABEÇALHO → FMT: a linha de fim, no idioma do cabeçalho que já está no arquivo
@@ -5235,7 +5240,7 @@ fim_secao() {
 # o que vier depois dela volta a contar — assim "echo LINK >> links.txt" funciona mesmo
 # com a seção no fim do arquivo. Sem essa linha (arquivos antigos), a seção vai até o fim.
 eh_fim_baixados() {
-  local l=${1%$'\r'}
+  local l=${1%$'\r'}; l=${l#$'\xef\xbb\xbf'}       # (a seção pode ser a 1ª linha, depois do BOM)
   [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(fim[[:space:]]+dos[[:space:]]+baixados|end[[:space:]]+of[[:space:]]+downloaded)[[:space:]]*=+[[:space:]]*$ ]]
 }
 
@@ -5426,6 +5431,7 @@ lista_le() {
 }
 
 # lista_grava ARQUIVO: o inverso de lista_le, de uma vez só (veja prepara_troca). Seção vazia some.
+# Se a gravação falhar, o arquivo fica como estava.
 lista_grava() {
   local arq=$1 saida=("${L_TOPO[@]}") e=$L_EOL
   while (( ${#saida[@]} )) && [[ -z ${saida[-1]//[[:space:]]/} ]]; do unset 'saida[-1]'; done
@@ -5441,10 +5447,19 @@ lista_grava() {
     fim_secao "${L_CAB_B[0]}"
     saida+=("${L_CAB_B[@]}" "${L_BAIXA[@]}" "${FMT}$e")
   fi
+  local ok=1
   prepara_troca "$arq"
-  { printf '%s' "$L_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$TROCA" &&
-    mv -f -- "$TROCA" "$ALVO_TROCA"
+  { printf '%s' "$L_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$TROCA" 2>/dev/null &&
+    mv -f -- "$TROCA" "$ALVO_TROCA" && ok=0
   rm -f -- "$TROCA"
+  return "$ok"
+}
+
+# lista_salva ARQUIVO: lista_grava, com a mensagem se não deu (sem permissão, disco cheio): nada mudou
+lista_salva() {
+  lista_grava "$1" && return 0
+  t ls_nao_gravou "$1"; erro "$TXT"
+  return 1
 }
 
 # anota LINHA NOTA [GLIFO] → FMT: a linha com o ✔ (ou o ✖), a data e a nota, ex.:
@@ -5728,7 +5743,7 @@ simula_links() {
           num "$tam"; tam=$NUM
           if (( tam == 0 )); then                  # sem o tamanho: pelo bitrate e pela duração
             num "$tbr"; tbr=$NUM; num "$dur"
-            tam=$(( tbr * 1000 / 8 * NUM ))
+            tam=$(( tbr * 125 * NUM ))         # kbit/s × s → bytes
           fi
           soma=$(( soma + tam )); n_vid=$(( n_vid + 1 ))
           montar_meta "$h" "$fps" SDR "$vc" "$ac" 0 "$dur" "$tam"
@@ -7174,7 +7189,7 @@ gerencia_lista() {
   local arq=$ARQUIVO_LINKS acao=${ARGS_LINKS[0]:-listar} args=("${ARGS_LINKS[@]:1}") i l n p todos ed=()
   local topo=() falha=() baixa=() volta=() rc=0
   local -A SEL=() marca=() visto=()
-  [[ -f $arq ]] || { t sem_arquivo "$arq"; erro "$TXT"; return 1; }
+  [[ -f $arq ]] || { t sem_arquivo "$arq"; erro "$TXT"; printf '%s\n\n' "${T[sem_arquivo2]}"; return 1; }
   confere_lista "$arq"
   printf -v HOJE '%(%Y-%m-%d)T' -1
   case ${acao,,} in
@@ -7190,6 +7205,7 @@ gerencia_lista() {
       "${ed[@]}" "$arq" </dev/tty >/dev/tty
       return 0 ;;
   esac
+  [[ -w $arq ]] || { t ls_nao_gravou "$arq"; erro "$TXT"; return 1; }
   trava_lista "$arq" || { aviso "${T[lista_presa]}"; return 1; }
   lista_le "$arq"
   lista_numera
@@ -7206,9 +7222,10 @@ gerencia_lista() {
         done
         while (( ${#L_TOPO[@]} )) && [[ -z ${L_TOPO[-1]//[[:space:]]/} ]]; do unset 'L_TOPO[-1]'; done
         L_TOPO+=("${volta[@]}"); L_FALHA=("${falha[@]}"); L_BAIXA=("${baixa[@]}")
-        lista_grava "$arq"
-        t ls_voltou "${#volta[@]}"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
-        printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R"
+        if lista_salva "$arq"; then
+          t ls_voltou "${#volta[@]}"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+          printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R"
+        else rc=1; fi
       fi ;;
 
     baixado|downloaded|marcar|add|mark|pular|skip)   # para a BAIXADOS (ou a FALHARAM), sem baixar
@@ -7237,8 +7254,8 @@ gerencia_lista() {
         done
         if [[ $dest == baixa ]]; then L_BAIXA+=("${vai[@]}"); t bx_marcou "$n"
         else L_FALHA+=("${vai[@]}"); t ls_pulou "$n"; fi
-        lista_grava "$arq"
-        printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
+        p=$TXT
+        if lista_salva "$arq"; then printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$p"; else rc=1; fi
       fi ;;
 
     limpar|clear)
@@ -7248,8 +7265,7 @@ gerencia_lista() {
           for i in "${!L_FALHA[@]}"; do sem_anotacao "${L_FALHA[$i]}"; [[ $FMT != "${L_FALHA[$i]}" ]] && n=$(( n + 1 )); L_FALHA[$i]=$FMT; done
           for i in "${!L_BAIXA[@]}"; do sem_anotacao "${L_BAIXA[$i]}"; [[ $FMT != "${L_BAIXA[$i]}" ]] && n=$(( n + 1 )); L_BAIXA[$i]=$FMT; done
           for i in "${!L_TOPO[@]}"; do sem_anotacao "${L_TOPO[$i]}"; [[ $FMT != "${L_TOPO[$i]}" ]] && n=$(( n + 1 )); L_TOPO[$i]=$FMT; done
-          lista_grava "$arq"
-          t ls_notas "$n"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
+          if lista_salva "$arq"; then t ls_notas "$n"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"; else rc=1; fi ;;
         falhas|falharam|failed|baixados|downloaded)
           if [[ ${args[0]} == falha* || ${args[0]} == failed ]]; then n=${#L_FALHA[@]}; p=${T[ls_falhas]}
           else n=${#L_BAIXA[@]}; p=${T[ls_baixados]}; fi
@@ -7258,10 +7274,11 @@ gerencia_lista() {
             t ls_limpar_p "$n" "$p" "$arq" "$arq.bak"
             if pergunta_nao "$TXT" && cp -p -- "$arq" "$arq.bak"; then
               if [[ $p == "${T[ls_falhas]}" ]]; then L_FALHA=(); else L_BAIXA=(); fi
-              lista_grava "$arq"
-              t bx_limpo "$n"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
-              [[ $p == "${T[ls_baixados]}" ]] && printf '  %s%s%s\n' "$DIM" "${T[bx_historico]}" "$R"
-              printf '\n'
+              if lista_salva "$arq"; then
+                t bx_limpo "$n"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+                [[ $p == "${T[ls_baixados]}" ]] && printf '  %s%s%s\n' "$DIM" "${T[bx_historico]}" "$R"
+                printf '\n'
+              else rc=1; fi
             else
               printf '\n  %s\n\n' "${T[ins_cancelado]}"; rc=1
             fi
@@ -7278,19 +7295,20 @@ gerencia_lista() {
         (( ${#PALAVRAS_LINK[@]} )) && ja["t ${PALAVRAS_LINK[*]}"]=1
         topo+=("$l")
       done
-      for l in "${L_FALHA[@]}"; do
+      for l in "${L_FALHA[@]}"; do              # (linha sem link, um comentário seu, nunca é repetida)
         links_da_linha "$l"
-        if [[ -n ${ja["f ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
-        ja["f ${PALAVRAS_LINK[*]}"]=1; falha+=("$l")
+        if (( ${#PALAVRAS_LINK[@]} )) && [[ -n ${ja["f ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
+        (( ${#PALAVRAS_LINK[@]} )) && ja["f ${PALAVRAS_LINK[*]}"]=1
+        falha+=("$l")
       done
       for l in "${L_BAIXA[@]}"; do
         links_da_linha "$l"
-        if [[ -n ${ja["b ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
-        ja["b ${PALAVRAS_LINK[*]}"]=1; baixa+=("$l")
+        if (( ${#PALAVRAS_LINK[@]} )) && [[ -n ${ja["b ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
+        (( ${#PALAVRAS_LINK[@]} )) && ja["b ${PALAVRAS_LINK[*]}"]=1
+        baixa+=("$l")
       done
       L_TOPO=("${topo[@]}"); L_FALHA=("${falha[@]}"); L_BAIXA=("${baixa[@]}")
-      lista_grava "$arq"
-      t ls_organizada "$n"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
+      if lista_salva "$arq"; then t ls_organizada "$n"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"; else rc=1; fi ;;
 
     *) t bx_acao "$acao"; erro "$TXT"; printf '%s\n\n' "${T[ls_ajuda]}"; rc=2 ;;
   esac
