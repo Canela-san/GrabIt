@@ -85,7 +85,7 @@ grabit update
 
 It updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter through your system's package manager, asking for the password only if there's a new version) and installs whatever is missing, without asking. It just doesn't install a browser.
 
-All commands work in English and Portuguese, with or without the dashes: `grabit update`, `grabit atualizar`, `grabit --update` and `grabit --atualizar` are the same thing. The same goes for `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `downloaded`/`baixados` and `help`/`ajuda`. Only a link file named like a command needs `./` in front of it (`grabit ./update`).
+All commands work in English and Portuguese, with or without the dashes: `grabit update`, `grabit atualizar`, `grabit --update` and `grabit --atualizar` are the same thing. The same goes for `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `list`/`lista` and `help`/`ajuda`. Only a link file named like a command needs `./` in front of it (`grabit ./update`).
 
 GrabIt itself comes from the **newest published version**, which already passed all the tests, and the downloaded file is checked before replacing the script (SHA-256 checksum and signature). What changed in each version is in the [CHANGELOG](CHANGELOG.md). To follow everything that lands in the repository, as soon as it does, use `CANAL_ATUALIZACAO=main` in `grabit.config`.
 
@@ -133,11 +133,16 @@ grabit download
 
 `grabit` on its own shows the help: the list only gets downloaded when you ask. To see all the options, use `grabit help full`.
 
-Successfully downloaded links **leave the list and move to the `DOWNLOADED` section**, at the end of the same `links.txt`, exactly as you wrote them (notes included), with the date and the title of what was downloaded at the end of the line. Everything in that section is ignored: it becomes your link history, and GrabIt doesn't waste time reprocessing or listing what's already done. The ones that failed stay at the top, ready for next time.
+Each link that finishes **changes section inside the same `links.txt`**: the ones downloaded successfully go to the `DOWNLOADED` section, at the end of the file, and the ones that failed go to the `FAILED` section, right above it. No other file is created: `links.txt` keeps everything. The line moves exactly as you wrote it, with your comment, and GrabIt only adds at the end a ✔ (or a ✖), the date and the video title (or the reason for the failure). `grabit download` skips both sections: it doesn't waste time on what's already done, nor does it keep insisting on what just failed. Whatever didn't even get downloaded (cancelled, postponed because the site asked to slow down, disk full) stays at the top, ready for next time.
 
 ```text
 # comments and empty lines are ignored
-https://vimeo.com/XXXXXXXXX          # this one failed and stays here
+https://vimeo.com/XXXXXXXXX          # this one hasn't been downloaded yet
+
+# ==================== FAILED ====================
+# Links that failed. GrabIt only tries again with: grabit download --retry
+https://vimeo.com/YYYYYYYYY  # saturday's show  ✖ 2026-10-24 · private video
+# ================ END OF FAILED ================
 
 # ==================== DOWNLOADED ====================
 # Successfully downloaded links. GrabIt ignores everything until the end of this section.
@@ -146,23 +151,30 @@ https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 v
 # ================ END OF DOWNLOADED ================
 ```
 
-Whatever comes after the `END OF DOWNLOADED` line counts as a link to download again, so appending to the end of the file works (`echo LINK >> links.txt`); next time, GrabIt moves those links up to the list at the top.
+To try the failed ones again: `grabit download --retry`. It downloads the list at the top and the `FAILED` section; whatever works goes to `DOWNLOADED`, and whatever fails again stays in `FAILED`, with the new reason. The end of each run shows the right command to carry on.
 
-To work on the section without digging through the file:
+Whatever comes after the last end line (`END OF DOWNLOADED`) counts as a link to download again, so appending to the end of the file works (`echo LINK >> links.txt`); next time, GrabIt moves those links up to the list at the top.
+
+To move links between sections without digging through the file:
 
 ```bash
-grabit --downloaded               # list the section's links, numbered, with date and title
-grabit --downloaded edit          # open just the section in your editor ($EDITOR, nano or vim)
-grabit --downloaded back 3 5      # send links 3 and 5 back to the list to download
-grabit --downloaded add LINK      # put a link in the section without downloading it
-grabit --downloaded clear         # empty the section (asks first and keeps links.txt.bak)
+grabit list                    # the file by parts (to download, FAILED, DOWNLOADED), with the links numbered
+grabit list back 3 5           # send links 3 and 5 back to the list to download, without the date and note
+grabit list back failed        # send back everything in FAILED (or: downloaded, all)
+grabit list downloaded 4       # mark as downloaded, without downloading (a LINK outside the file works too)
+grabit list skip 2             # put it in FAILED: a normal download stops trying it
+grabit list clear notes        # remove GrabIt's dates and notes; each link stays where it is
+grabit list clear failed       # empty FAILED (asks first and keeps links.txt.bak)
+grabit list clear downloaded   # empty DOWNLOADED (same)
+grabit list tidy               # each part in its place, without repeated lines
+grabit list edit               # open the file in your editor ($VISUAL, $EDITOR, nano or vim)
 ```
 
-In the editor, delete the lines you want out of the section, add links to mark them as downloaded and move below the last line the ones that should go back to the list. Use `-l FILE` for another link file. The video history doesn't change: to download again something already downloaded, run with `-i`.
+Moving a link between sections only touches what GrabIt wrote: the ✔ or the ✖, the date and the note. **Your comment stays as it was**, in any section, so you can keep recognizing the video by its link. Use `-l FILE` for another link file (`grabit -l courses.txt list`). The video history doesn't change: to download again something already downloaded, run with `-i`.
 
-> In Portuguese the section is called `BAIXADOS`; GrabIt recognizes both names, so switching languages doesn't mess up your list.
+> In Portuguese the sections are called `FALHARAM` and `BAIXADOS`; GrabIt recognizes both languages, so switching languages doesn't mess up your list.
 >
-> You can edit the file while GrabIt runs: it's read again at the end, and whatever you added isn't lost. Want to download something from the section again? Move the line up and run with `-i` (see the history in [How it works](#how-it-works)).
+> You can edit the file while GrabIt runs: it's read again at the end, and whatever you added isn't lost. Before rewriting it, GrabIt keeps a copy of how it was (`links.txt.grabit-bak`).
 
 More examples:
 
@@ -183,7 +195,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | Key | What it does |
 |---|---|
 | <kbd>p</kbd> | pauses everything (running downloads freeze) and resumes |
-| <kbd>q</kbd> | stops after the current downloads; the remaining ones go to `links_falhos.txt`. Again: cancels right away |
+| <kbd>q</kbd> | stops after the current downloads; the remaining ones stay in the list to download. Again: cancels right away |
 | <kbd>+</kbd> / <kbd>-</kbd> | raises or lowers how many videos download at once |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancels right away; large direct files pick up where they stopped next time, and the rest starts over |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | suspends and gives the terminal back; `fg` continues where it stopped |
@@ -207,6 +219,7 @@ cat list.txt | grabit -l -                   # read links from standard input
 | `-b BROWSER` | use the browser's cookies (`firefox`, `chrome`, `brave`…) | — |
 | `--proxy URL` | send everything through a proxy: `http://host:8080` or `socks5://host:1080` | — |
 | `--simulate` | show what would be downloaded and its size, without downloading | — |
+| `--retry` | also try again the links in the `FAILED` section | — |
 | `--details` | also show the tools, resources and history at the start | — |
 | `--since DATE` | only videos since the date (`2026-01-31`) or the age (`7d`, `2w`, `3m`, `1y`) | — |
 | `--max N` | at most N videos per link | — |
@@ -336,7 +349,6 @@ COOKIES_NAVEGADOR=firefox
 | `ACELERACAO_VIDEO` | who re-encodes: `cpu`, `auto`, `nvenc`, `vaapi`, `qsv`, `videotoolbox` | `cpu` |
 | `PROGRAMA_NAVEGADOR` | which browser to open (e.g. `google-chrome`); empty = the first one found | — |
 | `USAR_HISTORICO` | `0` turns off the download history | `1` |
-| `ARQUIVO_FALHAS` | where to save the links that failed | `links_falhos.txt` |
 | `NOTIFICAR` | bell and desktop notification at the end of batches of 1 min or more (`0` = silence) | `1` |
 | `NTFY_TOPICO` | [ntfy](https://ntfy.sh) topic (or your own server's URL) to notify your phone | — |
 
@@ -370,13 +382,13 @@ These work: `RESOLUCAO_MAXIMA`, `COOKIES_NAVEGADOR`, `USER_AGENT`, `LIMITE_VELOC
 
 ### Maximum resolution
 
-Want to save space? With `RESOLUCAO_MAXIMA=1080` GrabIt downloads the **best version up to 1080p** of each video — still picking the best codec, frame rate and audio within the limit. The limit applies to the shorter side of the picture, so a 1080×1920 vertical video counts as 1080p. If a video has no version within the limit, it isn't downloaded: it shows up as a failure, with a notice, and goes to `links_falhos.txt`.
+Want to save space? With `RESOLUCAO_MAXIMA=1080` GrabIt downloads the **best version up to 1080p** of each video — still picking the best codec, frame rate and audio within the limit. The limit applies to the shorter side of the picture, so a 1080×1920 vertical video counts as 1080p. If a video has no version within the limit, it isn't downloaded: it shows up as a failure, with a notice, and goes to the `FAILED` section.
 
 For an exception, use `-F` (force): it ignores the `grabit.config` limits for that run only. And `-r` sets a limit for a single run, without touching the file.
 
 ```bash
 grabit -r 720                       # just this time, up to 720p
-grabit -F -l links_falhos.txt       # download the ones left out, at maximum quality
+grabit download --retry -F          # download the ones left out, at maximum quality
 ```
 
 > Videos downloaded with a limit go into the history as usual. To replace them later with the best version, run `grabit -U -F`.
@@ -456,22 +468,22 @@ It says how much two files of the same video differ to the eye, instead of just 
 | ⚠ | the video is complete, but some detail failed (e.g. converting the cover) |
 | ▾ | downloaded, but the best version the site offered was below `RESOLUCAO_ALERTA` (sometimes, logged in with `-b`, there's more) |
 
-Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command to retry just those. The file accumulates: a run with other links doesn't erase earlier failures, and each link leaves it once it succeeds. If they all succeed, the file is deleted automatically.
+Links from the list that failed go to the `FAILED` section of the link file itself, with the reason, and GrabIt shows the command to try again (`grabit download --retry`). Links passed straight on the command line have no file to stay in: they come back in the suggested command.
 
 ## How it works
 
 - **Format:** yt-dlp's `bv*+ba/b` (best video + best audio) with **MKV** output, which accepts any codec. Nothing is re-encoded: the picture is the same the site delivers, frame by frame, with one detail: MKV stores each frame's time rounded to the millisecond ([File format](#file-format)).
 - **Several connections:** for video split into pieces (HLS/DASH), yt-dlp itself opens the connections. For a single file, it only uses one, and what opens more is [aria2](https://aria2.github.io) (optional: `grabit install` offers it). With 3 connections, a real site delivered 3 times more. The number is regulated per site: files under 40 MB aren't split; downloads from the same site add up to at most twice `-c`; if the site refuses the extra connections, the download finishes on the ones left, losing nothing, and the next ones use only one; a site that asked to slow down gets only one. Since more connections aren't always faster, after a few seconds a probe compares them with a single plain connection and, if that delivers over twice as much, the download carries on without aria2. YouTube, which throttles large requests, always goes through yt-dlp. `-c 1` turns it off.
 - **Direct file:** before downloading a stream (HLS/DASH), GrabIt looks for a video file in the site's offer and in the page itself, including scripts and download buttons: `.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.wmv`, `.flv`, `.mpg`, `.ts` and others, plus a `<video>` or download button with no extension in its address. It measures up to 4 candidates with `ffprobe`, starting with whatever the name promises to be the original or the highest resolution. It switches if it is the same video (same duration), has audio and is better in resolution or fps. With the same picture, the file wins unless it is clearly lighter (under 75% of the stream's bitrate, allowing for the difference between codecs): it may be the original the stream came from, and it is one download instead of hundreds of pieces. If the page doesn't open in yt-dlp, the search comes before opening a browser. A file mentioned only in the page comes without what only the site provides (thumbnail, subtitles, channel). On a site where nothing turns up three times in a row, the search stops until the next run. `PROCURAR_ARQUIVO=0` turns it off; `-x`, `-u`, `-m` and `grabit curl` don't search.
-- **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A direct file of 50 MiB or more that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, power cut) **picks up where it stopped** next time, if it is still the same on the site (GrabIt checks its size and version tag; this needs aria2c). Interrupted files stay in `Downloads/.parciais/retomar` for up to 14 days. A stream **starts over from scratch**: resuming its pieces can leave holes in the video, and here quality comes before speed. The links that were still pending go to `links_falhos.txt`.
+- **Temporary files** live in `Downloads/.parciais` only while GrabIt runs; the final, finished file goes to the folder. A direct file of 50 MiB or more that didn't finish (<kbd>Ctrl</kbd>+<kbd>C</kbd>, error, power cut) **picks up where it stopped** next time, if it is still the same on the site (GrabIt checks its size and version tag; this needs aria2c). Interrupted files stay in `Downloads/.parciais/retomar` for up to 14 days. A stream **starts over from scratch**: resuming its pieces can leave holes in the video, and here quality comes before speed. The links that were still pending stay in the list to download.
 - **The list of links is rewritten all at once**, with a lock so two open GrabIts can't erase what the other just saved and a copy of how it was in `links.txt.grabit-bak`. A video passed as a list by mistake is refused: only text gets rewritten.
 - **Cascade of attempts:** each link starts with the fastest way and only climbs if it has to: **1)** direct; **2)** with the `Referer`, impersonating a browser when `curl-cffi` is installed and with the adjustment for the error (IPv4 on network failures, one connection at a time on refused pieces, slower on 429); **3)** through the browser, if the page only works in one. Errors nothing can fix (private, removed video, 404) stop right away.
 - **The cascade remembers:** the step that worked on each site is kept (in `~/.local/share/grabit/metodos.txt`), and the site's next links start right there. On a long list, this avoids repeating on every link a path already known to fail. The memory expires in 30 days and drops if the method stops working.
 - **Spreading across sites:** GrabIt looks at the whole list and sorts the links by site. Each slot goes to the site with the fewest downloads running and, on a tie, to the one with the most links waiting. With 4 slots and 4 sites, it's one of each: a site's links don't pile up just because they came together in the list. While the browser window is busy, links from other sites go ahead.
-- **Protection against blocks:** each site starts with a single download and goes up by one for each one it accepts (it's enough for the download to start arriving), with a small interval between starts. If a site asks to slow down (429), its limit is cut in half and it gets no new requests for 30 s, then 60, 120… up to 10 min, while the others carry on; the link waits along with it, without using up an attempt. After 4 requests to slow down, or 3 links in a row refused, that site's remaining links go to `links_falhos.txt`, and the summary shows how many were postponed. The wait also applies to the next run.
+- **Protection against blocks:** each site starts with a single download and goes up by one for each one it accepts (it's enough for the download to start arriving), with a small interval between starts. If a site asks to slow down (429), its limit is cut in half and it gets no new requests for 30 s, then 60, 120… up to 10 min, while the others carry on; the link waits along with it, without using up an attempt. After 4 requests to slow down, or 3 links in a row refused, that site's remaining links are left for later (they stay in the list to download), and the summary shows how many were postponed. The wait also applies to the next run.
 - **Speed:** 4 videos at a time by default. Pieces refused several times in a row (401, 403, 404, 410) end the attempt in seconds, instead of holding the slot for minutes. When you know the site can take it, `-F` skips the slow start and the interval.
-- **Progress saved:** every minute, downloaded links go to the `DOWNLOADED` section. If the power goes out in the middle of a long list, next time it picks up where it left off. Permanent errors (private, removed video, 404) aren't retried.
-- **Disk full:** the header warns you when the destination folder has less than 2 GiB free. If the disk fills up midway, no new download starts (the next ones wouldn't fit either) and the links still pending go to `links_falhos.txt`.
+- **Progress saved:** every minute, the links that finished go to the `DOWNLOADED` section (or `FAILED`). If the power goes out in the middle of a long list, next time it picks up where it left off. Permanent errors (private, removed video, 404) aren't retried.
+- **Disk full:** the header warns you when the destination folder has less than 2 GiB free. If the disk fills up midway, no new download starts (the next ones wouldn't fit either) and the links still pending stay in the list to download.
 - **History:** every downloaded video is recorded in `Downloads/.grabit-historico.txt` (site + video ID). Next time it's skipped before anything else: on most sites GrabIt doesn't even need to open the page. Without the history, yt-dlp would open the page again, download the cover and rewrite the whole file just to conclude it already exists. Videos downloaded before the history existed go through that check only once and are added to it.
 - **Live queue (`-f`):** after finishing the list, GrabIt stays open and checks the link file every 2 seconds: whatever you add (at the top or at the end of the file) joins the queue and starts downloading. When the queue empties, the downloaded links go to the `DOWNLOADED` section and, if the batch took a while, the completion notice arrives. Quit with <kbd>q</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>. It only happens with the option: without `-f`, GrabIt always closes when done.
 - **Checking the collection (`grabit --check [FOLDER]`):** decodes, from start to end, every video and audio file already in the downloads folder (or the folder given) and compares its duration with the one recorded in the `info.json` GrabIt embeds in MKVs — so it finds defective files and incomplete downloads, old ones included. At the end, it offers to download the problem ones again: the current file is kept with `.with-errors` in its name, the video leaves the history and the link (kept in that same `info.json`) is downloaded again, in the same folder layout (`-d` or `-m`).
@@ -479,7 +491,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 - **Clipboard capture (`-C`):** while GrabIt is open, every link you copy (<kbd>Ctrl</kbd>+<kbd>C</kbd> in the browser) is written to the end of `links.txt` and joins the queue — it works like the live queue. Whatever was already copied before it opened and text without links are ignored. Nothing keeps running in the background: once GrabIt closes, the capture is over. It uses `wl-paste` (Wayland), `xclip` or `xsel` (X11), `pbpaste` (macOS) or PowerShell (WSL).
 - **Jellyfin, Plex and Kodi (`-m`):** each channel becomes a show, with one season per year and episodes named by date (`Channel/Season 2026/Channel - 2026-10-24 - Title [id].mkv`), a format all three recognize. Next to each video go the cover and an `.nfo` with title, date and description, and in the channel folder a `tvshow.nfo`. Point a *Shows* library at the downloads folder. It only happens with the option, and it takes priority over `-d`.
 - **Audio only (`-x`):** downloads the best sound track and keeps it in the format the site delivers (opus, m4a…), without re-encoding, with cover, chapters and metadata. With `FORMATO_AUDIO=mp3` (or another one), it converts at the best quality. The audio history is separate (`.grabit-historico-audio.txt`): having downloaded the video doesn't stop you from downloading the audio, and vice versa.
-- **Full check (`-v`):** after downloading, ffmpeg decodes the whole video, frame by frame, with the progress on the panel. Any defect fails the file: it doesn't go into the history, it's kept with `.with-errors` in its name and the video is downloaded again from scratch. If the defect comes from the site itself and happens again, the link goes to `links_falhos.txt`. It guarantees a flawless file, at the cost of CPU and time.
+- **Full check (`-v`):** after downloading, ffmpeg decodes the whole video, frame by frame, with the progress on the panel. Any defect fails the file: it doesn't go into the history, it's kept with `.with-errors` in its name and the video is downloaded again from scratch. If the defect comes from the site itself and happens again, the link goes to the `FAILED` section. It guarantees a flawless file, at the cost of CPU and time.
 - **Main video (`-u`):** when a page has several videos, GrabIt first checks each one's duration (from the site or, if it doesn't say, by reading just the video's header) and downloads only the longest — previews and related videos tend to be short. Links with a single video skip this step. Don't use it with playlists and channels: they'd also yield a single video.
 - **Logs:** yt-dlp's full output for every link with a problem is kept in `Downloads/logs/<date>/`.
 - **Terminal:** the panel adapts to the window width (even if you resize it midway), aligns titles with emoji and Asian characters and, if the output is redirected to a file, swaps the panel for plain lines without colors.
@@ -490,7 +502,7 @@ Links that failed go to `links_falhos.txt`, and GrabIt itself shows the command 
 - **Warning about the JavaScript runtime?** yt-dlp only accepts recent versions: an old Node.js is refused, and Bun can be too new. `grabit --version` shows what's in use, and the safest one is Deno, which `grabit --install` installs when no other is accepted.
 - **Video asks for a login or age confirmation?** Use `-b firefox` (or the browser you're logged in with).
 - **Left it downloading and walked away?** With `NTFY_TOPICO=a-hard-name` in `grabit.config` and the [ntfy](https://ntfy.sh) app subscribed to the same topic, your phone tells you when the batch is done. Only the summary goes out (how many downloaded and how many failed), never links or titles.
-- **Retry what failed:** `grabit -l links_falhos.txt`.
+- **Retry what failed:** `grabit download --retry`.
 - **Deleted a video and want it again?** Run with `-i` (ignores the history) or delete its line in `Downloads/.grabit-historico.txt`.
 
 ## Common problems
@@ -514,7 +526,7 @@ For use in scripts:
 | Code | Meaning |
 |---|---|
 | `0` | all good |
-| `1` | some link or file failed (the links are in `links_falhos.txt`) |
+| `1` | some link or file failed (the ones from the list stay in the `FAILED` section) |
 | `2` | wrong command or value: nothing was done |
 | `130` | cancelled with <kbd>Ctrl</kbd>+<kbd>C</kbd> |
 

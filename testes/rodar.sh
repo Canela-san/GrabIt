@@ -163,32 +163,67 @@ chaves pt > "$TMP/chaves_pt"; chaves en > "$TMP/chaves_en"
 espera "a tabela em português tem chaves" test -s "$TMP/chaves_pt"
 espera "as tabelas pt e en têm as mesmas chaves" diff "$TMP/chaves_pt" "$TMP/chaves_en"
 
-secao "Seção BAIXADOS (--baixados)"
+secao "Lista por partes (grabit lista)"
 L="$TMP/secao.txt"
-printf '%s\n' "# lista" "https://a.exemplo/1" "" "# ==================== BAIXADOS ====================" "# desc" \
+printf '%s\n' "# lista" "https://a.exemplo/1  # o do bolo" "" \
+  "# ==================== FALHARAM ====================" "# desc" \
+  "https://a.exemplo/4  # meu # com cerquilha  ✖ 2026-01-03 · HTTP 404" \
+  "# ============== FIM DOS QUE FALHARAM ==============" "" \
+  "# ==================== BAIXADOS ====================" "# desc" \
   "https://a.exemplo/2  # ✔ 2026-01-01 · Dois" "https://a.exemplo/3  # meu  ✔ 2026-01-02 · Três" \
   "# ================ FIM DOS BAIXADOS ================" > "$L"
-roda "$TMP/bx1" -L pt -l "$L" --baixados
-espera "lista os links da seção, numerados" grep -qE '^ +2  https://a.exemplo/3' "$TMP/bx1"
-roda "$TMP/bx2" -L pt -l "$L" --baixados voltar 2
-espera "voltar devolve o link à lista de cima" grep -qx 'https://a.exemplo/3  # meu' "$L"
-espera "…e ele sai da seção" test "$(grep -c 'a.exemplo/3' "$L")" -eq 1
-roda "$TMP/bx3" -L pt -l "$L" --baixados marcar https://a.exemplo/1
-espera "marcar põe o link na seção" grep -qE '^https://a.exemplo/1  # ✔ [0-9-]{10} · marcado à mão$' "$L"
+cp "$L" "$TMP/secao.orig"
+roda "$TMP/ls1" -L pt -l "$L" lista
+espera "lista numera os links das três partes" grep -qE '^ +4  https://a.exemplo/3' "$TMP/ls1"
+espera "…com o nome de cada parte" contem "$TMP/ls1" "Falharam · 1"
+espera "…e não mexe no arquivo" cmp -s "$L" "$TMP/secao.orig"
+roda "$TMP/ls1b" -L pt -l "$L" --baixados
+espera "--baixados continua valendo" contem "$TMP/ls1b" "Baixados · 2"
+roda "$TMP/ls2" -L pt -l "$L" lista voltar 2 4
+espera "voltar devolve à lista de baixar, sem a anotação do GrabIt" grep -qx 'https://a.exemplo/3  # meu' "$L"
+espera "…e o comentário com # fica como você escreveu" grep -qx 'https://a.exemplo/4  # meu # com cerquilha' "$L"
+espera "…a seção que fica vazia some" nao_contem "$L" "FALHARAM"
+espera "…e cada link aparece uma vez só" test "$(grep -c 'a.exemplo/3' "$L")" -eq 1
+roda "$TMP/ls3" -L pt -l "$L" lista baixado 1 3 https://a.exemplo/novo
+espera "baixado põe o link na seção BAIXADOS, com o seu comentário" grep -qE '^https://a.exemplo/1  # o do bolo  ✔ [0-9-]{10} · marcado à mão$' "$L"
+espera "…todos os números pedidos, não só o último" grep -qE '^https://a.exemplo/3  # meu  ✔ [0-9-]{10} · marcado à mão$' "$L"
+espera "…um link que não estava no arquivo também" grep -qE '^https://a.exemplo/novo  # ✔ [0-9-]{10} · marcado à mão$' "$L"
 espera "…e o tira da lista de cima" test "$(grep -c 'a.exemplo/1' "$L")" -eq 1
-roda "$TMP/bx4" -L pt -l "$L" --baixados voltar 7
+roda "$TMP/ls3b" -L pt -l "$L" lista pular 1
+espera "pular põe o link na seção FALHARAM, sem baixar" grep -qE '^https://a.exemplo/4  # meu # com cerquilha  ✖ [0-9-]{10} · deixado de lado à mão$' "$L"
+espera "…acima da BAIXADOS" awk '/= FALHARAM =/ && !f {f=NR} /= BAIXADOS =/ && !b {b=NR} END {exit !(f && b && f < b)}' "$L"
+roda "$TMP/ls4" -L pt -l "$L" lista voltar 9
 espera "número fora da lista é recusado" codigo "$RC" 2
+espera "…dizendo até onde ela vai" contem "$TMP/ls4" "vai de 1 a 5"
+roda "$TMP/ls5" -L pt -l "$L" lista limpar notas
+espera "limpar notas tira as datas e as notas do GrabIt" nao_contem "$L" "✔"
+espera "…também os ✖" nao_contem "$L" "✖"
+espera "…mas não o seu comentário" grep -qx 'https://a.exemplo/1  # o do bolo' "$L"
+espera "…nem o # que sobraria sozinho" grep -qx 'https://a.exemplo/2' "$L"
+espera "…e as seções continuam lá" contem "$L" "BAIXADOS"
 cp "$L" "$TMP/secao.antes"
-roda "$TMP/bx5" -L pt -l "$L" --baixados limpar </dev/null
+roda "$TMP/ls6" -L pt -l "$L" lista limpar </dev/null
 espera "limpar sem confirmação não apaga nada" cmp -s "$L" "$TMP/secao.antes"
-echo s | bash "$G" -L pt -l "$L" --baixados limpar >"$TMP/bx7" 2>&1
+echo s | bash "$G" -L pt -l "$L" lista limpar baixados >"$TMP/ls7" 2>&1
 espera "limpar confirmado esvazia a seção" nao_contem "$L" "BAIXADOS"
 espera "…e guarda a cópia .bak" cmp -s "$L.bak" "$TMP/secao.antes"
-cp "$TMP/secao.antes" "$L"
+roda "$TMP/ls8" -L pt -l "$L" lista sumir
+espera "ação desconhecida é recusada" codigo "$RC" 2
+printf '%s\n' "# x" "https://a.exemplo/r  # primeiro" "https://a.exemplo/r" "https://a.exemplo/s" > "$TMP/org.txt"
+roda "$TMP/ls9" -L pt -l "$TMP/org.txt" lista organizar
+espera "organizar tira as linhas repetidas" test "$(grep -c 'a.exemplo/r' "$TMP/org.txt")" -eq 1
+espera "…e fica com a primeira, com o seu comentário" grep -qx 'https://a.exemplo/r  # primeiro' "$TMP/org.txt"
+printf '\xef\xbb\xbf# lista\r\nhttps://a.exemplo/w  # do Windows\r\nhttps://a.exemplo/v\r\n' > "$TMP/win.txt"
+roda "$TMP/ls10" -L pt -l "$TMP/win.txt" lista baixado 1
+espera "lista do Windows: o BOM continua no começo" test "$(head -c 3 "$TMP/win.txt" | od -An -tx1 | tr -d ' ')" = efbbbf
+espera "…só no começo" test "$(grep -c $'\xef\xbb\xbf' "$TMP/win.txt")" -eq 1
+espera "…e toda linha termina em CRLF" test "$(grep -c $'\r$' "$TMP/win.txt")" -eq "$(wc -l < "$TMP/win.txt")"
+cp "$TMP/secao.orig" "$L"
 if { : </dev/tty; } 2>/dev/null; then          # editar precisa de um terminal (no CI não há)
   printf '#!/bin/sh\nsed -i.x "/a.exemplo\\/2/d" "$1"\n' > "$TMP/editor"; chmod +x "$TMP/editor"
-  EDITOR="$TMP/editor" roda "$TMP/bx6" -L pt -l "$L" --baixados editar
-  espera "editar aplica o que foi mudado no editor" test "$(grep -c 'a.exemplo/2' "$L")" -eq 0
+  EDITOR="$TMP/editor" roda "$TMP/ls11" -L pt -l "$L" lista editar
+  espera "editar abre o arquivo no editor" test "$(grep -c 'a.exemplo/2' "$L")" -eq 0
+  cp "$TMP/secao.orig" "$L"
 fi
 
 secao "Opções em qualquer posição"
@@ -202,10 +237,11 @@ espera "depois de -- nada é opção" grep -qE 'DOWNLOADS_SIMULTANEOS +4 ' "$TMP
 
 secao "Til no grabit.config"
 mkdir -p "$TMP/casa"
-printf 'PASTA_SAIDA=~/Videos\nARQUIVO_FALHAS=~/falhas.txt\n' > "$TMP/cfg/til.config"
+printf 'PASTA_SAIDA=~/Videos\nARQUIVO_LINKS=~/minha-lista.txt\nARQUIVO_FALHAS=~/falhas.txt\n' > "$TMP/cfg/til.config"
 GRABIT_CONFIG="$TMP/cfg/til.config" HOME="$TMP/casa" roda "$TMP/til" -L pt --config
 espera "~ vira a pasta pessoal, em vez de uma pasta chamada ~" contem "$TMP/til" "$TMP/casa/Videos"
-espera "…também em ARQUIVO_FALHAS" contem "$TMP/til" "$TMP/casa/falhas.txt"
+espera "…também em ARQUIVO_LINKS" contem "$TMP/til" "$TMP/casa/minha-lista.txt"
+espera "ARQUIVO_FALHAS, de um config antigo, é ignorado sem aviso" nao_contem "$TMP/til" "ARQUIVO_FALHAS"
 
 # ───── yt-dlp de mentira: sem rede nem ffmpeg, mas passando pelo GrabIt inteiro ───────────
 unset WAYLAND_DISPLAY DISPLAY
@@ -462,26 +498,55 @@ espera "pouco espaço livre vira aviso" contem e1 "1.0 MiB livres"
 falso e2 -L pt http://a.invalid/e2
 espera "com espaço, nenhum aviso" nao_contem e2 "livres em"
 printf '%s\n' http://b.invalid/1 http://b.invalid/2 http://b.invalid/3 > links.txt
-rm -f links_falhos.txt; : > "$STUB_LOG"
+cp links.txt links.orig; : > "$STUB_LOG"
 STUB_ERRO="unable to write data: [Errno 28] No space left on device" DOWNLOADS_SIMULTANEOS=1 falso e3 -L pt download
 espera "disco cheio é explicado" contem e3 "disco cheio"
 espera "…e nenhum download novo começa" test "$(grep -c 'b.invalid/' "$STUB_LOG")" -eq 1
-espera "…os que faltam vão para a lista de falhas" test "$(grep -c 'b.invalid/' links_falhos.txt)" -eq 3
+espera "…os links continuam na lista de baixar, sem ir para a FALHARAM" cmp -s links.txt links.orig
+espera "…o resumo diz isso" contem e3 "3 link(s) não chegaram a ser baixados e continuam em links.txt"
 espera "…e sai com código 1" codigo "$RC" 1
 
-secao "links_falhos.txt entre execuções"
+secao "Seção FALHARAM no arquivo de links"
 D="$TMP/falhas"; mkdir -p "$D"; cd "$D" || exit 1
-STUB_ERRO="HTTP Error 404" falso f1 -L pt http://c.invalid/1 http://c.invalid/2
-STUB_ERRO="HTTP Error 404" falso f2 -L pt http://c.invalid/3
-espera "falhas novas não apagam as de antes" test "$(grep -c 'c.invalid/' links_falhos.txt)" -eq 3
-espera "…e o resumo diz isso" contem f2 "(mais 2 de execuções anteriores)"
-falso f3 -L pt http://c.invalid/1
-espera "o que deu certo sai da lista" nao_contem links_falhos.txt "c.invalid/1"
-espera "…e o resto continua lá" test "$(grep -c 'c.invalid/' links_falhos.txt)" -eq 2
-falso f4 -L pt http://c.invalid/outro
-espera "um link sem relação não mexe nela" test "$(grep -c 'c.invalid/' links_falhos.txt)" -eq 2
-falso f5 -L pt -l links_falhos.txt
-espera "todos certos: o arquivo some" test ! -e links_falhos.txt
+printf '%s\n' "# minha lista" "http://c.invalid/1  # o do bolo" "http://c.invalid/2" "http://c.invalid/3" > links.txt
+STUB_ERRO="HTTP Error 404" falso f1 -L pt download
+espera "o que falhou vai para a seção FALHARAM" contem links.txt "# ==================== FALHARAM ===================="
+espera "…com o motivo, depois do seu comentário" grep -qE '^http://c.invalid/1  # o do bolo  ✖ [0-9-]{10} · .+' links.txt
+espera "…e a seção termina na linha de fim" contem links.txt "# ============== FIM DOS QUE FALHARAM =============="
+espera "…o seu comentário do topo continua lá" grep -qx '# minha lista' links.txt
+espera "nenhum arquivo novo é criado" test ! -e links_falhos.txt
+espera "o resumo diz para onde foram" contem f1 "3 link(s) com erro foram para a seção FALHARAM de links.txt"
+espera "…e como tentar de novo" grep -qE 'Para continuar: +.*-L pt download --repetir$' f1
+: > "$STUB_LOG"
+falso f2 -L pt download
+espera "sem --repetir, os da FALHARAM não são tentados" test "$(vezes c.invalid/)" -eq 0
+espera "…o GrabIt diz quantos estão lá" contem f2 "3 link(s) estão na seção FALHARAM"
+espera "…e como tentar" grep -qE 'Para tentar de novo: +.*download --repetir$' f2
+echo "http://c.invalid/4" >> links.txt         # acrescentado no fim, depois das seções
+falso f3 -L pt download --repetir
+espera "--repetir tenta de novo os da FALHARAM" test "$(vezes c.invalid/1)" -eq 1
+espera "…e também os da lista de baixar" test "$(vezes c.invalid/4)" -eq 1
+espera "…o que deu certo vai para a BAIXADOS, com o seu comentário e sem o ✖" grep -qE '^http://c.invalid/1  # o do bolo  ✔ [0-9-]{10}' links.txt
+espera "…e a seção FALHARAM, vazia, some" nao_contem links.txt "FALHARAM"
+printf '%s\n' "http://c.invalid/5  # quinto" > l2.txt
+STUB_ERRO="HTTP Error 404" falso f4 -L pt l2.txt
+STUB_ERRO="HTTP Error 403: Forbidden" falso f5 -L pt --repetir l2.txt
+espera "falhou de novo: a anotação é trocada, sem repetir a linha" test "$(grep -c 'c.invalid/5' l2.txt)" -eq 1
+espera "…com um ✖ só" test "$(grep -o '✖' l2.txt | wc -l)" -eq 1
+espera "…e o comentário intacto" grep -qE '^http://c.invalid/5  # quinto  ✖ ' l2.txt
+STUB_ERRO="HTTP Error 404" falso f6 -L pt http://c.invalid/6 http://c.invalid/7
+espera "links do comando que falham voltam no comando sugerido" grep -qE 'Para continuar: +.*-L pt http://c.invalid/6 http://c.invalid/7$' f6
+espera "…sem criar arquivo nenhum" test ! -e links_falhos.txt
+STUB_ERRO="HTTP Error 404" falso f7 -L pt -l - <<<"http://c.invalid/8"
+espera "lista pela entrada padrão: o link volta no comando" grep -qE 'Para continuar: +.*http://c.invalid/8$' f7
+printf '%s\n' "http://c.invalid/9" > so-leitura.txt; chmod 444 so-leitura.txt
+if [[ ! -w so-leitura.txt ]]; then             # (como root, tudo pode ser escrito)
+  STUB_ERRO="HTTP Error 404" falso f8 -L pt so-leitura.txt
+  espera "lista só de leitura: o link volta no comando" grep -qE 'Para continuar: +.*http://c.invalid/9$' f8
+fi
+printf '%s\n' "http://c.invalid/10" "http://c.invalid/11" > l3.txt
+STUB_ERRO="HTTP Error 404" falso f9 -L pt -l l3.txt http://c.invalid/12
+espera "links do comando junto de uma lista: -l no lugar de download" grep -qE 'Para continuar: +.*-L pt http://c.invalid/12 -l l3.txt --repetir$' f9
 
 secao "Upgrade interrompido"
 D="$TMP/antigos"; mkdir -p "$D/Downloads"; cd "$D" || exit 1
@@ -662,7 +727,7 @@ formas "Uso:  grabit" ajuda help
 formas "instalação das dependências" instalar install -- -y
 formas "GrabIt · atualização" atualizar update
 formas "não existe" verificar check -- "$TMP/nao-existe"
-formas "seção BAIXADOS" baixados downloaded -- -l "$L"
+formas "Para baixar ·" lista list baixados downloaded -- -l "$L"
 formas "cópia sem Git" versao versão version
 formas "Diga o formato" converter convert
 falso w1 -L pt -- update
@@ -852,9 +917,9 @@ EOF
   printf '%s\n' "curl 'file:///etc/passwd'" > ruim.txt
   falso c5 -L pt curl ruim.txt
   espera "só aceita http e https" codigo "$RC" 2
-  rm -f links_falhos.txt
+  cp copiado.txt copiado.orig
   STUB_ERRO="HTTP Error 404" falso c6 -L pt curl copiado.txt
-  espera "link copiado que falha não vai para a lista de falhas" test ! -e links_falhos.txt
+  espera "link copiado que falha não vai para a seção FALHARAM" cmp -s copiado.txt copiado.orig
   espera "…e avisa que ele costuma expirar" contem c6 "costuma expirar"
   # como o navegador manda de verdade quando o vídeo está em outro domínio: só a origem no Referer
   : > "$STUB_LOG"
@@ -1216,8 +1281,8 @@ espera "…e não mexe no arquivo" cmp -s video.mkv video.orig
 falso s3 -L pt https://site.invalid/outro video.mkv
 espera "junto de um link bom, também" codigo "$RC" 2
 espera "…e não baixa nada" nao_contem "$STUB_LOG" "site.invalid/outro"
-falso s4 -L pt -l video.mkv --baixados limpar </dev/null
-espera "--baixados também recusa" codigo "$RC" 2
+falso s4 -L pt -l video.mkv lista limpar </dev/null
+espera "grabit lista também recusa" codigo "$RC" 2
 espera "…e não mexe no arquivo" cmp -s video.mkv video.orig
 printf '\377\376h\0t\0t\0p\0\n\0' > utf16.txt
 falso s5 -L pt utf16.txt
@@ -1439,7 +1504,7 @@ STUB_ERRO="HTTP Error 429: Too Many Requests" falso p2 -L pt -j 1 http://q.inval
 espera "429 seguidos: para de insistir" test "$(vezes q.invalid/1)" -eq 4
 espera "…os outros links do site nem chegam a pedir" test "$(vezes q.invalid/2)" -eq 0
 espera "…avisa e conta os adiados" grep -qE 'Adiados +3' p2
-espera "…eles ficam na lista de falhas" contem links_falhos.txt "q.invalid/4"
+espera "…e voltam no comando sugerido" grep -qE 'Para continuar: +.*q.invalid/4' p2
 espera "…e sai com código 1" codigo "$RC" 1
 : > "$STUB_LOG"
 STUB_ERRO="HTTP Error 403: Forbidden" falso p3 -L pt -j 1 http://r.invalid/1 http://r.invalid/2 http://r.invalid/3 http://r.invalid/4 http://r.invalid/5
@@ -1553,7 +1618,7 @@ EOF
   espera "q duas vezes é como Ctrl+C" grep -qE 'rc (130|-2)$' p5.rc
   STUB_PAINEL=30 tela p6 'espera:Filme de teste|ctrlc|fim' -L pt -j 1 http://a.invalid/p6a http://a.invalid/p6b
   espera "Ctrl+C cancela, com o código de saída certo" grep -qE 'rc (130|-2)$' p6.rc
-  espera "…e diz o que faltou" contem links_falhos.txt "a.invalid/p6b"
+  espera "…e diz o que faltou" contem p6 "a.invalid/p6b"
   espera "…e devolve o cursor" contem p6 $'\e[?25h'
   # (o painel é apagado antes do aviso: o último quadro não pode ficar na tela, em nenhum momento do Ctrl+C)
   painel_apagado() {
@@ -1774,8 +1839,9 @@ espera "com um link quebrado, sai com código 1" codigo "$RC" 1
 espera "os vídeos viram MKV" test -f "Downloads/curto [curto].mkv"
 espera "…e o MKV abre no ffprobe" altura "Downloads/longo [longo].mkv"
 espera "o repetido e a linha sem link são avisados" contem saida1 "1 repetido(s), 1 linha(s) sem link"
-espera "o link quebrado vai para links_falhos.txt" contem links_falhos.txt "$B/nao-existe.mp4"
-espera "o link quebrado continua na lista" grep -q "^$B/nao-existe.mp4$" links.txt
+espera "o link quebrado vai para a seção FALHARAM, com o motivo" grep -qE "^$B/nao-existe.mp4  # ✖ [0-9-]{10} · " links.txt
+espera "…que fica acima da BAIXADOS" awk '/= FALHARAM =/ && !f {f=NR} /= BAIXADOS =/ && !b {b=NR} END {exit !(f && b && f < b)}' links.txt
+espera "…e nenhum outro arquivo é criado" test ! -e links_falhos.txt
 espera "os baixados vão para a seção BAIXADOS" contem links.txt "# ==================== BAIXADOS ===================="
 espera "…anotados com data e título" grep -qE "longo.mp4  # anotação  ✔ [0-9-]{10} · longo" links.txt
 espera "…e a seção termina na linha de fim" contem links.txt "# ================ FIM DOS BAIXADOS ================"
@@ -1785,7 +1851,7 @@ echo "$B/curto.mp4" >> links.txt               # depois da linha de fim: volta a
 roda saida2 -L pt "$B/curto.mp4"
 espera "o histórico pula o que já foi baixado" contem saida2 "já baixado antes"
 roda saida3 -L pt -l links.txt
-espera "o link acrescentado depois da seção é lido" contem saida3 "Links        2"
+espera "o link acrescentado depois das seções é lido" contem saida3 "Links        1"
 
 secao "Inglês"
 D="$TMP/d2"; mkdir -p "$D"; cd "$D" || exit 1

@@ -2,6 +2,16 @@
 
 Só o que muda para quem usa. As versões seguem `MAIOR.MENOR.CORREÇÃO`.
 
+## 1.1.0
+
+### Lista de links
+
+- O `links.txt` guarda tudo: os links que falham vão para uma seção `FALHARAM`, logo acima da `BAIXADOS`, com o motivo no fim da linha. O `links_falhos.txt` deixou de existir (o antigo pode ser apagado: os links dele continuam na sua lista).
+- `grabit download --repetir` tenta de novo os da `FALHARAM`. Sem a opção, eles ficam de fora, e o fim da execução mostra o comando certo para continuar.
+- O seu comentário numa linha nunca muda, em seção nenhuma: o GrabIt só acrescenta e tira o ✔ (ou o ✖), a data e a nota dele.
+- `grabit lista` mostra o arquivo por partes, com os links numerados, e muda links de seção: `voltar`, `baixado`, `pular`, `limpar notas|falhas|baixados`, `organizar` e `editar` (o arquivo inteiro). Substitui o `grabit --baixados`, que continua funcionando.
+- Links adiados porque o site pediu calma, e os que pararam com o disco cheio, continuam na lista de baixar: não foram culpa do link.
+
 ## 1.0.0
 
 Primeira versão publicada.

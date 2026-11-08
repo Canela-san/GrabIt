@@ -926,7 +926,7 @@ fi
 CHAVES_CONFIG=(IDIOMA ARQUIVO_LINKS PASTA_SAIDA RESOLUCAO_MAXIMA RESOLUCAO_ALERTA SO_AUDIO FORMATO_AUDIO DOWNLOADS_SIMULTANEOS CONEXOES_POR_VIDEO TENTATIVAS
   LIMITE_POR_SITE PAUSA_ENTRE_VIDEOS LIMITE_VELOCIDADE
   IDIOMAS_LEGENDAS LEGENDAS_AUTOMATICAS SPONSORBLOCK SEM_PLAYLIST SO_PRINCIPAL VERIFICAR COOKIES_NAVEGADOR
-  USER_AGENT OPCOES_YTDLP TEMA PROXY FILTRO_DESDE FILTRO_MAX FILTRO_TAMANHO CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO ARQUIVO_FALHAS NOTIFICAR NTFY_TOPICO)
+  USER_AGENT OPCOES_YTDLP TEMA PROXY FILTRO_DESDE FILTRO_MAX FILTRO_TAMANHO CANAL_ATUALIZACAO USAR_NAVEGADOR PROGRAMA_NAVEGADOR PROCURAR_ARQUIVO FORMATO_SAIDA CODEC_VIDEO QUALIDADE_VIDEO ACELERACAO_VIDEO USAR_HISTORICO NOTIFICAR NTFY_TOPICO)
 declare -A DO_AMBIENTE=() ORIGEM=()
 for k in "${CHAVES_CONFIG[@]}"; do [[ -v $k ]] && DO_AMBIENTE[$k]=${!k}; done
 
@@ -966,7 +966,6 @@ QUALIDADE_VIDEO=alta                          # ao recomprimir: alta, media, bai
 ACELERACAO_VIDEO=cpu                          # ao recomprimir: cpu, auto, nvenc, vaapi, qsv ou videotoolbox
 PROGRAMA_NAVEGADOR=                           # vazio = procura Firefox, Chrome, Chromium, Brave, Edge…
 USAR_HISTORICO=1                              # 0 = não pula o que já foi baixado antes
-ARQUIVO_FALHAS=links_falhos.txt
 NOTIFICAR=1                                   # sino + notificação no fim (lotes de 1 min ou mais)
 NTFY_TOPICO=                                  # tópico do ntfy.sh (ou URL completa) para avisar no celular
 HIST_DO_AMBIENTE=${ARQUIVO_HISTORICO:+1}
@@ -1007,7 +1006,9 @@ carrega_config() {
       valor=${valor%%[[:space:]]#*}
       valor=${valor%"${valor##*[![:space:]]}"}
       if [[ $valor == \"*\" || $valor == \'*\' ]] && (( ${#valor} >= 2 )); then valor=${valor:1:-1}; fi
-      if [[ -n $secao ]]; then
+      if [[ $chave == ARQUIVO_FALHAS ]]; then
+        :                                       # (de versões antigas: as falhas agora ficam no próprio arquivo de links)
+      elif [[ -n $secao ]]; then
         if [[ $CHAVES_SITE == *" $chave "* ]]; then PERFIL["$secao|$chave"]=$valor
         else AVISOS_CONFIG+=("$n: [$secao] $chave"); fi
       elif [[ " ${CHAVES_CONFIG[*]} " == *" $chave "* ]]; then
@@ -1165,7 +1166,6 @@ idioma_pt() {
     [s_js_dica]="                       O runtime mais garantido é o Deno: https://deno.com"
     [av_disco]="Só %s livres em %s: os vídeos podem não caber."
     [d_disco_para]="Disco cheio: nenhum download novo vai começar; os que faltam vão para a lista de falhas."
-    [f_antes]=" (mais %d de execuções anteriores)"
     [kv_situacao]="Situação"
     [ver_em_dia]="em dia com o repositório"
     [kv_canal]="Canal"
@@ -1241,31 +1241,13 @@ idioma_pt() {
     [vc_sem_link]="%d arquivo(s) com problema não têm o link registrado (só os MKV do GrabIt têm): baixe-os de novo à mão."
     [vc_terminal]="Para baixar de novo os que têm problema, rode grabit --verificar num terminal."
     [vc_pergunta]="Baixar de novo os %d com problema? O arquivo atual fica com %s no nome. [S/n]"
-    [bx_cab]="%s · seção BAIXADOS · %d link(s)"
-    [bx_vazia]="A seção BAIXADOS está vazia."
-    [bx_ajuda]="  grabit --baixados editar          abre só a seção no seu editor
-  grabit --baixados voltar 3 5      devolve os links 3 e 5 para a lista de baixar
-  grabit --baixados marcar LINK…    põe links na seção sem baixá-los
-  grabit --baixados limpar          esvazia a seção (guarda uma cópia .bak)
-  Para outro arquivo de links: grabit -l ARQUIVO --baixados …"
-    [bx_limpar_p]="Apagar os %d links da seção BAIXADOS de %s? Uma cópia fica em %s. [s/N]"
     [bx_limpo]="Seção esvaziada (%d links)."
     [bx_historico]="O histórico de vídeos continua valendo: para baixar de novo um vídeo que já foi baixado, use -i."
-    [bx_voltar_uso]="Diga quais: grabit --baixados voltar 3 5 (os números saem em grabit --baixados)."
-    [bx_numero]="'%s' não é um número da lista (vai de 1 a %d)."
-    [bx_voltou]="%d link(s) de volta à lista de baixar."
-    [bx_marcar_uso]="Diga quais: grabit --baixados marcar LINK…"
     [bx_nao_link]="'%s' não é um link (http ou https)."
     [bx_a_mao]="marcado à mão"
     [bx_marcou]="%d link(s) marcados como baixados."
     [bx_sem_editor]="Nenhum editor encontrado: defina a variável EDITOR (ex.: EDITOR=nano)."
     [bx_sem_terminal]="Para editar é preciso um terminal."
-    [bx_ed_cab]="#: Seção BAIXADOS — apague as linhas dos links que quer tirar daqui e acrescente
-#: links (um por linha) para marcá-los como baixados. Para devolver um link à lista
-#: de baixar, mova-o para baixo da última linha. Salve e feche para aplicar."
-    [bx_ed_volta]="#: ============ abaixo daqui: volta para a lista de baixar ============"
-    [bx_nada_mudou]="Nada mudou."
-    [bx_editado]="Seção atualizada: %d link(s) nela, %d de volta à lista de baixar."
     [bx_acao]="Ação desconhecida: '%s'."
     [atu_ytdlp]="atualizar o yt-dlp e as dependências dele"
     [atu_deno]="atualizar o Deno"
@@ -1360,6 +1342,7 @@ idioma_pt() {
     [cmp_h]="mostra a ajuda"
     [cmp_proxy]="passa tudo por um proxy"
     [cmp_simular]="mostra o que seria baixado, sem baixar"
+    [cmp_repetir]="tenta de novo os links da seção FALHARAM"
     [cmp_detalhes]="mostra as ferramentas e os recursos no início"
     [cmp_desde]="só vídeos desde a data"
     [cmp_max]="no máximo N vídeos por link"
@@ -1411,6 +1394,39 @@ idioma_pt() {
     [marca]="# ==================== BAIXADOS ===================="
     [marca_desc]="# Links já baixados com sucesso. O GrabIt ignora tudo até o fim desta seção."
     [marca_fim]="# ================ FIM DOS BAIXADOS ================"
+    [marca_falhas]="# ==================== FALHARAM ===================="
+    [marca_falhas_desc]="# Links que falharam. O GrabIt só tenta de novo com: grabit download --repetir"
+    [links_na_falha]=" · %d na seção FALHARAM"
+    [nada_falhas]="%d link(s) estão na seção FALHARAM, de tentativas anteriores."
+    [f_repetir]="     Para tentar de novo:  %s"
+    [f_na_secao]="%d link(s) com erro foram para a seção FALHARAM de %s"
+    [f_pendentes]="%d link(s) não chegaram a ser baixados e continuam em %s"
+    [f_soltos]="%d link(s) do comando não foram baixados"
+    [s_movidos_f]="%d para a seção FALHARAM"
+    [cmd_baixar]="download"
+    [ls_baixar]="Para baixar"
+    [ls_falhas]="Falharam"
+    [ls_baixados]="Baixados"
+    [ls_vazia]="A lista está vazia."
+    [ls_secao_vazia]="A seção já está vazia."
+    [ls_numero]="'%s' não é um número da lista (vai de 1 a %d)."
+    [ls_voltar_uso]="Diga quais: grabit lista voltar 3 5, ou falhas, baixados, tudo (os números saem em grabit lista)."
+    [ls_marcar_uso]="Diga quais: grabit lista %s 3 5, ou LINK…"
+    [ls_a_mao_f]="deixado de lado à mão"
+    [ls_pulou]="%d link(s) na seção FALHARAM: o grabit download só volta a tentá-los com --repetir."
+    [ls_voltou]="%d link(s) de volta à lista de baixar, sem as anotações do GrabIt."
+    [ls_limpar_uso]="Diga o que limpar: falhas, baixados ou notas."
+    [ls_limpar_p]="Apagar os %d links da seção %s de %s? Uma cópia fica em %s. [s/N]"
+    [ls_notas]="%d anotação(ões) do GrabIt removidas; os seus comentários ficaram como estavam."
+    [ls_organizada]="Lista organizada: %d linha(s) repetida(s) removidas."
+    [ls_ajuda]="  grabit lista voltar 3 5       devolve à lista de baixar, sem as anotações (ou: falhas, baixados, tudo)
+  grabit lista baixado 4        marca como baixado, sem baixar (ou um LINK)
+  grabit lista pular 2          põe na FALHARAM: o download deixa de tentá-lo (ou um LINK)
+  grabit lista limpar falhas    apaga uma seção, com uma cópia .bak (ou: baixados)
+  grabit lista limpar notas     tira as anotações do GrabIt; seus comentários ficam
+  grabit lista organizar        põe cada parte no lugar e tira as linhas repetidas
+  grabit lista editar           abre o arquivo no editor
+  Para outro arquivo de links: grabit -l ARQUIVO lista …"
     [tentativa_n]="%dª tentativa · "
     [ni_tentativa]="(%dª tentativa)"
     [log_tentativa]="# ── tentativa %d ──"
@@ -1574,12 +1590,6 @@ idioma_pt() {
     [s_pasta]="Pasta"
     [s_lista]="Lista"
     [s_movidos]="%d link(s) movidos para a seção BAIXADOS"
-    [f_todos_ok]="Todos os links de %s deram certo — arquivo removido."
-    [f_nao_gravou]="Não consegui gravar '%s'."
-    [f_com_erro]="com erro"
-    [f_erro_pend]="com erro ou pendentes"
-    [f_pend]="pendentes"
-    [f_salvos]="%d link(s) %s salvos em %s"
     [f_logs]=" — logs em %s/"
     [f_continuar]="     Para continuar:  %s"
     [c_cancelado]="Cancelado."
@@ -1638,6 +1648,7 @@ Uso:  grabit [opções] LINK ou ARQUIVO ...
   -A AGENTE     usa o User-Agent do navegador, junto com -b, em sites com verificação
   --proxy URL   passa tudo por um proxy: http://host:8080 ou socks5://host:1080
   --simular     mostra o que seria baixado e quanto ocupa, sem baixar nada
+  --repetir     inclui os links da seção FALHARAM
   --detalhes    mostra no início também as ferramentas, os recursos e o histórico
   --desde DATA  só vídeos desde a data: 2026-01-31, ou a idade: 7d, 2w, 3m, 1y
   --max N       no máximo N vídeos por link
@@ -1679,8 +1690,9 @@ que grabit --atualizar):
   verificar, check [PASTA]
                      confere os vídeos já baixados (defeitos e incompletos)
                      e oferece baixar de novo os que tiverem problema
-  baixados, downloaded [AÇÃO]
-                     lista a seção BAIXADOS; ações: editar, voltar N…, marcar LINK…, limpar
+  lista, list [AÇÃO] mostra o arquivo de links por partes: a baixar, FALHARAM e BAIXADOS;
+                     ações: voltar N…, baixado N…, pular N…, limpar falhas|baixados|notas,
+                     organizar, editar
   converter, convert ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
                      muda a extensão de um vídeo já baixado (imagem e som continuam idênticos)
                      ou recomprime em outro codec; o original fica, a não ser com --substituir
@@ -1707,8 +1719,9 @@ que grabit --atualizar):
   Apagou um vídeo e quer baixá-lo de novo? Use -i ou apague a linha dele lá.
 • Link que falha por motivo passageiro (rede, 403…) ganha nova tentativa no
   fim da fila, imitando um navegador (--impersonate) se houver curl_cffi.
-• Links que falharem vão para links_falhos.txt, prontos para reexecutar:
-      grabit -l links_falhos.txt
+• Links que falharem vão para a seção "# ===== FALHARAM =====", logo acima da
+  BAIXADOS, com o motivo. Para tentar de novo:  grabit download --repetir
+  O seu comentário na linha nunca muda; grabit lista muda links de seção.
 • Download que não terminou (Ctrl+C, erro, queda de energia): um arquivo direto de
   50 MiB ou mais continua de onde parou, se ainda for o mesmo no site (com aria2c). O
   resto recomeça do zero: retomar pedaços de um stream não garante a qualidade. Só os
@@ -1848,9 +1861,6 @@ EOF
 # Pular na hora os vídeos já baixados antes (0 = conferir sempre; o mesmo que -i)
 #USAR_HISTORICO=1
 
-# Onde salvar os links que falharam
-#ARQUIVO_FALHAS=links_falhos.txt
-
 # No fim de um lote que levou 1 minuto ou mais: sino do terminal e notificação na área
 # de trabalho (notify-send no Linux, central de notificações no macOS). 0 = silêncio.
 #NOTIFICAR=1
@@ -1956,7 +1966,6 @@ idioma_en() {
     [s_js_dica]="                       The safest runtime is Deno: https://deno.com"
     [av_disco]="Only %s free in %s: the videos may not fit."
     [d_disco_para]="Disk full: no new download will start; the rest go to the failed list."
-    [f_antes]=" (plus %d from earlier runs)"
     [kv_situacao]="Status"
     [ver_em_dia]="up to date with the repository"
     [kv_canal]="Channel"
@@ -2032,31 +2041,13 @@ idioma_en() {
     [vc_sem_link]="%d file(s) with problems have no recorded link (only GrabIt's MKVs do): download them again by hand."
     [vc_terminal]="To download the problem ones again, run grabit --check in a terminal."
     [vc_pergunta]="Download the %d problem one(s) again? The current file keeps %s in its name. [Y/n]"
-    [bx_cab]="%s · DOWNLOADED section · %d link(s)"
-    [bx_vazia]="The DOWNLOADED section is empty."
-    [bx_ajuda]="  grabit --downloaded edit          open just the section in your editor
-  grabit --downloaded back 3 5      send links 3 and 5 back to the list to download
-  grabit --downloaded add LINK…     put links in the section without downloading them
-  grabit --downloaded clear         empty the section (keeps a .bak copy)
-  For another link file: grabit -l FILE --downloaded …"
-    [bx_limpar_p]="Delete the %d links in the DOWNLOADED section of %s? A copy stays in %s. [y/N]"
     [bx_limpo]="Section emptied (%d links)."
     [bx_historico]="The video history still applies: to download again a video already downloaded, use -i."
-    [bx_voltar_uso]="Say which: grabit --downloaded back 3 5 (the numbers come from grabit --downloaded)."
-    [bx_numero]="'%s' isn't a number in the list (it goes from 1 to %d)."
-    [bx_voltou]="%d link(s) back in the list to download."
-    [bx_marcar_uso]="Say which: grabit --downloaded add LINK…"
     [bx_nao_link]="'%s' isn't a link (http or https)."
     [bx_a_mao]="marked by hand"
     [bx_marcou]="%d link(s) marked as downloaded."
     [bx_sem_editor]="No editor found: set the EDITOR variable (e.g. EDITOR=nano)."
     [bx_sem_terminal]="Editing needs a terminal."
-    [bx_ed_cab]="#: DOWNLOADED section — delete the lines of the links you want out of here and add
-#: links (one per line) to mark them as downloaded. To send a link back to the list
-#: to download, move it below the last line. Save and close to apply."
-    [bx_ed_volta]="#: ============ below here: back to the list to download ============"
-    [bx_nada_mudou]="Nothing changed."
-    [bx_editado]="Section updated: %d link(s) in it, %d back in the list to download."
     [bx_acao]="Unknown action: '%s'."
     [atu_ytdlp]="update yt-dlp and its dependencies"
     [atu_deno]="update Deno"
@@ -2151,6 +2142,7 @@ idioma_en() {
     [cmp_h]="show the help"
     [cmp_proxy]="send everything through a proxy"
     [cmp_simular]="show what would be downloaded, without downloading"
+    [cmp_repetir]="try the links in the FAILED section again"
     [cmp_detalhes]="show the tools and resources at the start"
     [cmp_desde]="only videos since the date"
     [cmp_max]="at most N videos per link"
@@ -2202,6 +2194,39 @@ idioma_en() {
     [marca]="# ==================== DOWNLOADED ===================="
     [marca_desc]="# Successfully downloaded links. GrabIt ignores everything until the end of this section."
     [marca_fim]="# ================ END OF DOWNLOADED ================"
+    [marca_falhas]="# ==================== FAILED ===================="
+    [marca_falhas_desc]="# Links that failed. GrabIt only tries again with: grabit download --retry"
+    [links_na_falha]=" · %d in the FAILED section"
+    [nada_falhas]="%d link(s) are in the FAILED section, from earlier attempts."
+    [f_repetir]="     To try again:  %s"
+    [f_na_secao]="%d failed link(s) went to the FAILED section of %s"
+    [f_pendentes]="%d link(s) weren't downloaded and stay in %s"
+    [f_soltos]="%d link(s) from the command weren't downloaded"
+    [s_movidos_f]="%d to the FAILED section"
+    [cmd_baixar]="download"
+    [ls_baixar]="To download"
+    [ls_falhas]="Failed"
+    [ls_baixados]="Downloaded"
+    [ls_vazia]="The list is empty."
+    [ls_secao_vazia]="The section is already empty."
+    [ls_numero]="'%s' isn't a number in the list (it goes from 1 to %d)."
+    [ls_voltar_uso]="Say which: grabit list back 3 5, or failed, downloaded, all (the numbers come from grabit list)."
+    [ls_marcar_uso]="Say which: grabit list %s 3 5, or LINK…"
+    [ls_a_mao_f]="set aside by hand"
+    [ls_pulou]="%d link(s) in the FAILED section: grabit download only tries them again with --retry."
+    [ls_voltou]="%d link(s) back in the list to download, without GrabIt's notes."
+    [ls_limpar_uso]="Say what to clear: failed, downloaded or notes."
+    [ls_limpar_p]="Delete the %d links in the %s section of %s? A copy stays in %s. [y/N]"
+    [ls_notas]="%d GrabIt note(s) removed; your comments stayed as they were."
+    [ls_organizada]="List tidied: %d repeated line(s) removed."
+    [ls_ajuda]="  grabit list back 3 5          send back to the list to download, without notes (or: failed, downloaded, all)
+  grabit list downloaded 4      mark as downloaded, without downloading (or a LINK)
+  grabit list skip 2            put it in FAILED: downloads stop trying it (or a LINK)
+  grabit list clear failed      delete a section, keeping a .bak copy (or: downloaded)
+  grabit list clear notes       remove GrabIt's notes; your comments stay
+  grabit list tidy              put each part in its place and remove repeated lines
+  grabit list edit              open the file in the editor
+  For another link file: grabit -l FILE list …"
     [tentativa_n]="attempt %d · "
     [ni_tentativa]="(attempt %d)"
     [log_tentativa]="# ── attempt %d ──"
@@ -2365,12 +2390,6 @@ idioma_en() {
     [s_pasta]="Folder"
     [s_lista]="List"
     [s_movidos]="%d link(s) moved to the DOWNLOADED section"
-    [f_todos_ok]="Every link in %s succeeded — file removed."
-    [f_nao_gravou]="Couldn't write '%s'."
-    [f_com_erro]="failed"
-    [f_erro_pend]="failed or pending"
-    [f_pend]="pending"
-    [f_salvos]="%d %s link(s) saved to %s"
     [f_logs]=" — logs in %s/"
     [f_continuar]="     To continue:  %s"
     [c_cancelado]="Canceled."
@@ -2430,6 +2449,7 @@ Usage:  grabit [options] LINK or FILE ...
   -A AGENT      use the browser's User-Agent, along with -b, on sites with a check
   --proxy URL   send everything through a proxy: http://host:8080 or socks5://host:1080
   --simulate    show what would be downloaded and its size, without downloading
+  --retry       include the links in the FAILED section
   --details     also show the tools, resources and history at the start
   --since DATE  only videos since the date: 2026-01-31, or the age: 7d, 2w, 3m, 1y
   --max N       at most N videos per link
@@ -2470,8 +2490,10 @@ the same as grabit --atualizar):
   check, verificar [FOLDER]
                      check the videos already downloaded (defects and incomplete files)
                      and offer to download the problem ones again
-  downloaded, baixados [ACTION]
-                     list the DOWNLOADED section; actions: edit, back N…, add LINK…, clear
+  list, lista [ACTION]
+                     show the link file by parts: to download, FAILED and DOWNLOADED;
+                     actions: back N…, downloaded N…, skip N…, clear failed|downloaded|notes,
+                     tidy, edit
   convert, converter FILE|FOLDER… -e FORMAT and/or -k CODEC
                      changes the extension of a downloaded video (picture and sound stay
                      identical) or re-encodes to another codec; the original stays, unless --replace
@@ -2501,8 +2523,9 @@ the same as grabit --atualizar):
 • A link that fails for a temporary reason (network, 403…) gets another try at
   the end of the queue, impersonating a browser (--impersonate) if curl_cffi
   is installed.
-• Failed links go to links_falhos.txt, ready to run again:
-      grabit -l links_falhos.txt
+• Failed links go to the "# ===== FAILED =====" section, just above DOWNLOADED,
+  with the reason. To try again:  grabit download --retry
+  Your own comment on a line never changes; grabit list moves links around.
 • A download that didn't finish (Ctrl+C, error, power cut): a direct file of 50 MiB
   or more picks up where it stopped, if it is still the same on the site (with
   aria2c). Everything else starts over: resuming pieces of a stream doesn't
@@ -2645,9 +2668,6 @@ EOF
 # Skip videos already downloaded before (0 = always check; same as -i)
 #USAR_HISTORICO=1
 
-# Where to save the links that failed
-#ARQUIVO_FALHAS=links_falhos.txt
-
 # At the end of a batch that took 1 minute or more: terminal bell and desktop
 # notification (notify-send on Linux, Notification Center on macOS). 0 = silence.
 #NOTIFICAR=1
@@ -2739,7 +2759,7 @@ palavra_comando() {
     instalar|install)                 COMANDO=instalar ;;
     atualizar|update)                 COMANDO=atualizar ;;
     verificar|check)                  COMANDO=verificar ;;
-    baixados|downloaded)              COMANDO=baixados ;;
+    lista|list|baixados|downloaded)   COMANDO=lista ;;
     versao|versão|version)            COMANDO=versao ;;
     curl)                             COMANDO=curl ;;
     converter|convert)                COMANDO=converter ;;
@@ -2752,7 +2772,7 @@ palavra_comando() {
     *) return 1 ;;
   esac
 }
-PALAVRAS_COMANDO=(baixar download config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
+PALAVRAS_COMANDO=(baixar download lista list config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
   versao version curl converter convert canais channels seguir follow completar completion comparar compare)
 
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
@@ -2782,7 +2802,7 @@ sugere_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0; DETALHES=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; REPETIR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0; DETALHES=0
 while (( $# )); do
   a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
@@ -2794,6 +2814,7 @@ while (( $# )); do
     --ajuda-completa|--help-all) COMANDO=ajuda; AJUDA_COMPLETA=1 ;;
     --detalhes|--details) DETALHES=1 ;;
     --simular|--simulate|--dry-run) SIMULAR=1 ;;
+    --repetir|--retry) REPETIR=1 ;;
     --todos|--all) CANAL_TODOS=1 ;;
     --desde=*|--since=*) FILTRO_DESDE=${a#*=}; ORIGEM[FILTRO_DESDE]=opção ;;
     --max=*) FILTRO_MAX=${a#*=}; ORIGEM[FILTRO_MAX]=opção ;;
@@ -2893,7 +2914,7 @@ if [[ -z $COMANDO && ${#ARGS_LINKS[@]} -gt 0 ]] && (( ! SO_LINKS )); then
 fi
 # "~" num valor que não passou pelo shell (grabit.config, aspas): sem isto, PASTA_SAIDA=~/Vídeos
 # viraria uma pasta chamada "~" aqui e, para o yt-dlp, a pasta pessoal.
-for k in ARQUIVO_LINKS PASTA_SAIDA ARQUIVO_FALHAS ARQUIVO_HISTORICO; do
+for k in ARQUIVO_LINKS PASTA_SAIDA ARQUIVO_HISTORICO; do
   case ${!k} in \~|\~/*) printf -v "$k" '%s' "$HOME${!k:1}" ;; esac
 done
 # Só áudio tem histórico próprio: ter baixado o vídeo não significa ter o áudio, e vice-versa
@@ -2904,7 +2925,7 @@ fi
 
 # Só "grabit": a ajuda. A lista só é baixada se pedida: "grabit download", -l, ou um modo que trabalha com
 # ela (-f, -C, -U). Opções soltas, sem nada para baixar, também levam à ajuda.
-if [[ -z $COMANDO ]] && (( ${#ARGS_LINKS[@]} == 0 && ! LISTA_EXPLICITA && ! CAPTURA && ! FILA_VIVA && ! UPGRADE )); then
+if [[ -z $COMANDO ]] && (( ${#ARGS_LINKS[@]} == 0 && ! LISTA_EXPLICITA && ! CAPTURA && ! FILA_VIVA && ! UPGRADE && ! REPETIR )); then
   COMANDO=ajuda
 fi
 if [[ $COMANDO == ajuda ]]; then
@@ -3174,10 +3195,10 @@ declare -A LIM_SITE=() CREDITO_SITE=() BLOQ_SITE=() ESPERA_SITE=() PROX_INICIO_S
 SEG=(); SITES=(); SAUDAVEL=(); N_PENDENTES=0; N_ADIADOS=0; BLOQUEIO=0
 ESPERA_BASE=${GRABIT_ESPERA_BASE:-30}         # segundos de espera no primeiro 429 de um site
 FORMATO='bv*+ba/b'; PRINCIPAL=0; HOJE=""
-FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_MOVIDOS=0; N_BAIXA_RES=0
+FONTE_LINKS=""; LOG_DIR=""; DIR_TEMP=""; TEMP_REL=""; N_NA_SECAO=0; N_NA_FALHAS=0; N_MOVIDOS=0; N_MOVIDOS_F=0; N_BAIXA_RES=0
 MARCA_BAIXADOS=${T[marca]}
 LINKS=(); SLOT_IDX=(); SLOT_PID=(); PERM=(); LIVE=(); FALHAS=(); YTDLP_ARGS=()
-TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
+TENTATIVA=(); FEITO=(); REBAIXAR=(); SUCESSO=(); FALHOU=(); FICA=(); NOTA=(); INICIADO=(); SITE=(); ARQUIVOS_ENTRADA=(); PALAVRAS_LINK=()
 ESCOLHIDO=0; INICIO_JOB=(); ETA_JOB=(); N_INICIADOS=0; T_SOMA=0; T_N=0; BAIXOU=0
 TECLAS=0; PAUSADO=0; PARANDO=0; J_ALVO=0; MSG_PAINEL=""; MSG_ATE=0
 LINHAS=24; LIVE_ANT=(); REDESENHA=1
@@ -3186,7 +3207,7 @@ LOG_RECUSOU=(); LOG_LENTO=(); LOG_SONDA=(); LOG_RETOMADO=(); LOG_VIVO=()
 ATIVOS=0; PROX_VIGIA=0; OCUPADO_DESDE=-1; MOVER=0
 SALVA_A_CADA=${GRABIT_SALVA_A_CADA:-60}; PROX_MOVER=$SALVA_A_CADA
 CLIP_CMD=(); CLIP_ULTIMO=""; CLIP_PRIMEIRA=1; PROX_CLIP=0; ARQ_CAPTURA=""
-declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=() EXTRA_LINK=()
+declare -A CONHECIDO=() MARCA_ARQ=() CAPTURADO=() EXTRA_LINK=() DO_COMANDO=()
 declare -A TITULO=() CACHE_CORTA=()
 SEP=$'\x1f'                                  # separador de campos nos logs
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -3992,9 +4013,12 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     fi
     PERM+=("$LINHA" "         $det")
     FALHAS+=("$url")
+    if [[ -n $DICA ]]; then FALHOU[$idx]=$DICA; else corta "${MOTIVO:-erro}" 80; FALHOU[$idx]=$FMT; fi
     N_ERRO=$(( N_ERRO + 1 ))
     salva_log "$idx"
-    # Sem espaço, os próximos também falhariam (depois de baixar um bom pedaço): para aqui
+    # Sem espaço, os próximos também falhariam (depois de baixar um bom pedaço): para aqui. O link não
+    # tem culpa: continua na lista de baixar, em vez de ir para a seção FALHARAM.
+    (( DISCO_CHEIO )) && FICA[$idx]=1
     if (( DISCO_CHEIO && ! PARANDO )); then
       PARANDO=1
       PERM+=("  ${AMARELO}⚠${R} ${T[d_disco_para]}")
@@ -4466,7 +4490,7 @@ para_site() {
   t k_parado "$s"; PERM+=("  ${AMARELO}⚠${R} $TXT")
 }
 
-# adia_site SITE: os links que faltavam dele vão para a lista de falhas, para outra hora
+# adia_site SITE: os links que faltavam dele ficam para outra hora (na lista de baixar, ou no comando sugerido)
 adia_site() {
   local s=$1 i
   while (( ${PEND_SITE[$s]:-0} > 0 )); do
@@ -4475,7 +4499,7 @@ adia_site() {
     PEND_SITE[$s]=$(( ${PEND_SITE[$s]} - 1 )); N_PENDENTES=$(( N_PENDENTES - 1 ))
     (( ${TENTATIVA[$i]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
     FALHAS+=("${LINKS[$(( i - 1 ))]}")
-    FEITO[$i]=1; FINALIZADOS=$(( FINALIZADOS + 1 )); N_ADIADOS=$(( N_ADIADOS + 1 ))
+    FEITO[$i]=1; FICA[$i]=1; FINALIZADOS=$(( FINALIZADOS + 1 )); N_ADIADOS=$(( N_ADIADOS + 1 ))
   done
 }
 
@@ -4655,7 +4679,7 @@ trata_tecla() {
 # ───── Fila viva (-f): depois da lista, o GrabIt continua aberto vigiando os arquivos de
 # ───── links; o que for acrescentado entra no fim da fila.
 novos_links() {
-  local arq m linha palavra palavras=() bruto=() n=0 salva=$N_NA_SECAO
+  local arq m linha palavra palavras=() bruto=() n=0 salva=$N_NA_SECAO salva_f=$N_NA_FALHAS
   for arq in "${ARQUIVOS_ENTRADA[@]}"; do
     [[ -f $arq && -r $arq ]] || continue
     m=$(stat -c %Y:%s -- "$arq" 2>/dev/null || stat -f %m:%z -- "$arq" 2>/dev/null)
@@ -4677,7 +4701,7 @@ novos_links() {
       done
     done
   done
-  N_NA_SECAO=$salva
+  N_NA_SECAO=$salva; N_NA_FALHAS=$salva_f
   if (( n > 0 )); then t fv_novos "$n"; MSG_PAINEL=$TXT; MSG_ATE=$(( SECONDS + 4 )); fi
   return 0
 }
@@ -4813,65 +4837,73 @@ mata_jobs() {
   return 0
 }
 
-comando_repetir() {                           # → FMT: o mesmo comando, só com os links do arquivo de falhas
-  local eu=$0 nome=${0##*/} p txt=""
+
+# comando_repetir ARGS… → FMT: o mesmo comando, com as mesmas opções, e os ARGS no lugar dos links
+comando_repetir() {
+  local eu=$0 nome=${0##*/} p txt="" arg_proxy=()
   if [[ $(command -v -- "$nome" 2>/dev/null) -ef $eu ]]; then eu=$nome   # instalado no PATH: basta o nome
   elif [[ $eu != */* ]]; then eu="./$eu"; fi
   [[ $eu == */* && ! -x $eu ]] && txt="bash "
-  local arg_proxy=()
   if [[ ${ORIGEM[PROXY]:-} == opção ]]; then sem_senha "$PROXY"; arg_proxy=(--proxy "$FMT"); fi
-  for p in "$eu" "${OPCOES[@]}" "${arg_proxy[@]}" -l "$ARQUIVO_FALHAS"; do
+  for p in "$eu" "${OPCOES[@]}" "${arg_proxy[@]}" "$@"; do
     if [[ $p =~ ^[[:alnum:]_./:=@%+,-]+$ ]]; then txt+="$p "; else txt+="${p@Q} "; fi
   done
   FMT=${txt% }
 }
 
-salva_falhas() {                              # grava links_falhos.txt (+ o que faltava, se cancelado)
-  local lista=("${FALHAS[@]}") i l n_pend=0 n_lidos=0 antigos=() o_que=${T[f_com_erro]}
-  local -A desta=()
+# args_da_lista → ARGS_LISTA: como pedir de novo as mesmas listas ("download", ou os arquivos)
+args_da_lista() {
+  local a
+  ARGS_LISTA=()
+  for a in "${ARQUIVOS_ENTRADA[@]}"; do
+    if [[ $a == "$ARQUIVO_LINKS" ]] && (( ! LISTA_EXPLICITA )); then ARGS_LISTA=("${T[cmd_baixar]}" "${ARGS_LISTA[@]}")
+    elif [[ $a == "$ARQUIVO_LINKS" ]]; then ARGS_LISTA+=(-l "$a")
+    else ARGS_LISTA+=("$a"); fi
+  done
+}
+
+# resumo_pendencias: o que não foi baixado, onde ficou e como tentar de novo. Da lista, nada se perde: o
+# que falhou foi para a seção FALHARAM e o que nem chegou a ser baixado continua na lista de baixar. Os
+# links passados no próprio comando voltam no comando sugerido.
+resumo_pendencias() {
+  local i l pend do_cmd=() n_pend=0 n_erro_lista=0 grava=1
   if (( MODO_CURL )); then                    # sem a sessão copiada, o link não serviria depois
     if (( N_ERRO > 0 )); then
       printf '\n  %s⚠%s  %s' "$AMARELO" "$R" "${T[curl_falhou]}"; t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"
     fi
     return 0
   fi
-  if (( CANCELADO || PARANDO )); then
-    for (( i = 1; i <= TOTAL; i++ )); do
-      [[ -n ${FEITO[$i]:-} ]] && continue
-      lista+=("${LINKS[$(( i - 1 ))]}"); n_pend=$(( n_pend + 1 ))
-    done
+  for l in "${ARQUIVOS_ENTRADA[@]}"; do [[ -w $l ]] || grava=0; done   # lista só de leitura: nada foi gravado nela
+  for (( i = 1; i <= TOTAL; i++ )); do
+    [[ -n ${SUCESSO[$i]:-} ]] && continue
+    l=${LINKS[$(( i - 1 ))]}
+    if [[ -z ${FEITO[$i]:-} || -n ${FICA[$i]:-} ]]; then pend=1      # nem começou, adiado ou sem espaço
+    elif [[ -n ${FALHOU[$i]:-} ]]; then pend=0
+    else continue; fi                           # (terminou sem baixar nada, por um filtro: fica onde está)
+    if [[ -n ${DO_COMANDO[$l]:-} ]] || (( ! grava && ! pend )); then do_cmd+=("$l")
+    elif (( pend )); then n_pend=$(( n_pend + 1 ))
+    else n_erro_lista=$(( n_erro_lista + 1 )); fi
+  done
+  (( n_erro_lista + n_pend + ${#do_cmd[@]} > 0 )) || return 0
+  args_da_lista
+  if (( n_erro_lista + n_pend == 0 )); then ARGS_LISTA=()   # da lista não ficou nada: só os links
+  elif (( ${#do_cmd[@]} )) && [[ ${ARGS_LISTA[0]:-} == "${T[cmd_baixar]}" ]]; then
+    ARGS_LISTA=(-l "$ARQUIVO_LINKS" "${ARGS_LISTA[@]:1}")  # "download" só vale sozinho, sem links
   fi
-  # O arquivo pode ter falhas de execuções anteriores, de outros links: elas continuam lá.
-  # Só saem os links desta execução (os que falharam de novo voltam pela lista).
-  if [[ -f $ARQUIVO_FALHAS && -r $ARQUIVO_FALHAS ]]; then
-    for l in "${LINKS[@]}"; do desta[$l]=1; done
-    while IFS= read -r l || [[ -n $l ]]; do
-      links_da_linha "$l"
-      (( ${#PALAVRAS_LINK[@]} )) || continue
-      n_lidos=$(( n_lidos + 1 ))
-      [[ -n ${desta[${PALAVRAS_LINK[0]}]:-} ]] || antigos+=("$l")
-    done < "$ARQUIVO_FALHAS"
+  printf '\n'
+  if (( n_erro_lista > 0 )); then
+    t f_na_secao "$n_erro_lista" "${NEG}${ARQUIVOS_ENTRADA[0]}${R}"; printf '  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
+    t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"
   fi
-
-  if (( ${#lista[@]} == 0 )); then
-    (( n_lidos == ${#antigos[@]} )) && return 0   # nada desta execução estava no arquivo
-    if (( ${#antigos[@]} )); then printf '%s\n' "${antigos[@]}" > "$ARQUIVO_FALHAS"
-    elif rm -f -- "$ARQUIVO_FALHAS"; then         # todos deram certo: ele cumpriu o papel
-      t f_todos_ok "$ARQUIVO_FALHAS"; printf '\n  %s✔%s  %s\n' "$VERDE" "$R" "$TXT"
-    fi
-    return 0
+  if (( n_pend > 0 && ${#ARQUIVOS_ENTRADA[@]} )); then
+    t f_pendentes "$n_pend" "${NEG}${ARQUIVOS_ENTRADA[0]}${R}"; printf '  %s⚠%s  %s\n' "$AMARELO" "$R" "$TXT"
   fi
-  if ! printf '%s\n' "${antigos[@]}" "${lista[@]}" > "$ARQUIVO_FALHAS"; then
-    t f_nao_gravou "$ARQUIVO_FALHAS"; erro "$TXT"
-    return 0
+  if (( ${#do_cmd[@]} )); then
+    t f_soltos "${#do_cmd[@]}"; printf '  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
+    if (( n_erro_lista == 0 && N_ERRO > 0 )); then t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"; else printf '\n'; fi
   fi
-  (( n_pend + N_ADIADOS > 0 && N_ERRO > 0 )) && o_que=${T[f_erro_pend]}
-  (( n_pend + N_ADIADOS > 0 && N_ERRO == 0 )) && o_que=${T[f_pend]}
-  t f_salvos "${#lista[@]}" "$o_que" "${NEG}${ARQUIVO_FALHAS}${R}"
-  printf '\n  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
-  if (( ${#antigos[@]} )); then t f_antes "${#antigos[@]}"; printf '%s' "$TXT"; fi
-  if (( N_ERRO > 0 )); then t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"; else printf '\n'; fi
-  comando_repetir
+  if (( n_erro_lista > 0 )); then comando_repetir "${do_cmd[@]}" "${ARGS_LISTA[@]}" --repetir
+  else comando_repetir "${do_cmd[@]}" "${ARGS_LISTA[@]}"; fi
   t f_continuar "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
 }
 
@@ -4883,7 +4915,7 @@ linha_resumo() {                              # linha_resumo GLIFO COR RÓTULO V
 
 resumo() {
   (( INTERATIVO )) && printf '%s' "${ESC}[?7h"     # religa a quebra de linha para o texto final
-  local t b media="" titulo_r=${T[s_resumo]}
+  local t b media="" titulo_r=${T[s_resumo]} l
   fmt_tempo "$SECONDS"; t=$FMT
   fmt_bytes "$BYTES_NOVOS"; b=$FMT
   if (( BYTES_NOVOS > 0 && SECONDS > 0 )); then
@@ -4910,10 +4942,14 @@ resumo() {
   linha_resumo "◷" "$DIM" "${T[s_tempo]}"         "$t"
   linha_resumo "▣" "$DIM" "${T[s_baixado_agora]}" "${b}${media}"
   linha_resumo "▸" "$DIM" "${T[s_pasta]}"         "$PASTA_SAIDA"
-  if (( N_MOVIDOS > 0 )); then
-    t s_movidos "$N_MOVIDOS"; linha_resumo "✎" "$DIM" "${T[s_lista]}" "$TXT"
+  if (( N_MOVIDOS + N_MOVIDOS_F > 0 )); then
+    TXT=""
+    if (( N_MOVIDOS > 0 )); then t s_movidos "$N_MOVIDOS"; fi
+    l=$TXT
+    if (( N_MOVIDOS_F > 0 )); then t s_movidos_f "$N_MOVIDOS_F"; l+="${l:+ · }$TXT"; fi
+    linha_resumo "✎" "$DIM" "${T[s_lista]}" "$l"
   fi
-  salva_falhas
+  resumo_pendencias
   if (( DICA_NAVEGADOR && N_ERRO > 0 && ! MODO_CURL )); then
     printf '\n  %s\n' "${T[s_nav_tit]}"
     comando_grabit "-b ${COOKIES_NAVEGADOR:-firefox} LINK"; t s_nav_b "${CIANO}${FMT}${R}"; printf '%s\n%s\n' "$TXT" "${T[s_nav_b2]}"
@@ -5176,6 +5212,25 @@ eh_marca_baixados() {
   [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(baixados|downloaded)[[:space:]]*=+[[:space:]]*$ ]]
 }
 
+# A seção FALHARAM, logo acima da BAIXADOS, tem as mesmas regras
+eh_marca_falhas() {
+  local l=${1%$'\r'}
+  [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(falharam|failed)[[:space:]]*=+[[:space:]]*$ ]]
+}
+eh_fim_falhas() {
+  local l=${1%$'\r'}
+  [[ ${l,,} =~ ^[[:space:]]*#[[:space:]]*=+[[:space:]]*(fim[[:space:]]+dos[[:space:]]+que[[:space:]]+falharam|end[[:space:]]+of[[:space:]]+failed)[[:space:]]*=+[[:space:]]*$ ]]
+}
+# fim_secao CABEÇALHO → FMT: a linha de fim, no idioma do cabeçalho que já está no arquivo
+fim_secao() {
+  case ${1,,} in
+    *downloaded*) FMT="# ================ END OF DOWNLOADED ================" ;;
+    *baixados*)   FMT="# ================ FIM DOS BAIXADOS ================" ;;
+    *failed*)     FMT="# ================ END OF FAILED ================" ;;
+    *falharam*)   FMT="# ============== FIM DOS QUE FALHARAM ==============" ;;
+  esac
+}
+
 # A seção termina numa linha "# ===== FIM DOS BAIXADOS =====" (ou END OF DOWNLOADED);
 # o que vier depois dela volta a contar — assim "echo LINK >> links.txt" funciona mesmo
 # com a seção no fim do arquivo. Sem essa linha (arquivos antigos), a seção vai até o fim.
@@ -5218,21 +5273,22 @@ confere_lista() {                             # confere_lista ARQUIVO: sai com c
   exit 2
 }
 
-# le_lista ARQUIVO: as linhas antes da seção BAIXADOS vão para "bruto" (de ler_links);
-# os links dentro da seção só são contados
+# le_lista ARQUIVO: as linhas fora das seções vão para "bruto" (de ler_links). Os links das seções só são
+# contados, a não ser que tenham sido pedidos: os da FALHARAM com --repetir, os da BAIXADOS com -U.
 le_lista() {
-  local conteudo=() linha secao=0
+  local conteudo=() linha estado=0
   mapfile -t conteudo < "$1"
   for linha in "${conteudo[@]}"; do
-    if (( secao )); then
-      if eh_fim_baixados "$linha"; then secao=0; continue; fi
-      if (( UPGRADE )); then bruto+=("$linha"); continue; fi   # -U: são justamente esses
-      links_da_linha "$linha"; N_NA_SECAO=$(( N_NA_SECAO + ${#PALAVRAS_LINK[@]} ))
-    elif eh_marca_baixados "$linha"; then
-      secao=1
-    else
-      bruto+=("$linha")
-    fi
+    if eh_marca_baixados "$linha"; then estado=2; continue; fi
+    if eh_marca_falhas "$linha"; then estado=1; continue; fi
+    if eh_fim_baixados "$linha" || eh_fim_falhas "$linha"; then estado=0; continue; fi
+    case $estado in
+      0) bruto+=("$linha") ;;
+      1) if (( REPETIR )); then bruto+=("$linha")
+         else links_da_linha "$linha"; N_NA_FALHAS=$(( N_NA_FALHAS + ${#PALAVRAS_LINK[@]} )); fi ;;
+      2) if (( UPGRADE )); then bruto+=("$linha")
+         else links_da_linha "$linha"; N_NA_SECAO=$(( N_NA_SECAO + ${#PALAVRAS_LINK[@]} )); fi ;;
+    esac
   done
 }
 
@@ -5247,7 +5303,11 @@ ler_links() {
       ARQ_CAPTURA=$ARQUIVO_LINKS
     fi
     if [[ $ARQUIVO_LINKS == - ]]; then
+      a=${#bruto[@]}
       le_lista /dev/stdin; fontes+=("${T[fonte_stdin]}")
+      for linha in "${bruto[@]:a}"; do        # sem arquivo para guardá-los: voltam no comando sugerido
+        links_da_linha "$linha"; for palavra in "${PALAVRAS_LINK[@]}"; do DO_COMANDO[$palavra]=1; done
+      done
     elif [[ -f $ARQUIVO_LINKS && -r $ARQUIVO_LINKS ]]; then
       confere_lista "$ARQUIVO_LINKS"
       le_lista "$ARQUIVO_LINKS"; fontes+=("$ARQUIVO_LINKS"); ARQUIVOS_ENTRADA+=("$ARQUIVO_LINKS")
@@ -5263,6 +5323,8 @@ ler_links() {
       le_lista "$a"; fontes+=("$a"); ARQUIVOS_ENTRADA+=("$a")
     else
       bruto+=("$a"); soltos=1
+      links_da_linha "$a"
+      for palavra in "${PALAVRAS_LINK[@]}"; do DO_COMANDO[$palavra]=1; done
     fi
   done
   (( soltos )) && fontes+=("${T[fonte_cli]}")
@@ -5284,9 +5346,14 @@ ler_links() {
   fi
   FONTE_LINKS=$(IFS=,; printf '%s' "${fontes[*]}"); FONTE_LINKS=${FONTE_LINKS//,/, }
   if (( TOTAL == 0 && ! FILA_VIVA )); then
-    if (( N_NA_SECAO > 0 )); then
-      if (( N_NA_SECAO == 1 )); then t nada_1 "$FONTE_LINKS"; else t nada_n "$N_NA_SECAO" "$FONTE_LINKS"; fi
-      printf '  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
+    if (( N_NA_SECAO + N_NA_FALHAS > 0 )); then
+      if (( N_NA_SECAO == 1 )); then t nada_1 "$FONTE_LINKS"; printf '  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+      elif (( N_NA_SECAO > 1 )); then t nada_n "$N_NA_SECAO" "$FONTE_LINKS"; printf '  %s✔%s %s\n' "$VERDE" "$R" "$TXT"; fi
+      if (( N_NA_FALHAS > 0 )); then
+        t nada_falhas "$N_NA_FALHAS"; aviso "$TXT"
+        args_da_lista; comando_repetir "${ARGS_LISTA[@]}" --repetir; t f_repetir "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
+      fi
+      printf '\n'
       exit 0
     fi
     t sem_links "${FONTE_LINKS:-${T[nada]}}"; erro "$TXT"
@@ -5323,87 +5390,155 @@ prepara_troca() {
   cp -p -- "$alvo" "$TROCA"
 }
 
-# move_baixados: nos arquivos de links usados, as linhas cujos links terminaram todos com
-# sucesso saem da parte de cima e vão para o fim da seção BAIXADOS (criada se preciso).
-# O arquivo é relido agora: o que você acrescentou durante a execução não se perde.
-move_baixados() {
-  (( UPGRADE )) && return 0                   # no -U nada muda de lugar: os links já são da seção
-  local -A ok=() nota=()
-  local i arq
-  printf -v HOJE '%(%Y-%m-%d)T' -1
-  for (( i = 1; i <= TOTAL; i++ )); do
-    [[ -n ${SUCESSO[$i]:-} ]] || continue
-    ok[${LINKS[$(( i - 1 ))]}]=1; nota[${LINKS[$(( i - 1 ))]}]=${NOTA[$i]:-}
+# ───── O arquivo de links tem três partes: a lista de baixar, a seção FALHARAM e a seção BAIXADOS, nessa
+# ───── ordem. Tudo fica nele, sem outro arquivo. O GrabIt só escreve no fim de uma linha, com um ✔ ou um ✖,
+# ───── a data e uma nota; o seu comentário, antes disso, nunca muda, em seção nenhuma.
+
+# lista_le ARQUIVO → L_TOPO L_FALHA L_BAIXA (as linhas de cada parte), L_CAB_F L_CAB_B (o cabeçalho de cada
+# seção, como está no arquivo), L_BOM e L_EOL. O que vem depois do fim de uma seção, fora de outra, foi
+# acrescentado no fim do arquivo ("echo LINK >> links.txt"): sobe para a lista de baixar.
+lista_le() {
+  local linha estado=0 conteudo=() cauda=()
+  L_TOPO=(); L_FALHA=(); L_BAIXA=(); L_CAB_F=(); L_CAB_B=(); L_BOM=""; L_EOL=""
+  mapfile -t conteudo < "$1" || return 1
+  if (( ${#conteudo[@]} )); then
+    if [[ ${conteudo[0]} == $'\xef\xbb\xbf'* ]]; then L_BOM=$'\xef\xbb\xbf'; conteudo[0]=${conteudo[0]#$'\xef\xbb\xbf'}; fi
+    [[ ${conteudo[0]} == *$'\r' ]] && L_EOL=$'\r'          # mantém o fim de linha do Windows
+  fi
+  for linha in "${conteudo[@]}"; do
+    if eh_marca_baixados "$linha"; then estado=2; L_CAB_B=("$linha"); continue; fi
+    if eh_marca_falhas "$linha"; then estado=1; L_CAB_F=("$linha"); continue; fi
+    if eh_fim_baixados "$linha" || eh_fim_falhas "$linha"; then estado=3; continue; fi
+    case $estado in
+      0) L_TOPO+=("$linha") ;;
+      3) [[ -n ${linha//[[:space:]]/} ]] && cauda+=("$linha") ;;
+      1) if (( ! ${#L_FALHA[@]} )) && [[ $linha == \#* ]]; then L_CAB_F+=("$linha")   # o comentário da seção
+         elif [[ -n ${linha//[[:space:]]/} ]]; then L_FALHA+=("$linha"); fi ;;
+      2) if (( ! ${#L_BAIXA[@]} )) && [[ $linha == \#* ]]; then L_CAB_B+=("$linha")
+         elif [[ -n ${linha//[[:space:]]/} ]]; then L_BAIXA+=("$linha"); fi ;;
+    esac
   done
-  (( ${#ok[@]} )) || return 0
-  for arq in "${ARQUIVOS_ENTRADA[@]}"; do
-    [[ -f $arq && -w $arq ]] || continue
-    [[ $arq -ef $ARQUIVO_FALHAS ]] && continue          # esse é regravado a cada execução
-    move_no_arquivo "$arq"
-  done
+  if (( ${#cauda[@]} )); then
+    while (( ${#L_TOPO[@]} )) && [[ -z ${L_TOPO[-1]//[[:space:]]/} ]]; do unset 'L_TOPO[-1]'; done
+    L_TOPO+=("${cauda[@]}")
+  fi
   return 0
 }
 
-# anota LINHA NOTA → FMT: a linha com a data e o título do que foi baixado, ex.:
+# lista_grava ARQUIVO: o inverso de lista_le, de uma vez só (veja prepara_troca). Seção vazia some.
+lista_grava() {
+  local arq=$1 saida=("${L_TOPO[@]}") e=$L_EOL
+  while (( ${#saida[@]} )) && [[ -z ${saida[-1]//[[:space:]]/} ]]; do unset 'saida[-1]'; done
+  if (( ${#L_FALHA[@]} )); then
+    (( ${#saida[@]} )) && saida+=("$e")
+    (( ${#L_CAB_F[@]} )) || L_CAB_F=("${T[marca_falhas]}$e" "${T[marca_falhas_desc]}$e")
+    fim_secao "${L_CAB_F[0]}"
+    saida+=("${L_CAB_F[@]}" "${L_FALHA[@]}" "${FMT}$e")
+  fi
+  if (( ${#L_BAIXA[@]} )); then
+    (( ${#saida[@]} )) && saida+=("$e")
+    (( ${#L_CAB_B[@]} )) || L_CAB_B=("${MARCA_BAIXADOS}$e" "${T[marca_desc]}$e")
+    fim_secao "${L_CAB_B[0]}"
+    saida+=("${L_CAB_B[@]}" "${L_BAIXA[@]}" "${FMT}$e")
+  fi
+  prepara_troca "$arq"
+  { printf '%s' "$L_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$TROCA" &&
+    mv -f -- "$TROCA" "$ALVO_TROCA"
+  rm -f -- "$TROCA"
+}
+
+# anota LINHA NOTA [GLIFO] → FMT: a linha com o ✔ (ou o ✖), a data e a nota, ex.:
 #   https://site/video  # ✔ 2026-10-24 · Título do vídeo
-# Se a linha já tem um comentário seu, a anotação entra no fim dele (sem outro "#").
-ANOTACAO_ANTIGA='^(.*[^[:space:]])[[:space:]]+(#[[:space:]]*)?✔ [0-9]{4}-[0-9]{2}-[0-9]{2}( · .*)?$'
+#   https://site/video  # o do bolo  ✖ 2026-11-08 · vídeo privado
+# Se a linha já tem um comentário seu, a anotação entra no fim dele, sem outro "#". Uma anotação antiga sai.
+ANOTACAO_ANTIGA='^(.*[^[:space:]])[[:space:]]+(#[[:space:]]*)?[✔✖] [0-9]{4}-[0-9]{2}-[0-9]{2}( · .*)?$'
+# tira_anotacao LINHA → FMT: sem a anotação e sem o "#" que só existia por causa dela
+tira_anotacao() {
+  FMT=$1
+  [[ $FMT =~ $ANOTACAO_ANTIGA ]] && FMT=${BASH_REMATCH[1]}
+  [[ $FMT =~ ^(.*[^[:space:]])[[:space:]]+#[[:space:]]*$ ]] && FMT=${BASH_REMATCH[1]}
+  return 0
+}
+
 anota() {
-  local l=$1 n=${2//[[:cntrl:]]/ } cr=""
+  local l=$1 n=${2//[[:cntrl:]]/ } g=${3:-✔} cr=""
   [[ $l == *$'\r' ]] && { cr=$'\r'; l=${l%$'\r'}; }
-  # link que voltou da seção para ser baixado de novo: troca a anotação antiga
-  [[ $l =~ $ANOTACAO_ANTIGA ]] && l=${BASH_REMATCH[1]}
+  tira_anotacao "$l"; l=$FMT
   (( ${#n} > 120 )) && n="${n:0:119}…"
-  if [[ $l =~ (^|[[:space:]])# ]]; then FMT="$l  ✔ $HOJE"; else FMT="$l  # ✔ $HOJE"; fi
+  if [[ $l =~ (^|[[:space:]])# ]]; then FMT="$l  $g $HOJE"; else FMT="$l  # $g $HOJE"; fi
   [[ -n $n ]] && FMT+=" · $n"
   FMT+=$cr
 }
 
-move_no_arquivo() {                           # move_no_arquivo ARQUIVO (usa "ok" e "nota" de move_baixados)
-  trava_lista "$1" || return 0                # outro GrabIt preso nela: fica para a próxima gravação
-  regrava_lista "$1"
-  solta_lista "$1"
+sem_anotacao() {                              # sem_anotacao LINHA → FMT: a linha sem o "✔ data · nota", como você a escreveu
+  local cr=""
+  FMT=$1
+  [[ $FMT == *$'\r' ]] && { cr=$'\r'; FMT=${FMT%$'\r'}; }
+  tira_anotacao "$FMT"
+  FMT+=$cr
 }
 
-regrava_lista() {
-  local arq=$1 linha p todos secao=0 tem_secao=0 depois=0 bom="" eol="" n
-  local conteudo=() ativa=() cauda=() resto=() movidas=()
-  eh_texto "$arq" || return 0                  # trocado durante a execução: nunca regrava o que não é lista
-  mapfile -t conteudo < "$arq" || return 0
-  (( ${#conteudo[@]} )) || return 0
-  if [[ ${conteudo[0]} == $'\xef\xbb\xbf'* ]]; then bom=$'\xef\xbb\xbf'; conteudo[0]=${conteudo[0]#$'\xef\xbb\xbf'}; fi
-  [[ ${conteudo[0]} == *$'\r' ]] && eol=$'\r'          # mantém o fim de linha do Windows
-  for linha in "${conteudo[@]}"; do
-    if (( secao )); then
-      if eh_fim_baixados "$linha"; then secao=0; depois=1; continue; fi   # ela é reescrita no fim
-      resto+=("$linha"); continue
-    fi
-    if eh_marca_baixados "$linha"; then secao=1; tem_secao=1; resto+=("$linha"); continue; fi
-    links_da_linha "$linha"
-    todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
-    for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${ok[$p]:-} ]] || { todos=0; break; }; done
-    if (( todos )); then
-      n=""
-      for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${nota[$p]:-} ]] && n+="${n:+ | }${nota[$p]}"; done
-      anota "$linha" "$n"; movidas+=("$FMT")
-    elif (( depois )); then
-      cauda+=("$linha")                         # acrescentado depois da seção: sobe para a lista
-    else
-      ativa+=("$linha")
-    fi
+# move_baixados: nos arquivos de links usados, as linhas cujos links terminaram vão para a seção certa: todos
+# bem, para a BAIXADOS; algum com erro, para a FALHARAM, com o motivo. O que não terminou fica onde está. O
+# arquivo é relido agora: o que você acrescentou durante a execução não se perde.
+move_baixados() {
+  (( UPGRADE )) && return 0                   # no -U nada muda de lugar: os links já são da seção
+  local -A ok=() nota=() erro=()
+  local i l arq
+  printf -v HOJE '%(%Y-%m-%d)T' -1
+  for (( i = 1; i <= TOTAL; i++ )); do
+    l=${LINKS[$(( i - 1 ))]}
+    if [[ -n ${SUCESSO[$i]:-} ]]; then ok[$l]=1; nota[$l]=${NOTA[$i]:-}
+    elif [[ -n ${FALHOU[$i]:-} && -z ${FICA[$i]:-} ]]; then erro[$l]=${FALHOU[$i]}; fi
   done
-  (( ${#movidas[@]} )) || return 0
-  # a lista de cima, depois o que estava abaixo da seção, uma linha em branco e a seção
-  while (( ${#ativa[@]} )) && [[ -z ${ativa[-1]//[[:space:]]/} ]]; do unset 'ativa[-1]'; done
-  while (( ${#cauda[@]} )) && [[ -z ${cauda[-1]//[[:space:]]/} ]]; do unset 'cauda[-1]'; done
-  ativa+=("${cauda[@]}")
-  (( ${#ativa[@]} )) && ativa+=("$eol")
-  (( tem_secao )) || resto=("${MARCA_BAIXADOS}${eol}" "${T[marca_desc]}${eol}")
-  prepara_troca "$arq"
-  { printf '%s' "$bom"; printf '%s\n' "${ativa[@]}" "${resto[@]}" "${movidas[@]}" "${T[marca_fim]}${eol}"; } > "$TROCA" &&
-    mv -f -- "$TROCA" "$ALVO_TROCA"
-  rm -f -- "$TROCA"
-  N_MOVIDOS=$(( N_MOVIDOS + ${#movidas[@]} ))
+  (( ${#ok[@]} + ${#erro[@]} )) || return 0
+  for arq in "${ARQUIVOS_ENTRADA[@]}"; do
+    [[ -f $arq && -w $arq ]] || continue
+    trava_lista "$arq" || continue            # outro GrabIt preso nela: fica para a próxima gravação
+    atualiza_lista "$arq"
+    solta_lista "$arq"
+  done
+  return 0
+}
+
+# classifica_linha LINHA → C (ok, erro, ou vazio: fica onde está) e N (as notas ou os motivos), pelos
+# "ok", "nota" e "erro" de move_baixados
+classifica_linha() {
+  local p ruim=0 n="" e=""
+  C=""; N=""
+  links_da_linha "$1"
+  (( ${#PALAVRAS_LINK[@]} )) || return 0
+  for p in "${PALAVRAS_LINK[@]}"; do
+    if [[ -n ${ok[$p]:-} ]]; then [[ -n ${nota[$p]:-} ]] && n+="${n:+ | }${nota[$p]}"
+    elif [[ -n ${erro[$p]:-} ]]; then ruim=1; e+="${e:+ | }${erro[$p]}"
+    else return 0; fi                          # um link da linha ainda não terminou
+  done
+  if (( ruim )); then C=erro; N=$e; else C=ok; N=$n; fi
+}
+
+atualiza_lista() {                            # atualiza_lista ARQUIVO (veja move_baixados)
+  local arq=$1 l topo=() falha=() baixa=() falhou=() mudou=0
+  eh_texto "$arq" || return 0                 # trocado durante a execução: nunca regrava o que não é lista
+  lista_le "$arq" || return 0
+  for l in "${L_TOPO[@]}"; do
+    classifica_linha "$l"
+    case $C in
+      ok)   anota "$l" "$N"; baixa+=("$FMT"); N_MOVIDOS=$(( N_MOVIDOS + 1 )) ;;
+      erro) anota "$l" "$N" ✖; falhou+=("$FMT"); N_MOVIDOS_F=$(( N_MOVIDOS_F + 1 )) ;;
+      *)    topo+=("$l") ;;
+    esac
+  done
+  for l in "${L_FALHA[@]}"; do                # (com --repetir)
+    classifica_linha "$l"
+    case $C in
+      ok)   anota "$l" "$N"; baixa+=("$FMT"); N_MOVIDOS=$(( N_MOVIDOS + 1 )) ;;
+      erro) anota "$l" "$N" ✖; falha+=("$FMT"); mudou=1 ;;
+      *)    falha+=("$l") ;;
+    esac
+  done
+  (( ${#baixa[@]} + ${#falhou[@]} + mudou )) || return 0
+  L_TOPO=("${topo[@]}"); L_FALHA=("${falha[@]}" "${falhou[@]}"); L_BAIXA+=("${baixa[@]}")
+  lista_grava "$arq"
 }
 
 # O aria2c que o yt-dlp vai chamar: veja --baixa-partes. Sem ele, cada arquivo direto usa uma conexão.
@@ -6946,63 +7081,7 @@ recomprime_baixados() {
   (( CV_ERROS == 0 && ! CANCELADO ))
 }
 
-# ───────────────────────────── Seção BAIXADOS (--baixados) ───────────────────
-# grabit --baixados [listar|editar|voltar N…|marcar LINK…|limpar] cuida da seção BAIXADOS
-# do arquivo de links (-l, ou o links.txt): listar, editar só ela no editor, devolver
-# links para a lista de baixar, marcar links como baixados ou esvaziá-la.
-
-# le_partes ARQUIVO → P_ANTES (lista de cima) P_CAB (a linha da seção e o comentário
-# dela) P_SECAO (os links da seção) P_DEPOIS (o que veio depois da linha de fim),
-# P_BOM e P_EOL (para regravar do mesmo jeito)
-le_partes() {
-  local linha estado=0 conteudo=()
-  P_ANTES=(); P_CAB=(); P_SECAO=(); P_DEPOIS=(); P_VOLTA=(); P_BOM=""; P_EOL=""
-  mapfile -t conteudo < "$1" || return 1
-  if (( ${#conteudo[@]} )); then
-    if [[ ${conteudo[0]} == $'\xef\xbb\xbf'* ]]; then P_BOM=$'\xef\xbb\xbf'; conteudo[0]=${conteudo[0]#$'\xef\xbb\xbf'}; fi
-    [[ ${conteudo[0]} == *$'\r' ]] && P_EOL=$'\r'
-  fi
-  for linha in "${conteudo[@]}"; do
-    case $estado in
-      0) if eh_marca_baixados "$linha"; then estado=1; P_CAB+=("$linha"); else P_ANTES+=("$linha"); fi ;;
-      1) if eh_fim_baixados "$linha"; then estado=3
-         elif [[ ${#P_SECAO[@]} -eq 0 && $linha == \#* ]]; then P_CAB+=("$linha")   # o comentário da seção
-         elif [[ -n ${linha//[[:space:]]/} ]]; then P_SECAO+=("$linha"); fi ;;
-      3) P_DEPOIS+=("$linha") ;;
-    esac
-  done
-}
-
-grava_partes() {                              # grava_partes ARQUIVO: o inverso de le_partes (seção vazia some)
-  local arq=$1 saida=() l
-  # a lista de cima, o que estava depois da seção e o que volta dela (P_VOLTA), sem
-  # linhas em branco sobrando no meio
-  saida=("${P_ANTES[@]}")
-  for l in "${P_DEPOIS[@]}" "${P_VOLTA[@]}"; do
-    [[ -z ${l//[[:space:]]/} ]] && continue
-    while (( ${#saida[@]} )) && [[ -z ${saida[-1]//[[:space:]]/} ]]; do unset 'saida[-1]'; done
-    saida+=("$l")
-  done
-  while (( ${#saida[@]} )) && [[ -z ${saida[-1]//[[:space:]]/} ]]; do unset 'saida[-1]'; done
-  if (( ${#P_SECAO[@]} )); then
-    (( ${#saida[@]} )) && saida+=("$P_EOL")
-    (( ${#P_CAB[@]} )) || P_CAB=("${MARCA_BAIXADOS}${P_EOL}" "${T[marca_desc]}${P_EOL}")
-    saida+=("${P_CAB[@]}" "${P_SECAO[@]}" "${T[marca_fim]}${P_EOL}")
-  fi
-  trava_lista "$arq" || { aviso "${T[lista_presa]}"; return 1; }
-  prepara_troca "$arq"
-  { printf '%s' "$P_BOM"; (( ${#saida[@]} )) && printf '%s\n' "${saida[@]}"; } > "$TROCA" &&
-    mv -f -- "$TROCA" "$ALVO_TROCA"
-  rm -f -- "$TROCA"
-  solta_lista "$arq"
-}
-
-sem_anotacao() {                              # sem_anotacao LINHA → FMT: a linha sem o "✔ data · título"
-  FMT=${1%$'\r'}
-  [[ $FMT =~ $ANOTACAO_ANTIGA ]] && FMT=${BASH_REMATCH[1]}
-  [[ $FMT =~ ^(.*[^[:space:]])[[:space:]]+#[[:space:]]*$ ]] && FMT=${BASH_REMATCH[1]}
-}
-
+# ───────────────────────────── Lista (grabit lista) ──────────────────────────
 pergunta_nao() {                              # pergunta_nao TEXTO → 0 só se a resposta for sim (Enter = não)
   local resp=""                               # da entrada padrão: dá para confirmar com "echo s |"
   printf '\n  %s%s%s ' "$NEG" "$1" "$R"
@@ -7010,108 +7089,213 @@ pergunta_nao() {                              # pergunta_nao TEXTO → 0 só se 
   [[ ${resp,,} == s* || ${resp,,} == y* ]]
 }
 
-gerencia_baixados() {
-  local arq=$ARQUIVO_LINKS acao=${ARGS_LINKS[0]:-listar} i n l lin url resto
+# lista_numera → NUM_PARTE NUM_POS: os links do arquivo numerados de 1 em diante, na ordem em que aparecem
+# (lista de baixar, FALHARAM, BAIXADOS). Linha sem link não ganha número.
+lista_numera() {
+  local i
+  NUM_PARTE=(""); NUM_POS=("")
+  for i in "${!L_TOPO[@]}"; do links_da_linha "${L_TOPO[$i]}"; (( ${#PALAVRAS_LINK[@]} )) && { NUM_PARTE+=(topo); NUM_POS+=("$i"); }; done
+  for i in "${!L_FALHA[@]}"; do links_da_linha "${L_FALHA[$i]}"; (( ${#PALAVRAS_LINK[@]} )) && { NUM_PARTE+=(falha); NUM_POS+=("$i"); }; done
+  for i in "${!L_BAIXA[@]}"; do links_da_linha "${L_BAIXA[$i]}"; (( ${#PALAVRAS_LINK[@]} )) && { NUM_PARTE+=(baixa); NUM_POS+=("$i"); }; done
+  return 0
+}
+
+lista_mostra() {                              # lista_mostra ARQUIVO: as três partes, numeradas
+  local arq=$1 k parte rot n=0 l url resto lin
+  atualiza_largura
+  lista_numera
+  printf '\n  %s%s%s\n' "$NEG" "$arq" "$R"
+  for parte in topo falha baixa; do
+    n=0
+    for (( k = 1; k < ${#NUM_PARTE[@]}; k++ )); do [[ ${NUM_PARTE[$k]} == "$parte" ]] && n=$(( n + 1 )); done
+    case $parte in
+      topo)  rot=${T[ls_baixar]} ;;
+      falha) rot=${T[ls_falhas]}; (( n )) || continue ;;
+      baixa) rot=${T[ls_baixados]}; (( n )) || continue ;;
+    esac
+    printf '\n  %s%s · %d%s\n' "$DIM" "$rot" "$n" "$R"
+    for (( k = 1; k < ${#NUM_PARTE[@]}; k++ )); do
+      [[ ${NUM_PARTE[$k]} == "$parte" ]] || continue
+      case $parte in
+        topo)  l=${L_TOPO[${NUM_POS[$k]}]} ;;
+        falha) l=${L_FALHA[${NUM_POS[$k]}]} ;;
+        baixa) l=${L_BAIXA[${NUM_POS[$k]}]} ;;
+      esac
+      l=${l%$'\r'}; l=${l#"${l%%[![:space:]]*}"}
+      url=${l%%[[:space:]]*}; resto=${l#"$url"}
+      resto=${resto#"${resto%%[![:space:]]*}"}; resto=${resto#\#}; resto=${resto# }
+      corta "$url" $(( COLS - 12 )); lin=$FMT
+      if [[ -n $resto ]] && (( LARG + 14 < COLS )); then corta "$resto" $(( COLS - LARG - 14 )); lin+="  ${DIM}${FMT}${R}"; fi
+      printf '  %s%4d%s  %s\n' "$DIM" "$k" "$R" "$lin"
+    done
+  done
+  (( ${#NUM_PARTE[@]} > 1 )) || printf '\n  %s\n' "${T[ls_vazia]}"
+  printf '\n%s\n\n' "${T[ls_ajuda]}"
+}
+
+# lista_escolhe ARGS… → SEL (as posições "parte:índice"). Aceita números, "tudo" e o nome de uma seção.
+lista_escolhe() {
+  local a k total=$(( ${#NUM_PARTE[@]} - 1 ))
+  SEL=()
+  for a in "$@"; do
+    case ${a,,} in
+      tudo|all)              for (( k = 1; k <= total; k++ )); do SEL["${NUM_PARTE[$k]}:${NUM_POS[$k]}"]=1; done ;;
+      falhas|falharam|failed) for (( k = 1; k <= total; k++ )); do [[ ${NUM_PARTE[$k]} == falha ]] && SEL["falha:${NUM_POS[$k]}"]=1; done ;;
+      baixados|downloaded)   for (( k = 1; k <= total; k++ )); do [[ ${NUM_PARTE[$k]} == baixa ]] && SEL["baixa:${NUM_POS[$k]}"]=1; done ;;
+      *)
+        if [[ $a =~ ^[0-9]+$ ]] && (( a >= 1 && a <= total )); then SEL["${NUM_PARTE[$a]}:${NUM_POS[$a]}"]=1
+        else t ls_numero "$a" "$total"; erro "$TXT"; return 2; fi ;;
+    esac
+  done
+  return 0
+}
+
+# lista_marca ARRAY PARTE DESTINO NOTA GLIFO: tira de ARRAY (a PARTE topo, falha ou baixa) as linhas escolhidas
+# em SEL, ou com todos os links em "marca", e as põe anotadas em "vai", para a parte DESTINO. A linha que já
+# está no DESTINO fica como está. Usa SEL, marca, visto, vai e n de gerencia_lista.
+lista_marca() {
+  local -n _de=$1
+  local i l p todos fica=()
+  [[ $2 == "$3" ]] && { for i in "${!_de[@]}"; do links_da_linha "${_de[$i]}"; for p in "${PALAVRAS_LINK[@]}"; do visto[$p]=1; done; done; return 0; }
+  for i in "${!_de[@]}"; do
+    l=${_de[$i]}; links_da_linha "$l"; todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
+    for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${marca[$p]:-} ]] || todos=0; done
+    if [[ -n ${SEL["$2:$i"]:-} ]] || (( todos )); then
+      for p in "${PALAVRAS_LINK[@]}"; do visto[$p]=1; done
+      anota "$l" "$4" "$5"; vai+=("$FMT"); n=$(( n + 1 ))
+    else fica+=("$l"); fi
+  done
+  _de=("${fica[@]}")
+}
+
+# grabit lista: o arquivo de links por partes, numerado, e o que fazer com cada link. Mudar um link de parte
+# troca só a anotação do GrabIt (o ✔ ou o ✖ com a data e a nota); o seu comentário continua igual.
+gerencia_lista() {
+  local arq=$ARQUIVO_LINKS acao=${ARGS_LINKS[0]:-listar} args=("${ARGS_LINKS[@]:1}") i l n p todos ed=()
+  local topo=() falha=() baixa=() volta=() rc=0
+  local -A SEL=() marca=() visto=()
   [[ -f $arq ]] || { t sem_arquivo "$arq"; erro "$TXT"; return 1; }
   confere_lista "$arq"
-  le_partes "$arq"
-  n=${#P_SECAO[@]}
+  printf -v HOJE '%(%Y-%m-%d)T' -1
   case ${acao,,} in
-    listar|list|"")
-      t bx_cab "$arq" "$n"; printf '\n  %s%s%s\n\n' "$NEG" "$TXT" "$R"
-      atualiza_largura
-      for i in "${!P_SECAO[@]}"; do
-        l=${P_SECAO[$i]%$'\r'}; url=${l%%[[:space:]]*}; resto=${l#"$url"}
-        resto=${resto#"${resto%%[![:space:]]*}"}; resto=${resto#\#}; resto=${resto# }
-        corta "$url" $(( COLS - 12 )); lin=$FMT
-        if [[ -n $resto ]] && (( LARG + ${#resto} + 12 < COLS )); then lin+="  ${DIM}${resto}${R}"; fi
-        printf '  %s%4d%s  %s\n' "$DIM" $(( i + 1 )) "$R" "$lin"
-      done
-      (( n )) || printf '  %s\n' "${T[bx_vazia]}"
-      printf '\n%s\n\n' "${T[bx_ajuda]}" ;;
-
-    limpar|clear)
-      (( n )) || { printf '\n  %s\n\n' "${T[bx_vazia]}"; return 0; }
-      t bx_limpar_p "$n" "$arq" "$arq.bak"
-      pergunta_nao "$TXT" || { printf '\n  %s\n\n' "${T[ins_cancelado]}"; return 1; }
-      cp -p -- "$arq" "$arq.bak" || return 1
-      P_SECAO=(); grava_partes "$arq"
-      t bx_limpo "$n"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
-      printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R" ;;
-
-    voltar|back|restore)
-      local nums=("${ARGS_LINKS[@]:1}")
-      local -A sai=()
-      (( ${#nums[@]} )) || { erro "${T[bx_voltar_uso]}"; return 2; }
-      for i in "${nums[@]}"; do
-        if [[ $i =~ ^[0-9]+$ ]] && (( i >= 1 && i <= n )); then sai[$(( i - 1 ))]=1
-        else t bx_numero "$i" "$n"; erro "$TXT"; return 2; fi
-      done
-      local fica=()
-      for i in "${!P_SECAO[@]}"; do
-        if [[ -n ${sai[$i]:-} ]]; then sem_anotacao "${P_SECAO[$i]}"; P_VOLTA+=("${FMT}${P_EOL}")
-        else fica+=("${P_SECAO[$i]}"); fi
-      done
-      P_SECAO=("${fica[@]}"); grava_partes "$arq"
-      t bx_voltou "${#sai[@]}"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
-      printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R" ;;
-
-    marcar|add)
-      local novos=("${ARGS_LINKS[@]:1}") fica=() p todos
-      local -A marca=()
-      (( ${#novos[@]} )) || { erro "${T[bx_marcar_uso]}"; return 2; }
-      printf -v HOJE '%(%Y-%m-%d)T' -1
-      for url in "${novos[@]}"; do
-        links_da_linha "$url"
-        (( ${#PALAVRAS_LINK[@]} )) || { t bx_nao_link "$url"; erro "$TXT"; return 2; }
-        marca[${PALAVRAS_LINK[0]}]=1
-        anota "${PALAVRAS_LINK[0]}" "${T[bx_a_mao]}"; P_SECAO+=("${FMT}${P_EOL}")
-      done
-      for l in "${P_ANTES[@]}"; do               # na lista de cima, a linha sai se todos os links dela foram marcados
-        links_da_linha "$l"; todos=$(( ${#PALAVRAS_LINK[@]} > 0 ))
-        for p in "${PALAVRAS_LINK[@]}"; do [[ -n ${marca[$p]:-} ]] || todos=0; done
-        (( todos )) || fica+=("$l")
-      done
-      P_ANTES=("${fica[@]}"); grava_partes "$arq"
-      t bx_marcou "${#novos[@]}"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
-
+    listar|list|mostrar|show|"")
+      lista_le "$arq"; lista_mostra "$arq"; return 0 ;;
     editar|edit)
-      local ed=() tmp="$arq.grabit-editar.txt" depois=0 antes_md5 fica=() volta=()
-      local -A original=()
-      for l in "${P_SECAO[@]}"; do original[${l%$'\r'}]=1; done
       read -ra ed <<<"${VISUAL:-${EDITOR:-}}"
       if (( ${#ed[@]} == 0 )); then
         for l in nano vim vi; do command -v "$l" >/dev/null 2>&1 && { ed=("$l"); break; }; done
       fi
       (( ${#ed[@]} )) || { erro "${T[bx_sem_editor]}"; return 1; }
       { : </dev/tty; } 2>/dev/null || { erro "${T[bx_sem_terminal]}"; return 1; }
-      { printf '%s\n' "${T[bx_ed_cab]}" ""
-        for l in "${P_SECAO[@]}"; do printf '%s\n' "${l%$'\r'}"; done
-        printf '\n%s\n' "${T[bx_ed_volta]}"; } > "$tmp"
-      antes_md5=$(cksum < "$tmp")
-      "${ed[@]}" "$tmp" </dev/tty >/dev/tty
-      if [[ ! -f $tmp || $(cksum < "$tmp") == "$antes_md5" ]]; then
-        rm -f -- "$tmp"; printf '\n  %s\n\n' "${T[bx_nada_mudou]}"; return 0
-      fi
-      while IFS= read -r l || [[ -n $l ]]; do
-        l=${l%$'\r'}
-        [[ $l == "${T[bx_ed_volta]}" ]] && { depois=1; continue; }
-        [[ $l == '#:'* || -z ${l//[[:space:]]/} ]] && continue
-        if (( depois )); then sem_anotacao "$l"; volta+=("${FMT}${P_EOL}"); continue; fi
-        # link novo, acrescentado agora: ganha a mesma anotação do "marcar"
-        if [[ -z ${original[$l]:-} && ! $l =~ $ANOTACAO_ANTIGA ]]; then
-          links_da_linha "$l"
-          (( ${#PALAVRAS_LINK[@]} )) && { printf -v HOJE '%(%Y-%m-%d)T' -1; anota "$l" "${T[bx_a_mao]}"; l=$FMT; }
-        fi
-        fica+=("${l}${P_EOL}")
-      done < "$tmp"
-      rm -f -- "$tmp"
-      P_SECAO=("${fica[@]}"); P_VOLTA=("${volta[@]}"); grava_partes "$arq"
-      t bx_editado "${#fica[@]}" "${#volta[@]}"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
-
-    *) t bx_acao "$acao"; erro "$TXT"; printf '%s\n\n' "${T[bx_ajuda]}"; return 2 ;;
+      "${ed[@]}" "$arq" </dev/tty >/dev/tty
+      return 0 ;;
   esac
-  return 0
+  trava_lista "$arq" || { aviso "${T[lista_presa]}"; return 1; }
+  lista_le "$arq"
+  lista_numera
+  case ${acao,,} in
+    voltar|back|restore)                       # de volta para a lista de baixar, sem a anotação
+      (( ${#args[@]} )) || { erro "${T[ls_voltar_uso]}"; rc=2; }
+      (( rc )) || lista_escolhe "${args[@]}" || rc=2
+      if (( ! rc )); then
+        for i in "${!L_FALHA[@]}"; do
+          if [[ -n ${SEL["falha:$i"]:-} ]]; then sem_anotacao "${L_FALHA[$i]}"; volta+=("$FMT"); else falha+=("${L_FALHA[$i]}"); fi
+        done
+        for i in "${!L_BAIXA[@]}"; do
+          if [[ -n ${SEL["baixa:$i"]:-} ]]; then sem_anotacao "${L_BAIXA[$i]}"; volta+=("$FMT"); else baixa+=("${L_BAIXA[$i]}"); fi
+        done
+        while (( ${#L_TOPO[@]} )) && [[ -z ${L_TOPO[-1]//[[:space:]]/} ]]; do unset 'L_TOPO[-1]'; done
+        L_TOPO+=("${volta[@]}"); L_FALHA=("${falha[@]}"); L_BAIXA=("${baixa[@]}")
+        lista_grava "$arq"
+        t ls_voltou "${#volta[@]}"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+        printf '  %s%s%s\n\n' "$DIM" "${T[bx_historico]}" "$R"
+      fi ;;
+
+    baixado|downloaded|marcar|add|mark|pular|skip)   # para a BAIXADOS (ou a FALHARAM), sem baixar
+      local dest=baixa g=✔ nota_mao=${T[bx_a_mao]} vai=() nums=()
+      case ${acao,,} in pular|skip) dest=falha; g=✖; nota_mao=${T[ls_a_mao_f]} ;; esac
+      (( ${#args[@]} )) || { t ls_marcar_uso "$acao"; erro "$TXT"; rc=2; }
+      n=0
+      if (( ! rc )); then
+        for p in "${args[@]}"; do
+          if [[ $p =~ ^[0-9]+$ ]]; then nums+=("$p")
+          else
+            links_da_linha "$p"
+            (( ${#PALAVRAS_LINK[@]} )) || { t bx_nao_link "$p"; erro "$TXT"; rc=2; break; }
+            marca[${PALAVRAS_LINK[0]}]=1
+          fi
+        done
+        (( rc )) || lista_escolhe "${nums[@]}" || rc=2   # (de uma vez: cada chamada começa a escolha do zero)
+      fi
+      if (( ! rc )); then
+        lista_marca L_TOPO topo "$dest" "$nota_mao" "$g"
+        lista_marca L_FALHA falha "$dest" "$nota_mao" "$g"
+        lista_marca L_BAIXA baixa "$dest" "$nota_mao" "$g"
+        for p in "${!marca[@]}"; do              # link que não estava no arquivo: entra direto na seção
+          [[ -n ${visto[$p]:-} ]] && continue
+          anota "$p" "$nota_mao" "$g"; vai+=("${FMT}${L_EOL}"); n=$(( n + 1 ))
+        done
+        if [[ $dest == baixa ]]; then L_BAIXA+=("${vai[@]}"); t bx_marcou "$n"
+        else L_FALHA+=("${vai[@]}"); t ls_pulou "$n"; fi
+        lista_grava "$arq"
+        printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT"
+      fi ;;
+
+    limpar|clear)
+      case ${args[0]:-baixados} in
+        notas|notes)                           # as anotações do GrabIt saem; as seções e os seus comentários ficam
+          n=0
+          for i in "${!L_FALHA[@]}"; do sem_anotacao "${L_FALHA[$i]}"; [[ $FMT != "${L_FALHA[$i]}" ]] && n=$(( n + 1 )); L_FALHA[$i]=$FMT; done
+          for i in "${!L_BAIXA[@]}"; do sem_anotacao "${L_BAIXA[$i]}"; [[ $FMT != "${L_BAIXA[$i]}" ]] && n=$(( n + 1 )); L_BAIXA[$i]=$FMT; done
+          for i in "${!L_TOPO[@]}"; do sem_anotacao "${L_TOPO[$i]}"; [[ $FMT != "${L_TOPO[$i]}" ]] && n=$(( n + 1 )); L_TOPO[$i]=$FMT; done
+          lista_grava "$arq"
+          t ls_notas "$n"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
+        falhas|falharam|failed|baixados|downloaded)
+          if [[ ${args[0]} == falha* || ${args[0]} == failed ]]; then n=${#L_FALHA[@]}; p=${T[ls_falhas]}
+          else n=${#L_BAIXA[@]}; p=${T[ls_baixados]}; fi
+          if (( ! n )); then printf '\n  %s\n\n' "${T[ls_secao_vazia]}"
+          else
+            t ls_limpar_p "$n" "$p" "$arq" "$arq.bak"
+            if pergunta_nao "$TXT" && cp -p -- "$arq" "$arq.bak"; then
+              if [[ $p == "${T[ls_falhas]}" ]]; then L_FALHA=(); else L_BAIXA=(); fi
+              lista_grava "$arq"
+              t bx_limpo "$n"; printf '\n  %s✔%s %s\n' "$VERDE" "$R" "$TXT"
+              [[ $p == "${T[ls_baixados]}" ]] && printf '  %s%s%s\n' "$DIM" "${T[bx_historico]}" "$R"
+              printf '\n'
+            else
+              printf '\n  %s\n\n' "${T[ins_cancelado]}"; rc=1
+            fi
+          fi ;;
+        *) erro "${T[ls_limpar_uso]}"; rc=2 ;;
+      esac ;;
+
+    organizar|tidy)                            # cada parte no seu lugar, sem linhas repetidas
+      local -A ja=()
+      n=0
+      for l in "${L_TOPO[@]}"; do
+        links_da_linha "$l"
+        if (( ${#PALAVRAS_LINK[@]} )) && [[ -n ${ja["t ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
+        (( ${#PALAVRAS_LINK[@]} )) && ja["t ${PALAVRAS_LINK[*]}"]=1
+        topo+=("$l")
+      done
+      for l in "${L_FALHA[@]}"; do
+        links_da_linha "$l"
+        if [[ -n ${ja["f ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
+        ja["f ${PALAVRAS_LINK[*]}"]=1; falha+=("$l")
+      done
+      for l in "${L_BAIXA[@]}"; do
+        links_da_linha "$l"
+        if [[ -n ${ja["b ${PALAVRAS_LINK[*]}"]:-} ]]; then n=$(( n + 1 )); continue; fi
+        ja["b ${PALAVRAS_LINK[*]}"]=1; baixa+=("$l")
+      done
+      L_TOPO=("${topo[@]}"); L_FALHA=("${falha[@]}"); L_BAIXA=("${baixa[@]}")
+      lista_grava "$arq"
+      t ls_organizada "$n"; printf '\n  %s✔%s %s\n\n' "$VERDE" "$R" "$TXT" ;;
+
+    *) t bx_acao "$acao"; erro "$TXT"; printf '%s\n\n' "${T[ls_ajuda]}"; rc=2 ;;
+  esac
+  solta_lista "$arq"
+  return "$rc"
 }
 
 # ───────────────────────────── Comparar (grabit comparar) ─────────────────────
@@ -7265,6 +7449,7 @@ L||pt en|cmp_L
 h|help||cmp_h
 |proxy|?|cmp_proxy
 |simular simulate dry-run||cmp_simular
+|repetir retry||cmp_repetir
 |detalhes details||cmp_detalhes
 |desde since|?|cmp_desde
 |max|?|cmp_max
@@ -7274,14 +7459,14 @@ h|help||cmp_h
 
 gera_completar() {
   local curta longas vals chave d n s=${1:-} todas="" pal=${PALAVRAS_COMANDO[*]}
-  local acoes_cn="adicionar baixar remover add download remove" acoes_bx="editar voltar marcar limpar edit back mark clear"
+  local acoes_cn="adicionar baixar remover add download remove" acoes_bx="voltar baixado pular limpar organizar editar back downloaded skip clear tidy edit"
   case $s in
     fish)
       printf '# Autocompletar do GrabIt (grabit completar fish)\n'
       printf 'set -l grabit_comandos %s\n' "$pal"
       printf 'complete -c grabit -n "not __fish_seen_subcommand_from $grabit_comandos" -a "$grabit_comandos"\n'
       printf "complete -c grabit -n '__fish_seen_subcommand_from canais channels seguir follow' -f -a '%s'\n" "$acoes_cn"
-      printf "complete -c grabit -n '__fish_seen_subcommand_from baixados downloaded' -f -a '%s'\n" "$acoes_bx"
+      printf "complete -c grabit -n '__fish_seen_subcommand_from lista list baixados downloaded' -f -a '%s'\n" "$acoes_bx"
       printf "complete -c grabit -n '__fish_seen_subcommand_from completar completion' -f -a 'fish bash zsh'\n"
       while IFS='|' read -r curta longas vals chave; do
         d=${T[$chave]}; printf 'complete -c grabit'
@@ -7320,7 +7505,7 @@ gera_completar() {
       printf '  if (( COMP_CWORD == 1 )); then COMPREPLY=($(compgen -W "%s" -- "$cur")); compopt -o default; return; fi\n' "$pal"
       printf '  case ${COMP_WORDS[1]} in\n'
       printf '    canais|channels|seguir|follow) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_cn"
-      printf '    baixados|downloaded) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_bx"
+      printf '    lista|list|baixados|downloaded) COMPREPLY=($(compgen -W "%s" -- "$cur")); return ;;\n' "$acoes_bx"
       printf '    completar|completion) COMPREPLY=($(compgen -W "fish bash zsh" -- "$cur")); return ;;\n'
       printf '  esac\n  compopt -o default\n}\ncomplete -F _grabit grabit\n' ;;
     zsh)
@@ -7478,7 +7663,7 @@ case $COMANDO in
   instalar)  instalar;  exit $? ;;
   atualizar) atualizar; exit $? ;;
   verificar) verifica_colecao; exit $? ;;
-  baixados)  gerencia_baixados; exit $? ;;
+  lista)     gerencia_lista; exit $? ;;
   versao)    mostra_versao; exit $? ;;
   converter) conversao; exit $? ;;
   desinstalar) desinstalar; exit $? ;;
@@ -7531,6 +7716,7 @@ extras=""
 (( INVALIDAS  > 0 )) && { t links_sem_link "$INVALIDAS"; extras+="${extras:+,}$TXT"; }
 [[ -n $extras ]] && { t links_ignorados "$extras"; extras=$TXT; }
 (( N_NA_SECAO > 0 )) && { t links_na_secao "$N_NA_SECAO"; extras+=$TXT; }
+(( N_NA_FALHAS > 0 )) && { t links_na_falha "$N_NA_FALHAS"; extras+=$TXT; }
 if (( SO_AUDIO )); then
   txt_extras=${T[kv_extras_audio]}
 else
@@ -7689,7 +7875,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
     (( ${TENTATIVA[$idx]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
     BAIXOU=0
     processa_resultado "$idx" "$rc"
-    [[ -n ${SUCESSO[$idx]:-} ]] && MOVER=1
+    [[ -n ${SUCESSO[$idx]:-}${FALHOU[$idx]:-} ]] && MOVER=1
     # para estimar o tempo restante, só contam os links que baixaram algo de fato
     (( BAIXOU )) && { T_SOMA=$(( T_SOMA + SECONDS - ${INICIO_JOB[$idx]:-$SECONDS} )); T_N=$(( T_N + 1 )); }
   done
