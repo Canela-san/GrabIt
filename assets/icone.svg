@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>GrabIt</title>
+  <defs>
+    <linearGradient id="cabeca" gradientUnits="userSpaceOnUse" x1="60" y1="161" x2="964" y2="863">
+      <stop offset="0" stop-color="#1c2433"/>
+      <stop offset="1" stop-color="#0b0f17"/>
+    </linearGradient>
+  </defs>
+  <g fill="#334158"><rect x="48" y="291" width="928" height="584" rx="262"/><circle cx="262" cy="303" r="154"/><circle cx="762" cy="303" r="154"/></g>
+  <g fill="url(#cabeca)"><rect x="60" y="303" width="904" height="560" rx="250"/><circle cx="262" cy="303" r="142"/><circle cx="762" cy="303" r="142"/></g>
+  <circle cx="262" cy="303" r="76" fill="#3be6a8"/><rect x="214" y="288" width="96" height="30" rx="15" fill="#0b0f17"/><circle cx="762" cy="303" r="76" fill="#3be6a8"/><rect x="714" y="288" width="96" height="30" rx="15" fill="#0b0f17"/>
+  <path d="M300 493L420 593L300 693" fill="none" stroke="#3be6a8" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="482" y="659" width="242" height="66" rx="33" fill="#ffffff"/>
+</svg>

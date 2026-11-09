@@ -1,61 +1,62 @@
 <p align="center">
-  <img src="assets/logo.png" alt="GrabIt" width="200">
+  <img src="assets/icone.svg" alt="" width="128">
 </p>
 
 <h1 align="center">GrabIt</h1>
 
 <p align="center">
-  <strong>Baixe vídeos de qualquer site, em lote, sempre na qualidade máxima.</strong><br>
-  Um único script Bash sobre o <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>, com painel ao vivo no terminal.
+  <strong>Baixe vídeos de qualquer site, em lote, na qualidade máxima.</strong><br>
+  Um script Bash sobre o <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>, com um painel ao vivo no terminal.
 </p>
 
 <p align="center">
-  <img alt="Bash 4.4+" src="https://img.shields.io/badge/bash-4.4%2B-4EAA25?logo=gnubash&logoColor=white">
-  <img alt="Motor: yt-dlp" src="https://img.shields.io/badge/motor-yt--dlp-red">
-  <img alt="Linux e macOS" src="https://img.shields.io/badge/plataforma-Linux%20%7C%20macOS-informational">
+  <a href="https://github.com/Canela-san/GrabIt/releases/latest"><img alt="Versão" src="https://img.shields.io/github/v/release/Canela-san/GrabIt?label=vers%C3%A3o&color=2bbf86"></a>
   <a href="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml"><img alt="Testes" src="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-blue"></a>
+  <img alt="Linux e macOS" src="https://img.shields.io/badge/Linux%20%7C%20macOS-1b5a44">
+  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-1b5a44"></a>
 </p>
 
 <p align="center">
-  <strong>Português</strong> · <a href="README.en.md">English</a>
+  <a href="#instalação">Instalação</a> ·
+  <a href="#primeiros-passos">Primeiros passos</a> ·
+  <a href="#opções">Opções</a> ·
+  <a href="#configuração">Configuração</a> ·
+  <a href="#problemas-comuns">Problemas comuns</a> ·
+  <a href="README.en.md"><strong>English</strong></a>
 </p>
 
 <p align="center">
   <img src="assets/demo.png" alt="Painel do GrabIt baixando vários vídeos ao mesmo tempo" width="860">
 </p>
 
-## Por que o GrabIt?
+## Destaques
 
-- **Qualidade máxima, sempre.** Pega o melhor vídeo e o melhor áudio disponíveis (4K, 60 fps, HDR, som 5.1 — o que existir) e junta tudo num MKV, sem recomprimir nada. E nunca entrega um vídeo incompleto: se faltar um pedaço, o download falha e recomeça do zero.
-- **Qualquer site.** Funciona com tudo o que o yt-dlp suporta: milhares de sites, playlists, canais e páginas com vídeo embutido.
-- **Em lote e em paralelo.** Você entrega uma lista de links; ele baixa vários vídeos ao mesmo tempo, cada um com várias conexões.
-- **Painel ao vivo.** Progresso, velocidade, tempo restante e a qualidade de cada download, uma estimativa de quanto falta para o lote inteiro, sem a enxurrada de texto do yt-dlp. No fim, cada vídeo mostra o que *realmente* foi gravado (lido do arquivo com `ffprobe`).
-- **Tudo dentro do arquivo.** Legendas, capa, capítulos e metadados vão embutidos no MKV.
-- **Resiliente.** Falhas passageiras ganham nova tentativa automática e os erros vêm explicados em português (ou em inglês, se preferir).
-- **Não baixa duas vezes.** Cada vídeo baixado entra num histórico; na próxima vez ele é pulado na hora, sem acessar o site nem mexer no arquivo — mesmo que você já o tenha movido para outra pasta.
+- **Qualidade máxima.** O melhor vídeo e o melhor áudio que o site tem (4K, 60 fps, HDR, som 5.1), juntos num MKV, sem recomprimir nada. Se faltar um pedaço, o download recomeça: vídeo incompleto nunca chega.
+- **Qualquer site.** Tudo o que o yt-dlp suporta: milhares de sites, playlists e canais. Onde ele não chega sozinho (verificação anti-robô ou de idade, player em JavaScript), o GrabIt abre um navegador para você.
+- **Em lote e em paralelo.** Uma lista de links, vários vídeos ao mesmo tempo, várias conexões por vídeo, no ritmo que cada site aguenta.
+- **Painel ao vivo.** Progresso, velocidade e tempo restante de cada download e do lote inteiro. No fim, o que foi gravado de verdade, lido do arquivo.
+- **A lista se organiza sozinha.** Os baixados e os que falharam viram seções do próprio `links.txt`, com o seu comentário intacto.
+- **Nunca baixa duas vezes.** O histórico pula o que já veio, mesmo que você tenha movido o arquivo. Legendas, capa, capítulos e metadados vão dentro do vídeo.
 
 ## Instalação
 
-```bash
-git clone https://github.com/Canela-san/GrabIt.git
-cd GrabIt
-bash grabit.sh --instalar
-```
-
-No Debian, no Ubuntu, no Pop!_OS e em derivados, pelo `apt`:
+**Debian, Ubuntu, Pop!_OS e derivados**
 
 ```bash
 curl -fsSL https://canela-san.github.io/GrabIt/grabit.gpg | sudo tee /usr/share/keyrings/grabit.gpg > /dev/null
 echo "deb [signed-by=/usr/share/keyrings/grabit.gpg] https://canela-san.github.io/GrabIt stable main" | sudo tee /etc/apt/sources.list.d/grabit.list
-sudo apt update
-sudo apt install grabit
+sudo apt update && sudo apt install grabit
 grabit install
 ```
 
-Depois, o GrabIt se atualiza junto com o resto do sistema: `sudo apt update && sudo apt upgrade`. O `grabit install` traz o yt-dlp mais novo, que o do `apt` costuma ficar para trás, e o `grabit update` continua cuidando dele, do Deno e do FFmpeg.
+**macOS, pelo Homebrew**
 
-Ou, sem o Git, só a versão publicada mais nova:
+```bash
+brew tap Canela-san/grabit https://github.com/Canela-san/GrabIt
+brew trust canela-san/grabit && brew install grabit
+```
+
+**Qualquer outro Linux**
 
 ```bash
 mkdir -p ~/.local/share/grabit
@@ -63,9 +64,16 @@ curl -fsSL https://github.com/Canela-san/GrabIt/releases/latest/download/grabit.
 bash ~/.local/share/grabit/grabit.sh --instalar
 ```
 
-No macOS, pelo Homebrew: `brew tap Canela-san/grabit https://github.com/Canela-san/GrabIt && brew trust canela-san/grabit && brew install grabit`. No Arch Linux, há um `PKGBUILD` em [`packaging/aur`](packaging/README.md).
+No Arch Linux, há um `PKGBUILD` em [`packaging/aur`](packaging/README.md).
 
-O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer coisa. O indispensável é o FFmpeg e o yt-dlp, pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, e o comando `grabit` em `~/.local/bin`. O que só melhora o que o GrabIt consegue fazer é perguntado, um por um:
+O `grabit install` mostra o plano antes de fazer qualquer coisa: o indispensável (FFmpeg e yt-dlp) e, um por um, o que só melhora o GrabIt. Pelo `apt`, o GrabIt se atualiza com o resto do sistema; o `grabit update` cuida do yt-dlp, do Deno e do FFmpeg, que mudam mais rápido.
+
+<details>
+<summary><strong>O que o <code>grabit install</code> instala, e outros jeitos de instalar</strong></summary>
+
+<br>
+
+O indispensável é o FFmpeg e o yt-dlp, pelo gerenciador do seu sistema (apt, dnf, pacman, zypper, apk ou Homebrew) e pelo `pipx`, e o comando `grabit` em `~/.local/bin`. O que só melhora o que o GrabIt consegue fazer é perguntado, um por um:
 
 | Opcional | Para quê | Se você só apertar Enter |
 |---|---|---|
@@ -77,26 +85,17 @@ O `--instalar` confere o que falta e mostra o plano antes de fazer qualquer cois
 
 Para instalar sem perguntas, use `grabit install -y` (ou `--yes`): ele instala tudo. O navegador só entra se não houver nenhum compatível no computador, e aí só o Firefox. Outro navegador, só a pedido: `grabit install chrome` (ou `chromium`, `brave`, `edge`, `firefox`).
 
-Para deixar tudo na versão mais nova de uma vez:
+**Atualizar.** `grabit update` atualiza o GrabIt, o yt-dlp com as dependências dele, o Deno e o FFmpeg (este pelo gerenciador do sistema, pedindo a senha só se houver versão nova) e instala o que estiver faltando, sem perguntar. Só não instala um navegador. O GrabIt vem da **versão publicada mais nova**, que já passou por todos os testes, e o arquivo baixado é conferido antes de trocar o script (soma SHA-256 e assinatura). O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Para seguir tudo o que entra no repositório, assim que entra, use `CANAL_ATUALIZACAO=main` no `grabit.config`. `grabit --versao` mostra a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript).
+
+**Pelo Git:**
 
 ```bash
-grabit update
+git clone https://github.com/Canela-san/GrabIt.git
+cd GrabIt
+bash grabit.sh --instalar
 ```
 
-Ele atualiza o GrabIt, o yt-dlp com as dependências dele, o Deno e o FFmpeg (este pelo gerenciador do sistema, pedindo a senha só se houver versão nova) e instala o que estiver faltando, sem perguntar. Só não instala um navegador.
-
-Todos os comandos valem em português e inglês, com ou sem os traços: `grabit update`, `grabit atualizar`, `grabit --update` e `grabit --atualizar` são a mesma coisa. O mesmo vale para `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `list`/`lista` e `help`/`ajuda`. Só um arquivo de links com o nome de um comando precisa de `./` na frente (`grabit ./update`).
-
-O GrabIt vem da **versão publicada mais nova**, que já passou por todos os testes, e o arquivo baixado é conferido antes de trocar o script (soma SHA-256 e assinatura). O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Para seguir tudo o que entra no repositório, assim que entra, use `CANAL_ATUALIZACAO=main` no `grabit.config`.
-
-Para ver a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript):
-
-```bash
-grabit --versao
-```
-
-<details>
-<summary>Instalação manual</summary>
+**À mão:**
 
 | Programa | Para quê | Como instalar |
 |---|---|---|
@@ -105,38 +104,36 @@ grabit --versao
 | [Deno](https://deno.com) *(recomendado)* | exigido pelo YouTube para liberar as melhores resoluções | veja o site |
 | Bash 4.4+ | rodar o script | já vem no Linux · no macOS: `brew install bash` |
 
-E, para usar o comando `grabit` em qualquer pasta:
+E, para usar o comando `grabit` em qualquer pasta: `ln -s "$PWD/grabit.sh" ~/.local/bin/grabit`.
 
-```bash
-mkdir -p ~/.local/bin
-ln -s "$PWD/grabit.sh" ~/.local/bin/grabit
-```
+Todos os comandos valem em português e inglês, com ou sem os traços: `grabit update`, `grabit atualizar`, `grabit --update` e `grabit --atualizar` são a mesma coisa. O mesmo vale para `install`/`instalar`, `version`/`versao`, `check`/`verificar`, `list`/`lista` e `help`/`ajuda`. Só um arquivo de links com o nome de um comando precisa de `./` na frente (`grabit ./update`).
 
 </details>
 
-## Uso
+## Primeiros passos
 
-Crie um `links.txt` com um link por linha:
+```bash
+grabit https://youtu.be/XXXXXXXXXXX     # um vídeo (ou vários links de uma vez)
+grabit download                         # a lista links.txt da pasta atual
+grabit -C                               # copie links no navegador: eles vão sendo baixados
+grabit ajuda completa                   # todas as opções
+```
+
+O `grabit` sozinho mostra a ajuda: a lista só é baixada quando você pede.
+
+### A lista de links
+
+Um link por linha. Comentários e linhas vazias são ignorados, e dá para anotar no fim da linha:
 
 ```text
-# comentários e linhas vazias são ignorados
 https://www.youtube.com/watch?v=XXXXXXXXXXX
-https://vimeo.com/XXXXXXXXX          # dá para anotar no fim da linha
+https://vimeo.com/XXXXXXXXX          # o do casamento
 https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX
 ```
 
-E rode na mesma pasta:
-
-```bash
-grabit download
-```
-
-O `grabit` sozinho mostra a ajuda: a lista só é baixada quando você pede. Para ver todas as opções, use `grabit ajuda completa`.
-
-Cada link que termina **muda de seção dentro do próprio `links.txt`**: os baixados com sucesso vão para a seção `BAIXADOS`, no fim do arquivo, e os que falharam, para a seção `FALHARAM`, logo acima dela. Nenhum outro arquivo é criado: o `links.txt` guarda tudo. A linha muda de lugar exatamente como você a escreveu, com o seu comentário, e o GrabIt só acrescenta no fim um ✔ (ou um ✖), a data e o título do vídeo (ou o motivo da falha). O `grabit download` pula as duas seções: não perde tempo com o que já foi baixado nem insiste no que acabou de falhar. O que nem chegou a ser baixado (cancelado, adiado porque o site pediu calma, disco cheio) continua em cima, pronto para a próxima vez.
+Cada link que termina **muda de seção dentro do próprio `links.txt`**: o que deu certo vai para a `BAIXADOS`, no fim do arquivo, e o que falhou, para a `FALHARAM`, logo acima. A linha muda de lugar como você a escreveu; o GrabIt só acrescenta um ✔ (ou um ✖), a data e o título (ou o motivo). O `grabit download` pula as duas seções, e o que nem chegou a ser baixado continua em cima.
 
 ```text
-# comentários e linhas vazias são ignorados
 https://vimeo.com/XXXXXXXXX          # este ainda não foi baixado
 
 # ==================== FALHARAM ====================
@@ -147,46 +144,52 @@ https://vimeo.com/YYYYYYYYY  # o show de sábado  ✖ 2026-10-24 · vídeo priva
 # ==================== BAIXADOS ====================
 # Links já baixados com sucesso. O GrabIt ignora tudo até o fim desta seção.
 https://www.youtube.com/watch?v=XXXXXXXXXXX  # ✔ 2026-10-24 · Título do vídeo
-https://www.youtube.com/playlist?list=XXXXXXXXXXXXXXXX  # ✔ 2026-10-24 · 12 vídeos · Aula 1 e outros
 # ================ FIM DOS BAIXADOS ================
 ```
 
-Para tentar de novo os que falharam: `grabit download --repetir`. Ele baixa a lista de cima e a seção `FALHARAM`; o que der certo vai para a `BAIXADOS`, e o que falhar de novo fica na `FALHARAM`, com o motivo novo. O fim de cada execução mostra o comando certo para continuar.
-
-O que vier depois da última linha de fim (`FIM DOS BAIXADOS`) volta a contar como link a baixar, então acrescentar no fim do arquivo funciona (`echo LINK >> links.txt`); na próxima vez, o GrabIt sobe esses links para a lista de cima.
-
-Para mudar links de seção sem garimpar o arquivo:
+Para tentar de novo os que falharam: `grabit download --repetir`. Para mudar links de seção sem garimpar o arquivo, use `grabit lista`:
 
 ```bash
-grabit lista                   # o arquivo por partes (a baixar, FALHARAM, BAIXADOS), com os links numerados
-grabit lista voltar 3 5        # devolve os links 3 e 5 para a lista de baixar, sem a data e a nota
-grabit lista voltar falhas     # devolve todos os da FALHARAM (ou: baixados, tudo)
-grabit lista baixado 4         # marca como baixado, sem baixar (vale também um LINK fora do arquivo)
+grabit lista                   # o arquivo por partes, com os links numerados
+grabit lista voltar 3 5        # devolve os links 3 e 5 para a lista de baixar
+grabit lista baixado 4         # marca como baixado, sem baixar
 grabit lista pular 2           # põe na FALHARAM: o download comum deixa de tentá-lo
+grabit lista organizar         # cada parte no lugar, sem linhas repetidas
+```
+
+<details>
+<summary><strong>Mais sobre a lista</strong></summary>
+
+<br>
+
+```bash
+grabit lista voltar falhas     # devolve todos os da FALHARAM (ou: baixados, tudo)
+grabit lista baixado LINK      # vale também um link que nem está no arquivo
 grabit lista limpar notas      # tira as datas e as notas do GrabIt; cada link fica onde está
 grabit lista limpar falhas     # esvazia a FALHARAM (pede confirmação e guarda links.txt.bak)
 grabit lista limpar baixados   # esvazia a BAIXADOS (idem)
-grabit lista organizar         # cada parte no lugar, sem linhas repetidas
 grabit lista editar            # abre o arquivo no seu editor ($VISUAL, $EDITOR, nano ou vim)
+grabit lista cursos.txt voltar 3   # outro arquivo de links
 ```
 
-Mudar um link de seção mexe só no que o GrabIt escreveu: o ✔ ou o ✖, a data e a nota. **O seu comentário fica como estava**, em qualquer seção, para você continuar reconhecendo o vídeo pelo link. Para ele acompanhar o link, escreva-o na mesma linha (`https://… # o do casamento`): uma linha de comentário sozinha fica onde está. Para outro arquivo de links, diga qual logo depois de `lista`: `grabit lista cursos.txt voltar 3`. O histórico de vídeos não muda: para baixar de novo algo que já foi baixado, rode com `-i`.
+- Mudar um link de seção mexe só no que o GrabIt escreveu: o ✔ ou o ✖, a data e a nota. **O seu comentário fica como estava**, em qualquer seção. Para ele acompanhar o link, escreva-o na mesma linha (`https://… # o do casamento`): uma linha de comentário sozinha fica onde está.
+- O que vier depois da última linha de fim volta a contar como link a baixar, então acrescentar no fim do arquivo funciona (`echo LINK >> links.txt`).
+- O que não chegou a ser baixado (cancelado, adiado porque o site pediu calma, disco cheio) continua na lista de cima, pronto para a próxima vez.
+- Pode editar o arquivo enquanto o GrabIt roda: ele é relido no fim, e o que você acrescentou não se perde. Antes de regravá-lo, o GrabIt guarda uma cópia de como ele estava (`links.txt.grabit-bak`).
+- Em inglês, as seções se chamam `FAILED` e `DOWNLOADED`. O GrabIt reconhece os dois idiomas, então trocar de idioma não bagunça a lista.
+- O histórico de vídeos não muda com a lista: para baixar de novo algo que já foi baixado, rode com `-i`.
 
-> Em inglês, as seções se chamam `FAILED` e `DOWNLOADED`; o GrabIt reconhece os dois idiomas, então trocar de idioma não bagunça a lista.
->
-> Pode editar o arquivo enquanto o GrabIt roda: ele é relido no fim, e o que você acrescentou não se perde. Antes de regravá-lo, o GrabIt guarda uma cópia de como ele estava (`links.txt.grabit-bak`).
+</details>
 
-Mais exemplos:
+### Mais exemplos
 
 ```bash
-grabit https://youtu.be/XXXXXXXXXXX          # links direto no comando
-grabit https://youtu.be/XXXXXXXXXXX -x       # as opções valem antes ou depois dos links
+grabit https://youtu.be/XXXXXXXXXXX -x       # só o áudio (as opções valem antes ou depois dos links)
 grabit -l cursos.txt -o ~/Vídeos/Cursos      # outra lista, outra pasta
 grabit -j 4 -c 8                             # 4 vídeos por vez, 8 conexões cada
 grabit -b firefox                            # usa o login do navegador (vídeos restritos)
-grabit -x -l musicas.txt -o ~/Música         # só o áudio, na melhor qualidade
 grabit -d                                    # separa em pastas: Downloads/site/canal/
-grabit -C                                    # copie links no navegador e eles vão sendo baixados
+grabit -r 1080                               # no máximo 1080p
 cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 ```
 
@@ -200,45 +203,65 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | cancela na hora; arquivos diretos grandes continuam de onde pararam na próxima vez, e o resto recomeça do zero |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | suspende e devolve o terminal; `fg` continua de onde parou |
 
-### Opções
+### No fim, um resumo
+
+<p align="center">
+  <img src="assets/resumo.png" alt="Resumo final do GrabIt" width="860">
+</p>
+
+✔ baixado agora · ↷ já tinha sido baixado, foi pulado · ✖ falhou, com o motivo logo abaixo · ⚠ o vídeo está completo, mas algum detalhe falhou (ex.: converter a capa) · ▾ a melhor versão que o site oferecia estava abaixo de `RESOLUCAO_ALERTA` (às vezes, com login, `-b`, há mais).
+
+Os links da lista que falharam vão para a seção `FALHARAM`, com o motivo, e o GrabIt mostra o comando para tentar de novo. Os passados direto no comando não têm um arquivo onde ficar: voltam no comando sugerido.
+
+## Opções
 
 | Opção | O que faz | Padrão |
 |---|---|---|
 | `-l ARQUIVO` | arquivo com os links (`-` = entrada padrão) | `links.txt` |
 | `-o PASTA` | pasta onde os vídeos são salvos | `./Downloads` |
 | `-j N` | downloads simultâneos | `4` |
+| `-r ALTURA` | resolução máxima (`720`, `1080`, `2160` ou `4k`…) | sem limite |
+| `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
+| `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
+| `-d` | organiza em subpastas por site e canal: `Downloads/youtube.com/Canal/` | — |
+| `-C` | captura: com o GrabIt aberto, todo link que você copiar entra na fila (e é anotado no `links.txt`) | — |
+| `--simular` | mostra o que seria baixado e quanto ocupa, sem baixar nada | — |
+| `--repetir` | tenta de novo também os links da seção `FALHARAM` | — |
+| `-i` | ignora o histórico de baixados e confere arquivo por arquivo | — |
+| `-L pt\|en` | idioma das mensagens: português ou inglês | o do sistema |
+
+<details>
+<summary><strong>Todas as outras opções</strong></summary>
+
+<br>
+
+| Opção | O que faz | Padrão |
+|---|---|---|
 | `-c N` | conexões por vídeo, reguladas por site (veja [Várias conexões](#como-funciona)) | `3` |
 | `-O`, `--original` | mantém o formato do site: `.mp4` fica `.mp4` | — |
 | `-e FORMATO`, `--formato` | salva neste formato: `mkv`, `mp4`, `webm`, `mov`… | `mkv` |
 | `-k CODEC`, `--codec` | recomprime se o vídeo vier em outro: `h264`, `hevc`, `av1`, `vp9`, `mpeg4` | — |
 | `-q VALOR`, `--qualidade` | ao recomprimir: `alta`, `media`, `baixa` ou o número do CRF (menor é melhor) | `alta` |
 | `--gpu[=NOME]`, `--placa` | ao recomprimir, usa a placa de vídeo: `nvenc`, `vaapi`, `qsv`, `videotoolbox`; sem nome, a que houver | CPU |
-| `-r ALTURA` | resolução máxima (`720`, `1080`, `2160` ou `4k`…) | sem limite |
 | `-F` | força: ignora os limites do `grabit.config` e o ritmo automático por site nesta execução | — |
 | `-y` | com `install`: instala tudo sem perguntar | — |
-| `-b NAVEGADOR` | usa os cookies do navegador (`firefox`, `chrome`, `brave`…) | — |
 | `--proxy URL` | passa tudo por um proxy: `http://host:8080` ou `socks5://host:1080` | — |
-| `--simular` | mostra o que seria baixado e quanto ocupa, sem baixar nada | — |
-| `--repetir` | tenta de novo também os links da seção `FALHARAM` | — |
 | `--detalhes` | mostra no início também as ferramentas, os recursos e o histórico | — |
 | `--desde DATA` | só vídeos desde a data (`2026-01-31`) ou a idade (`7d`, `2w`, `3m`, `1y`) | — |
 | `--max N` | no máximo N vídeos por link | — |
 | `--max-tamanho TAM` | pula arquivos maiores que isso (`2G`, `500M`) | — |
 | `-A AGENTE` | usa o User-Agent do navegador, junto com `-b`, em sites com verificação | — |
 | `-p` | se o link for de um vídeo dentro de uma playlist, baixa só o vídeo | — |
-| `-x` | só o áudio: a melhor faixa, no formato original, sem recomprimir | — |
-| `-d` | organiza em subpastas por site e canal: `Downloads/youtube.com/Canal/` | — |
 | `-f` | fila viva: depois da lista, continua aberto baixando o que você acrescentar ao arquivo de links | — |
 | `-U` | upgrade: confere os vídeos já baixados e troca pelos que hoje têm versão melhor no site | — |
-| `-C` | captura: com o GrabIt aberto, todo link que você copiar entra na fila (e é anotado no `links.txt`) | — |
 | `-m` | organiza para Jellyfin, Plex e Kodi: `Canal/Season 2026/`, com `.nfo` e capa ao lado | — |
 | `-u` | em páginas com vários vídeos (prévias, relacionados…), baixa só o principal: o mais longo | — |
 | `-a` | inclui legendas automáticas (as manuais continuam tendo prioridade) | — |
 | `-s` | marca patrocínios e intros como capítulos ([SponsorBlock](https://sponsor.ajay.app)) | — |
-| `-i` | ignora o histórico de baixados e confere arquivo por arquivo | — |
 | `-v` | verificação completa: decodifica cada vídeo inteiro atrás de defeitos | — |
-| `-L pt\|en` | idioma das mensagens: português ou inglês | o do sistema |
 | `-h` | mostra a ajuda (`grabit -L en -h` mostra em inglês) | — |
+
+</details>
 
 ### Acompanhar canais
 
@@ -250,9 +273,7 @@ grabit canais                                                   # a lista
 grabit canais remover 2
 ```
 
-Por padrão, um canal adicionado só traz o que sair **a partir de hoje**, para a primeira vez não baixar anos de vídeos. A busca para no primeiro vídeo que já está no histórico, ou no primeiro mais velho que a data do canal: quase nenhum pedido ao site quando não há nada novo. Serve também para playlists e outros links com vários vídeos.
-
-Para rodar sozinho, com o aviso no celular do `NTFY_TOPICO`, use o cron. A pasta precisa ser um caminho completo:
+Um canal adicionado só traz o que sair **a partir de hoje**, para a primeira vez não baixar anos de vídeos. A busca para no primeiro vídeo que já está no histórico, ou no primeiro mais velho que a data do canal: quase nenhum pedido ao site quando não há nada novo. Serve também para playlists. Para rodar sozinho, com o aviso no celular do `NTFY_TOPICO`, use o cron (a pasta precisa ser um caminho completo):
 
 ```bash
 0 8 * * * grabit canais baixar -d -o "$HOME/Vídeos/Canais"
@@ -260,57 +281,55 @@ Para rodar sozinho, com o aviso no celular do `NTFY_TOPICO`, use o cron. A pasta
 
 ### Sites difíceis
 
-Se o vídeo toca no navegador, dá para baixá-lo, mesmo em sites com verificação anti-robô (como a do Cloudflare) ou com player em JavaScript, onde o yt-dlp sozinho não acha o vídeo. Você continua rodando só `grabit LINK`:
+Se o vídeo toca no navegador, dá para baixá-lo, mesmo com verificação anti-robô (como a do Cloudflare), verificação de idade ou player em JavaScript. Você continua rodando só `grabit LINK` (com `&` ou `?` no link, ponha entre aspas):
 
 ```bash
 grabit 'site.com/player?temporada=7&episodio=1'
 ```
 
-> Se o link tiver `&` ou `?`, ponha entre aspas (o terminal entende esses símbolos de outro jeito) ou use o `links.txt`.
+**O GrabIt abre o navegador sozinho** quando a página só funciona nele. Se aparecer uma verificação, é você quem a faz na janela; ela fica guardada num perfil só do GrabIt (o seu navegador de sempre não muda). Quando a página começa a tocar o vídeo, a janela fecha e o yt-dlp lê a página de novo com a sessão dela: vem o vídeo certo, com o título. Nos próximos links do site, a sessão guardada vale antes de abrir a janela.
 
-**O GrabIt abre o navegador sozinho.** Quando a página só funciona num navegador, uma janela abre nela. Se aparecer uma verificação (anti-robô, de idade), é você quem a faz na janela: ela fica guardada num perfil só do GrabIt (o seu navegador de sempre não muda). Quando a página começa a tocar o vídeo, a janela fecha, e o yt-dlp lê a página de novo com a sessão daquela janela: vem o vídeo certo, com o título dele. Nos próximos links do site, o GrabIt tenta primeiro essa sessão guardada e nem abre a janela enquanto a verificação valer. Se nem com a sessão o yt-dlp achar o vídeo (um player que é um programa da página), vale o que a janela pediu: entre tudo o que a página tocou, o GrabIt fica com o que vem do próprio site ou dura mais, e deixa de fora os anúncios e as prévias (sem som, do tamanho de banner, de outro domínio); o que chegar só conta se for vídeo de verdade. Se o vídeo não começar sozinho, dê play. Vale o que já estiver instalado (Firefox, Chrome, Chromium, Brave, Edge, Vivaldi ou Opera; para escolher, use `PROGRAMA_NAVEGADOR`). Com `USAR_NAVEGADOR=0`, a janela nunca abre. Sem nenhum navegador, restam os dois caminhos abaixo.
+<details>
+<summary><strong>Mais sobre o navegador, a sessão e o cURL copiado</strong></summary>
 
-**Usar a sessão do navegador.** Abra a página, passe pela verificação e rode:
+<br>
 
-```bash
-grabit -b firefox LINK
-```
+Se nem com a sessão o yt-dlp achar o vídeo (um player que é um programa da página), vale o que a janela pediu: entre tudo o que a página tocou, o GrabIt fica com o que vem do próprio site ou dura mais, e deixa de fora os anúncios e as prévias (sem som, do tamanho de banner, de outro domínio); o que chegar só conta se for vídeo de verdade. Se o vídeo não começar sozinho, dê play. Vale o que já estiver instalado (Firefox, Chrome, Chromium, Brave, Edge, Vivaldi ou Opera; para escolher, use `PROGRAMA_NAVEGADOR`). Com `USAR_NAVEGADOR=0`, a janela nunca abre. A memória de cada site fica em `~/.local/share/grabit` (apagar a pasta faz o GrabIt esquecer os métodos e as verificações).
 
-Sites com verificação costumam aceitar os cookies só junto com o User-Agent do navegador em que você passou por ela (no Firefox, ele aparece em `about:support`). Guarde os dois no `grabit.config`, em `COOKIES_NAVEGADOR` e `USER_AGENT`, para não repetir:
-
-```bash
-grabit -b firefox -A "Mozilla/5.0 (…)" LINK
-```
+**Usar a sessão do seu navegador.** Abra a página, passe pela verificação e rode `grabit -b firefox LINK`. Sites com verificação costumam aceitar os cookies só junto com o User-Agent do navegador em que você passou por ela (no Firefox, ele aparece em `about:support`): `grabit -b firefox -A "Mozilla/5.0 (…)" LINK`. Guarde os dois no `grabit.config`, em `COOKIES_NAVEGADOR` e `USER_AGENT`, para não repetir.
 
 **Copiar o pedido do vídeo.** Funciona também quando o yt-dlp não reconhece a página:
 
 1. Abra a página e dê play no vídeo.
 2. Aperte <kbd>F12</kbd>, vá à aba **Rede** e filtre por `m3u8` (ou `mp4`). Se aparecer mais de um, escolha o `master`: ele aponta para o vídeo e para o áudio.
 3. Clique com o direito no pedido e escolha **Copiar como cURL**.
-4. Rode o comando abaixo, que lê a área de transferência:
-
-```bash
-grabit curl
-```
-
-Se preferir, cole o comando copiado depois de `grabit` (as opções do GrabIt vão antes de `curl`) ou use `grabit curl ARQUIVO`:
-
-```bash
-grabit -o ~/Vídeos curl 'https://…/master.m3u8' -H 'Referer: https://…'
-```
+4. Rode `grabit curl`, que lê a área de transferência. Ou cole o comando depois de `grabit` (as opções do GrabIt vão antes de `curl`): `grabit -o ~/Vídeos curl 'https://…/master.m3u8' -H 'Referer: https://…'`.
 
 O comando copiado é só lido, nunca executado. O nome do arquivo vem da página ou, se o navegador não a informar, do caminho do vídeo. Esses links costumam expirar: se falhar, copie de novo. Vídeos protegidos por DRM não são baixados.
 
+</details>
+
 ## Configuração
 
-Os padrões ficam no **`grabit.config`**, ao lado do `grabit.sh`. Ele é criado na primeira execução com todas as opções comentadas: para mudar uma, tire o `#` do começo da linha e edite o valor.
+Os padrões ficam no **`grabit.config`**, ao lado do `grabit.sh`, criado na primeira execução com todas as opções comentadas. Para mudar uma, tire o `#` do começo da linha:
 
 ```ini
-# grabit.config
 PASTA_SAIDA=~/Vídeos/GrabIt
 DOWNLOADS_SIMULTANEOS=3
+RESOLUCAO_MAXIMA=1080
 COOKIES_NAVEGADOR=firefox
+
+[vimeo.com]                 # vale só para os links deste site
+CONEXOES_POR_VIDEO=1
+PAUSA_ENTRE_VIDEOS=3
 ```
+
+A prioridade é **`grabit.config` < variável de ambiente < opção do comando**: `DOWNLOADS_SIMULTANEOS=4 grabit` ou `grabit -j 4` valem só naquela execução, e `grabit --config` mostra os valores em uso e de onde veio cada um. O arquivo fica fora do Git, então atualizar o GrabIt nunca mexe nele; para voltar aos padrões, basta apagá-lo.
+
+<details>
+<summary><strong>Todas as chaves do <code>grabit.config</code></strong></summary>
+
+<br>
 
 | Chave | O que faz | Padrão |
 |---|---|---|
@@ -351,142 +370,90 @@ COOKIES_NAVEGADOR=firefox
 | `NOTIFICAR` | sino e notificação na área de trabalho no fim de lotes de 1 min ou mais (`0` = silêncio) | `1` |
 | `NTFY_TOPICO` | tópico do [ntfy](https://ntfy.sh) (ou URL de um servidor seu) para avisar no celular | — |
 
-A prioridade é: **`grabit.config` < variável de ambiente < opção do comando**. Assim dá para mudar algo só uma vez sem editar o arquivo:
-
-```bash
-DOWNLOADS_SIMULTANEOS=4 grabit    # vale só nesta execução
-grabit -j 4                       # idem, pela opção
-grabit --config                   # mostra os valores em uso e de onde veio cada um
-```
-
-O arquivo fica fora do Git (`.gitignore`), então atualizar o GrabIt nunca mexe nas suas configurações. Para voltar aos padrões, basta apagá-lo: ele é recriado.
-
-### Perfis por site
-
-Uma seção com o nome do site, no fim do `grabit.config`, vale só para os links dele:
-
-```ini
-[youtube.com]
-RESOLUCAO_MAXIMA=1080
-COOKIES_NAVEGADOR=firefox
-
-[cnbr.space]
-CONEXOES_POR_VIDEO=1
-PAUSA_ENTRE_VIDEOS=3
-```
-
-Valem `RESOLUCAO_MAXIMA`, `COOKIES_NAVEGADOR`, `USER_AGENT`, `LIMITE_VELOCIDADE`, `CONEXOES_POR_VIDEO`, `LIMITE_POR_SITE`, `PAUSA_ENTRE_VIDEOS`, `IDIOMAS_LEGENDAS` e `OPCOES_YTDLP`. Uma opção no comando vence o perfil, e o `-F` ignora os limites dele. `grabit --config` mostra os perfis em uso.
-
-### Resolução máxima
-
-Quer economizar espaço? Com `RESOLUCAO_MAXIMA=1080` o GrabIt baixa a **melhor versão até 1080p** de cada vídeo — continua escolhendo o melhor codec, fps e áudio dentro do limite. O limite vale para o lado menor da imagem, então um vídeo vertical de 1080×1920 conta como 1080p. Se um vídeo não tiver nenhuma versão dentro do limite, ele não é baixado: aparece como falha, com o aviso, e vai para a seção `FALHARAM`.
-
-Para uma exceção, use `-F` (forçar): ele ignora os limites do `grabit.config` só naquela execução. Já o `-r` define um limite só para a execução, sem mexer no arquivo.
-
-```bash
-grabit -r 720                       # só desta vez, até 720p
-grabit download --repetir -F        # baixa os que ficaram de fora, na qualidade máxima
-```
-
-> Vídeos baixados com limite entram no histórico normalmente. Para trocá-los depois pela melhor versão, rode `grabit -U -F`.
-
-### Cortesia com os sites
-
-Alguns sites bloqueiam quem baixa muitos vídeos em sequência. O GrabIt já cuida disso sozinho: espalha os downloads entre os sites e ajusta o ritmo de cada um (veja [Como funciona](#como-funciona)). Para ir ainda mais devagar de propósito:
-
-```ini
-LIMITE_POR_SITE=1        # um vídeo por vez de cada site (os de outros sites seguem em paralelo)
-PAUSA_ENTRE_VIDEOS=10    # ~10 a 15 s de pausa antes de cada vídeo
-LIMITE_VELOCIDADE=5M     # no máximo 5 MB/s por download
-```
-
-O cabeçalho mostra os limites em uso, e `-F` desliga todos eles (e a resolução máxima) numa execução, junto com o começo devagar e o intervalo do ritmo automático. Um pedido de calma do site (429) continua valendo.
-
 Também existem `ARQUIVO_HISTORICO` (onde fica o histórico de baixados) e `NO_COLOR` (desliga as cores), só como variáveis de ambiente.
 
-### Qualidade: o que esperar
+**Perfis por site.** Uma seção com o nome do site, no fim do `grabit.config`, vale só para os links dele. Valem `RESOLUCAO_MAXIMA`, `COOKIES_NAVEGADOR`, `USER_AGENT`, `LIMITE_VELOCIDADE`, `CONEXOES_POR_VIDEO`, `LIMITE_POR_SITE`, `PAUSA_ENTRE_VIDEOS`, `IDIOMAS_LEGENDAS` e `OPCOES_YTDLP`. Uma opção no comando vence o perfil, e o `-F` ignora os limites dele.
 
-O GrabIt baixa **a melhor versão que o site entrega**, sem recomprimir. Isso costuma ser igual ou melhor que o que o player escolhe no navegador, que baixa a qualidade conforme a conexão e o tamanho da janela.
+**Resolução máxima.** Com `RESOLUCAO_MAXIMA=1080`, o GrabIt baixa a **melhor versão até 1080p** de cada vídeo, ainda escolhendo o melhor codec, fps e áudio dentro do limite. O limite vale para o lado menor da imagem: um vídeo vertical de 1080×1920 conta como 1080p. Um vídeo sem nenhuma versão dentro do limite não é baixado e vai para a seção `FALHARAM`, com o aviso. `grabit download --repetir -F` baixa esses na qualidade máxima, e `grabit -U -F` troca depois os que vieram com limite pela melhor versão.
 
-O arquivo que quem publicou enviou, quase sempre, não está disponível para ninguém: os sites grandes recomprimem o vídeo ao receber o envio, e é essa versão que todo mundo assiste. Assim, comparada ao envio original, a cópia pode ser inferior; a perda aconteceu no site, não no download.
+**Cortesia com os sites.** O GrabIt já espalha os downloads entre os sites e ajusta o ritmo de cada um (veja [Como funciona](#como-funciona)). Para ir mais devagar de propósito: `LIMITE_POR_SITE=1` (um vídeo por vez de cada site), `PAUSA_ENTRE_VIDEOS=10` (~10 a 15 s antes de cada vídeo) e `LIMITE_VELOCIDADE=5M`. O `-F` desliga todos os limites numa execução, junto com o começo devagar do ritmo automático; um pedido de calma do site (429) continua valendo.
 
-Stream não quer dizer qualidade menor: é vídeo dividido em pedaços. E um arquivo direto (`.mp4`, `.mkv` ou outro) não quer dizer original: muitas vezes é uma versão mais leve, e o endereço não diz qual é o caso. Por isso o GrabIt mede os dois antes de escolher ([Arquivo direto](#como-funciona)). Ele não vê o que só aparece com o vídeo tocando no navegador, a não ser quando a própria página exige o navegador.
+</details>
+
+## Formato e conversão
+
+Sem nenhuma opção, tudo fica em **MKV**, que guarda de tudo: capa, legendas de qualquer tipo, capítulos e os dados do site. A imagem e o som são os mesmos que o site entrega.
+
+```bash
+grabit LINK -O                                  # mantém o formato do site: .mp4 fica .mp4
+grabit LINK -e mp4                              # salva em .mp4 (também vale: webm, mov, avi, ts, flv…)
+grabit LINK -k h264                             # recomprime para H.264 se o vídeo vier em outro codec
+grabit converter video.mkv -e mp4               # troca a extensão de um vídeo já baixado, sem recomprimir
+grabit converter Downloads -e mp4 --substituir  # a pasta inteira, sem deixar os originais
+grabit converter video.mkv -k hevc -q media     # recomprime: arquivo menor, um pouco menos de qualidade
+grabit comparar video-av1.mp4 video-h264.mp4    # quanto dois arquivos do mesmo vídeo diferem aos olhos
+```
+
+<details>
+<summary><strong>Os detalhes de cada formato, da conversão e da comparação</strong></summary>
+
+<br>
 
 ### Formato do arquivo
 
-Sem nenhuma opção, tudo fica em **MKV**, que guarda de tudo: capa, legendas de qualquer tipo, capítulos e os dados do site. A imagem e o som são os mesmos que o site entrega. O único detalhe é que o MKV guarda o tempo de cada quadro arredondado ao milissegundo (a 24 fps, 41 ou 42 ms em vez de 41,667), como a grande maioria dos MKV por aí, inclusive os feitos com o `mkvmerge`.
-
-```bash
-grabit LINK -O            # mantém o formato do site: .mp4 fica .mp4, com o tempo exato de cada quadro
-grabit LINK -e mp4        # salva em .mp4 (também vale: webm, mov, avi, ts, flv…)
-grabit LINK -k h264       # recomprime para H.264 se o vídeo vier em outro codec
-grabit LINK -k h264 -e mp4
-```
+O MKV guarda o tempo de cada quadro arredondado ao milissegundo (a 24 fps, 41 ou 42 ms em vez de 41,667), como a grande maioria dos MKV por aí, inclusive os feitos com o `mkvmerge`. Com `-O`, um `.mp4` fica `.mp4`, com o tempo exato de cada quadro.
 
 Com `-O` e `-e`, os metadados entram se o formato aceitar, e o resumo avisa o que não coube. O `.mp4` guarda título, descrição, data, canal, capítulos, capa e legendas. Quem só o MKV guarda são os dados do site (`info.json`), que o `grabit verificar` usa para achar vídeos incompletos e oferecer baixá-los de novo. Em outros formatos, a capa e as legendas que não couberem ficam ao lado do vídeo. Para deixar um formato como padrão, use `FORMATO_SAIDA` no `grabit.config`.
 
 Com `-k`, o GrabIt prefere a versão do site que já está naquele codec, na maior resolução que houver, e só recomprime se ela não existir: depois que tudo foi baixado, um vídeo por vez. Combine com `-r 1080` para evitar recomprimir um 4K quando o site tem o 1080p no codec pedido.
 
-### Converter um vídeo já baixado
-
-```bash
-grabit converter video.mkv -e mp4               # troca a extensão, sem recomprimir
-grabit converter Downloads -e mp4 --substituir  # a pasta inteira, sem deixar os originais
-grabit converter video.mp4 -k h264              # recomprime: vira video.h264.mp4
-grabit converter video.mkv -k hevc -q media      # arquivo menor, com um pouco menos de qualidade
-grabit converter video.mkv -k h264 --gpu         # pela placa de vídeo: bem mais rápido, arquivo maior
-```
+### Converter
 
 **Trocar a extensão não mexe na qualidade**, quantas vezes for: a imagem e o som são copiados, bit a bit. O que muda é o que cada formato sabe guardar. O GrabIt mantém tudo o que couber, só tira o que for estritamente necessário e avisa o que ficou de fora. Saindo de um MKV para `.mp4` ou `.mov`, também restaura o tempo exato de cada quadro, se o vídeo tiver ritmo constante. Alguns pares não existem sem recomprimir, como H.264 em `.webm`: aí ele explica, e `-k` resolve.
 
-**Recomprimir sempre perde um pouco de qualidade** e pode demorar muito, mas às vezes é o único jeito de tocar o vídeo em certo aparelho. O original só sai com `--substituir`, e nunca antes de o arquivo novo ser conferido. Num vídeo que já está no codec pedido, nada é feito.
+**Recomprimir sempre perde um pouco de qualidade** e pode demorar muito, mas às vezes é o único jeito de tocar o vídeo em certo aparelho. `grabit converter video.mp4 -k h264` vira `video.h264.mp4`; o original só sai com `--substituir`, e nunca antes de o arquivo novo ser conferido. Num vídeo que já está no codec pedido, nada é feito.
 
 A **placa de vídeo** (`--gpu`) é bem mais rápida, mas para a mesma qualidade o arquivo sai maior. Antes de usá-la, o GrabIt faz um teste de um instante: sem placa, ou se ela não fizer esse codec, avisa e segue na CPU. Um vídeo **HDR** recomprimido em H.264 ou MPEG-4 tem as cores convertidas para SDR, para não ficarem lavadas.
 
-### Comparar dois vídeos
+### Comparar
 
-```bash
-grabit comparar video-av1.mp4 video-h264.mp4
-```
+`grabit comparar` diz quanto dois arquivos do mesmo vídeo diferem aos olhos, em vez de só comparar bitrates: mede 5 trechos de 10 s com o VMAF, se o seu ffmpeg tiver `libvmaf`, ou com SSIM e PSNR. A referência é o arquivo com mais dados, e o resultado diz quanto o outro se afasta dela e quanto espaço economiza. Por precisar dos dois arquivos, essa medida não entra na escolha automática do que baixar.
 
-Diz quanto dois arquivos do mesmo vídeo diferem aos olhos, em vez de só comparar bitrates: mede 5 trechos de 10 s com o VMAF, se o seu ffmpeg tiver `libvmaf`, ou com SSIM e PSNR. A referência é o arquivo com mais dados, e o resultado diz quanto o outro se afasta dela e quanto espaço economiza. Por precisar dos dois arquivos, essa medida não entra na escolha automática do que baixar.
+### Qualidade: o que esperar
 
-## No fim, um resumo
+O GrabIt baixa **a melhor versão que o site entrega**, sem recomprimir. Isso costuma ser igual ou melhor que o que o player escolhe no navegador, que baixa a qualidade conforme a conexão e o tamanho da janela. O arquivo que quem publicou enviou, quase sempre, não está disponível para ninguém: os sites grandes recomprimem o vídeo ao receber o envio, e é essa versão que todo mundo assiste.
 
-<p align="center">
-  <img src="assets/resumo.png" alt="Resumo final do GrabIt" width="860">
-</p>
+Stream não quer dizer qualidade menor: é vídeo dividido em pedaços. E um arquivo direto (`.mp4`, `.mkv` ou outro) não quer dizer original: muitas vezes é uma versão mais leve, e o endereço não diz qual é o caso. Por isso o GrabIt mede os dois antes de escolher.
 
-| Símbolo | Significado |
-|---|---|
-| ✔ | baixado agora |
-| ↷ | já tinha sido baixado (pelo histórico ou porque o arquivo já estava na pasta), foi pulado |
-| ✖ | falhou, com o motivo explicado logo abaixo |
-| ⚠ | o vídeo está completo, mas algum detalhe falhou (ex.: converter a capa) |
-| ▾ | baixado, mas a melhor versão que o site oferecia estava abaixo de `RESOLUCAO_ALERTA` (às vezes, com login, `-b`, há mais) |
-
-Os links da lista que falharam vão para a seção `FALHARAM` do próprio arquivo de links, com o motivo, e o GrabIt mostra o comando para tentar de novo (`grabit download --repetir`). Os links passados direto no comando não têm um arquivo onde ficar: voltam no comando sugerido.
+</details>
 
 ## Como funciona
+
+O GrabIt é um único script Bash. O yt-dlp faz o download e o FFmpeg junta e embala; o GrabIt decide o que pedir, a quem e em que ritmo, e confere o que chegou.
+
+<details>
+<summary><strong>Tudo o que acontece por baixo</strong></summary>
+
+<br>
 
 - **Formato:** `bv*+ba/b` do yt-dlp (melhor vídeo + melhor áudio) com saída em **MKV**, que aceita qualquer codec. Nada é recodificado: a imagem é a mesma que o site entrega, quadro a quadro, com um detalhe: o MKV guarda o tempo de cada quadro arredondado ao milissegundo ([Formato do arquivo](#formato-do-arquivo)).
 - **Várias conexões:** em vídeo dividido em pedaços (HLS/DASH), o próprio yt-dlp abre as conexões. Em arquivo único, ele só usa uma, e quem abre mais é o [aria2](https://aria2.github.io) (opcional: o `grabit instalar` oferece). Com 3 conexões, um site real rendeu 3 vezes mais. O número é regulado por site: arquivos abaixo de 40 MB não se dividem; os downloads de um mesmo site somam no máximo o dobro de `-c`; se o site recusar as conexões extras, o download termina nas que sobraram, sem perder nada, e os próximos vão com uma só; quem pediu calma recebe uma só. Como mais conexões nem sempre é mais rápido, depois de alguns segundos uma sonda compara com uma conexão simples e, se ela render mais que o dobro, o download segue sem o aria2. O YouTube, que limita pedidos grandes, vai sempre pelo yt-dlp. `-c 1` desliga.
 - **Arquivo direto:** antes de baixar um stream (HLS/DASH), o GrabIt procura um arquivo de vídeo na oferta do site e na própria página, inclusive em scripts e botões de baixar: `.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.wmv`, `.flv`, `.mpg`, `.ts` e outros, além de um `<video>` ou botão de baixar sem extensão no endereço. Mede até 4 candidatos com o `ffprobe`, a começar pelo que o nome promete ser o original ou a maior resolução. Troca se for o mesmo vídeo (a mesma duração), tiver áudio e for melhor em resolução ou fps. Com a mesma imagem, fica o arquivo, a não ser que ele seja claramente mais leve (menos de 75% do bitrate do stream, descontada a diferença entre codecs): ele pode ser o original de onde o stream saiu, e é um download só em vez de centenas de pedaços. Se a página não abrir no yt-dlp, a procura vem antes de abrir um navegador. Um arquivo citado só na página vem sem o que apenas o site informa (capa, legendas, canal). Num site onde nada aparece três vezes seguidas, a procura para até a próxima execução. `PROCURAR_ARQUIVO=0` desliga; `-x`, `-u`, `-m` e `grabit curl` não procuram.
-- **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um arquivo direto de 50 MiB ou mais que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de energia) **continua de onde parou** na próxima vez, se ainda for o mesmo no site (o GrabIt confere o tamanho e a marca de versão dele; precisa do aria2c). Os interrompidos ficam em `Downloads/.parciais/retomar` por até 14 dias. Um stream **recomeça do zero**: retomar os pedaços pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam continuam na lista de baixar.
-- **A lista de links é regravada de uma vez**, com uma trava para dois GrabIt abertos não apagarem o que o outro gravou e uma cópia de como ela estava em `links.txt.grabit-bak`. Um vídeo passado por engano como lista é recusado: só texto é regravado.
 - **Página com vários vídeos:** num site sem extrator próprio no yt-dlp, cada `<video>` da página vira um item: o vídeo dela, mas também anúncios, prévias de outros vídeos e até pedaços de código com cara de endereço. O GrabIt lê a página uma vez e fica com o dela: o item cujo endereço traz o código do vídeo que está no endereço da página; sem essa pista, o que não tem cara de prévia nem de anúncio; e, entre os que sobram, os que duram pelo menos metade do mais longo (a parte 2 de um vídeo fica; uma prévia de segundos, não). O que não é endereço nunca vira erro. Sobrando um só, o título perde o `(1)` que o yt-dlp põe para separar os itens, e o nome do site no fim (`Título - Site`). Com `-I` em `OPCOES_YTDLP`, valem os itens que você escolher.
 - **Cascata de tentativas:** cada link começa pelo caminho mais rápido e só sobe se precisar: **1)** direto; **2)** com o `Referer`, imitando um navegador quando o `curl-cffi` está instalado e com o ajuste para o erro que deu (IPv4 em falha de rede, uma conexão por vez em pedaços recusados, mais devagar em 429); **3)** pelo navegador, se a página só funcionar nele. Erros que nada resolve (vídeo privado, removido, 404) param logo.
 - **A cascata lembra:** o degrau que funcionou em cada site fica guardado (em `~/.local/share/grabit/metodos.txt`), e os próximos links desse site já começam nele. Numa lista longa, isso evita repetir em todo link o caminho que já se sabe que falha. A memória vence em 30 dias e cai se o método deixar de funcionar.
 - **Distribuição entre os sites:** o GrabIt olha a lista inteira e separa os links por site. Cada vaga vai para o site com menos downloads rodando e, no empate, para o que tem mais links esperando. Com 4 vagas e 4 sites, é um de cada: os links de um site não se amontoam só porque vieram juntos na lista. Enquanto a janela do navegador está ocupada, os links dos outros sites passam na frente.
 - **Proteção contra bloqueio:** cada site começa com um download só e sobe um a cada um que ele aceita (basta o download começar a chegar), com um pequeno intervalo entre os inícios. Se o site pedir calma (429), o limite dele cai pela metade e ele fica sem novos pedidos por 30 s, depois 60, 120… até 10 min, enquanto os outros seguem; o link espera junto, sem gastar uma tentativa. Depois de 4 pedidos de calma, ou de 3 links seguidos recusados, os links que faltam desse site ficam para depois (continuam na lista de baixar), e o resumo mostra quantos foram adiados. A espera vale também para a próxima execução.
 - **Velocidade:** 4 vídeos ao mesmo tempo por padrão. Pedaços recusados seguidas vezes (401, 403, 404, 410) encerram a tentativa em segundos, em vez de segurar a vaga por minutos. Quando você sabe que o site aguenta, `-F` dispensa o começo devagar e o intervalo.
+- **Arquivos temporários** ficam em `Downloads/.parciais` só enquanto o GrabIt roda; o arquivo final, pronto, vai para a pasta. Um arquivo direto de 50 MiB ou mais que não terminou (<kbd>Ctrl</kbd>+<kbd>C</kbd>, erro, queda de energia) **continua de onde parou** na próxima vez, se ainda for o mesmo no site (o GrabIt confere o tamanho e a marca de versão dele; precisa do aria2c). Os interrompidos ficam em `Downloads/.parciais/retomar` por até 14 dias. Um stream **recomeça do zero**: retomar os pedaços pode deixar buracos no vídeo, e aqui a qualidade vem antes da velocidade. Os links que ainda faltavam continuam na lista de baixar.
 - **Progresso salvo:** a cada minuto, os links que terminaram vão para a seção `BAIXADOS` (ou `FALHARAM`). Se a luz acabar no meio de uma lista longa, a próxima vez continua de onde parou. Erros permanentes (vídeo privado, removido, 404) não são repetidos.
+- **A lista de links é regravada de uma vez**, com uma trava para dois GrabIt abertos não apagarem o que o outro gravou e uma cópia de como ela estava em `links.txt.grabit-bak`. Um vídeo passado por engano como lista é recusado: só texto é regravado.
 - **Disco cheio:** o cabeçalho avisa quando a pasta de destino tem menos de 2 GiB livres. Se o disco encher no meio, nenhum download novo começa (os próximos também não caberiam) e os links que faltavam continuam na lista de baixar.
 - **Histórico:** cada vídeo baixado é registrado em `Downloads/.grabit-historico.txt` (site + ID do vídeo). Nas próximas vezes ele é pulado antes de tudo: na maioria dos sites o GrabIt nem precisa abrir a página. Sem o histórico, o yt-dlp abriria a página de novo, baixaria a capa e reescreveria o arquivo inteiro só para concluir que ele já existe. Vídeos baixados antes do histórico existir passam por essa conferência uma única vez e já entram nele.
 - **Fila viva (`-f`):** depois de terminar a lista, o GrabIt continua aberto e confere o arquivo de links a cada 2 segundos: o que você acrescentar (em cima ou no fim do arquivo) entra na fila e começa a baixar. Quando a fila esvazia, os baixados vão para a seção `BAIXADOS` e, se o lote demorou, chega o aviso de término. Sai com <kbd>q</kbd> ou <kbd>Ctrl</kbd>+<kbd>C</kbd>. Só acontece com a opção: sem `-f`, o GrabIt sempre fecha ao terminar.
+- **Captura da área de transferência (`-C`):** com o GrabIt aberto, cada link que você copiar (<kbd>Ctrl</kbd>+<kbd>C</kbd> no navegador) é anotado no fim do `links.txt` e entra na fila — funciona como a fila viva. O que já estava copiado antes de abrir e textos sem link são ignorados. Nada fica rodando em segundo plano: fechou o GrabIt, acabou a captura. Usa `wl-paste` (Wayland), `xclip` ou `xsel` (X11), `pbpaste` (macOS) ou o PowerShell (WSL).
 - **Conferir a coleção (`grabit --verificar [PASTA]`):** decodifica, do começo ao fim, cada vídeo e áudio que já está na pasta de downloads (ou na pasta indicada) e compara a duração com a registrada no `info.json` que o GrabIt embute nos MKV — assim acha arquivos com defeito e downloads incompletos, inclusive os antigos. No fim, oferece baixar de novo os que tiverem problema: o arquivo atual fica guardado com `.com-erros` no nome, o vídeo sai do histórico e o link (guardado no mesmo `info.json`) é baixado de novo, na mesma organização de pastas (`-d` ou `-m`).
 - **Upgrade (`-U`):** para cada link da lista — inclusive os da seção `BAIXADOS` —, compara a melhor versão que o site oferece hoje com o arquivo que já está na pasta (achado pelo `[id]` no nome). Só baixa de novo o que ficou melhor: resolução maior, ou a mesma com mais quadros por segundo ou com HDR. O arquivo antigo só é apagado depois que o novo chega inteiro; se o download falhar ou for cancelado, ele volta. Vídeos que você tirou da pasta são pulados. Útil depois de baixar com limite de resolução, ou quando um site passa a oferecer 4K.
-- **Captura da área de transferência (`-C`):** com o GrabIt aberto, cada link que você copiar (<kbd>Ctrl</kbd>+<kbd>C</kbd> no navegador) é anotado no fim do `links.txt` e entra na fila — funciona como a fila viva. O que já estava copiado antes de abrir e textos sem link são ignorados. Nada fica rodando em segundo plano: fechou o GrabIt, acabou a captura. Usa `wl-paste` (Wayland), `xclip` ou `xsel` (X11), `pbpaste` (macOS) ou o PowerShell (WSL).
 - **Jellyfin, Plex e Kodi (`-m`):** cada canal vira uma série, com uma temporada por ano e episódios nomeados pela data (`Canal/Season 2026/Canal - 2026-10-24 - Título [id].mkv`), formato que os três reconhecem. Ao lado de cada vídeo ficam a capa e um `.nfo` com título, data e descrição, e na pasta do canal um `tvshow.nfo`. Aponte uma biblioteca do tipo *Séries* para a pasta de downloads. Só acontece com a opção, e ela tem prioridade sobre `-d`.
 - **Só áudio (`-x`):** baixa a melhor faixa de som e a guarda no formato em que o site entrega (opus, m4a…), sem recomprimir, com capa, capítulos e metadados. Com `FORMATO_AUDIO=mp3` (ou outro), converte na melhor qualidade. O histórico de áudio é separado (`.grabit-historico-audio.txt`): ter baixado o vídeo não impede de baixar o áudio, e vice-versa.
 - **Verificação completa (`-v`):** depois de baixar, o ffmpeg decodifica o vídeo inteiro, quadro a quadro, com o progresso no painel. Qualquer defeito reprova o arquivo: ele não entra no histórico, fica guardado com `.com-erros` no nome e o vídeo é baixado de novo do zero. Se o defeito vier do próprio site e se repetir, o link vai para a seção `FALHARAM`. Garante o arquivo perfeito, ao custo de CPU e tempo.
@@ -494,14 +461,7 @@ Os links da lista que falharam vão para a seção `FALHARAM` do próprio arquiv
 - **Logs:** a saída completa do yt-dlp para cada link com problema fica em `Downloads/logs/<data>/`.
 - **Terminal:** o painel se adapta à largura da janela (inclusive se você redimensionar no meio), alinha títulos com emoji e caracteres asiáticos e, se a saída for redirecionada para um arquivo, troca o painel por linhas simples, sem cores.
 
-## Dicas
-
-- **Mantenha o yt-dlp atualizado** (`grabit --atualizar`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
-- **Aviso sobre o runtime JavaScript?** O yt-dlp só aceita versões recentes: um Node.js antigo é recusado, e o Bun pode ser novo demais. `grabit --versao` mostra o que está em uso, e o mais garantido é o Deno, que o `grabit --instalar` instala quando nenhum outro é aceito.
-- **Vídeo pede login ou confirmação de idade?** Use `-b firefox` (ou o navegador em que você está logado).
-- **Deixou baixando e saiu?** Com `NTFY_TOPICO=um-nome-dificil` no `grabit.config` e o app do [ntfy](https://ntfy.sh) assinando o mesmo tópico, o celular avisa quando o lote acabar. Só vai o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
-- **Retomar o que falhou:** `grabit download --repetir`.
-- **Apagou um vídeo e quer baixá-lo de novo?** Rode com `-i` (ignora o histórico) ou apague a linha dele em `Downloads/.grabit-historico.txt`.
+</details>
 
 ## Problemas comuns
 
@@ -515,26 +475,24 @@ Os links da lista que falharam vão para a seção `FALHARAM` do próprio arquiv
 | O vídeo não toca na TV ou no celular | Troque a embalagem (`grabit converter video.mkv -e mp4`) e, se não bastar, o codec (`-k h264`) |
 | `Sem espaço no disco` | Libere espaço e rode de novo: só o que faltou é baixado. Interrompidos ficam em `Downloads/.parciais/retomar` |
 | O yt-dlp parou de funcionar num site | `grabit update`: os sites mudam o tempo todo. Se continuar, veja o log em `Downloads/logs` |
+| Algo estranho num site que já funcionou | Apague a memória dos sites (`rm -r ~/.local/share/grabit`) e tente de novo |
 | `grabit: comando não encontrado` | Abra outro terminal. Se continuar, ponha `~/.local/bin` no `PATH` |
 
-### Códigos de saída
+<details>
+<summary><strong>Dicas, códigos de saída e como desinstalar</strong></summary>
 
-Para usar em scripts:
+<br>
 
-| Código | Significado |
-|---|---|
-| `0` | deu tudo certo |
-| `1` | algum link ou arquivo falhou (os da lista ficam na seção `FALHARAM`) |
-| `2` | comando ou valor errado: nada foi feito |
-| `130` | cancelado com <kbd>Ctrl</kbd>+<kbd>C</kbd> |
+- **Mantenha o yt-dlp atualizado** (`grabit update`): os sites mudam o tempo todo. O GrabIt avisa quando a versão instalada está velha.
+- **Aviso sobre o runtime JavaScript?** O yt-dlp só aceita versões recentes: um Node.js antigo é recusado, e o Bun pode ser novo demais. `grabit --versao` mostra o que está em uso, e o mais garantido é o Deno, que o `grabit install` instala quando nenhum outro é aceito.
+- **Deixou baixando e saiu?** Com `NTFY_TOPICO=um-nome-dificil` no `grabit.config` e o app do [ntfy](https://ntfy.sh) assinando o mesmo tópico, o celular avisa quando o lote acabar. Só vai o resumo (quantos baixaram e quantos falharam), nunca os links ou os títulos.
+- **Apagou um vídeo e quer baixá-lo de novo?** Rode com `-i` (ignora o histórico) ou apague a linha dele em `Downloads/.grabit-historico.txt`.
 
-### Desinstalar
+**Códigos de saída**, para usar em scripts: `0` deu tudo certo · `1` algum link ou arquivo falhou (os da lista ficam na seção `FALHARAM`) · `2` comando ou valor errado, nada foi feito · `130` cancelado com <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 
-```bash
-grabit desinstalar
-```
+**Desinstalar:** `grabit desinstalar` mostra a lista do que vai apagar e pede confirmação. Seus vídeos, listas e históricos ficam. O yt-dlp e o FFmpeg também, porque outros programas podem usá-los.
 
-Mostra a lista do que vai apagar e pede confirmação. Seus vídeos, listas e históricos ficam. O yt-dlp e o FFmpeg também, porque outros programas podem usá-los.
+</details>
 
 ## Testes
 
@@ -543,18 +501,10 @@ bash testes/rodar.sh            # todos: sobe um servidor local e baixa vídeos 
 bash testes/rodar.sh --rapido   # sem baixar nada: opções, configuração, traduções e o fluxo com um yt-dlp de mentira
 ```
 
-Nada sai da sua máquina: os vídeos de teste são criados na hora e servidos em `127.0.0.1`. A cada envio, o GitHub Actions roda os testes completos no Ubuntu, os rápidos no macOS e no Bash 4.4, o caminho inteiro do `apt` e o ShellCheck. Antes de publicar uma versão, o macOS também roda os completos, e ela só sai se tudo passar. As seções rodam em paralelo, e os testes do painel rodam num terminal de verdade (pseudo-terminal), com as teclas apertadas de verdade.
-
-## Aviso
-
-O GrabIt é só uma ferramenta. Baixe apenas conteúdo que você tem direito de baixar e respeite os termos de uso de cada site e a lei de direitos autorais do seu país.
-
-## Créditos
-
-Feito sobre o [yt-dlp](https://github.com/yt-dlp/yt-dlp) e o [FFmpeg](https://ffmpeg.org), que fazem o trabalho pesado.
+Nada sai da sua máquina: os vídeos de teste são criados na hora e servidos em `127.0.0.1`. A cada envio, o GitHub Actions roda os testes completos no Ubuntu, os rápidos no macOS e no Bash 4.4, o caminho inteiro do `apt` e o ShellCheck. Antes de publicar uma versão, o macOS também roda os completos, e ela só sai se tudo passar.
 
 ## Licença
 
-Distribuído sob a [licença MIT](LICENSE). Você pode usar, copiar, modificar e redistribuir o GrabIt à vontade, inclusive em projetos comerciais. A única condição é manter o aviso de copyright, com o crédito a **Gabriel Canela ([Canela-san](https://github.com/Canela-san))**, em todas as cópias ou partes substanciais do código.
+[MIT](LICENSE): use, copie, modifique e redistribua à vontade, inclusive em projetos comerciais, mantendo o aviso de copyright com o crédito a **Gabriel Canela ([Canela-san](https://github.com/Canela-san))**. Se o GrabIt te ajudou, um link para este repositório é sempre bem-vindo.
 
-Se o GrabIt te ajudou, um link para este repositório também é sempre bem-vindo.
+Feito sobre o [yt-dlp](https://github.com/yt-dlp/yt-dlp) e o [FFmpeg](https://ffmpeg.org), que fazem o trabalho pesado. O GrabIt é só uma ferramenta: baixe apenas o que você tem direito de baixar e respeite os termos de cada site e a lei de direitos autorais do seu país.
