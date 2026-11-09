@@ -584,6 +584,10 @@ falso f2 -L pt download
 espera "sem --repetir, os da FALHARAM não são tentados" test "$(vezes c.invalid/)" -eq 0
 espera "…o GrabIt diz quantos estão lá" contem f2 "3 link(s) estão na seção FALHARAM"
 espera "…e como tentar" grep -qE 'Para tentar de novo: +.*download --repetir$' f2
+mkdir -p "$D/en"; printf '%s\n' "http://c.invalid/9" > "$D/en/links.txt"
+( cd "$D/en" && STUB_ERRO="HTTP Error 404" falso f1en -L en download && falso f2en -L en download )
+espera "em inglês, o comando sugerido vem com --retry" grep -qE 'To continue: +.*-L en download --retry$' "$D/en/f1en"
+espera "…também o de tentar de novo" grep -qE 'To try again: +.*download --retry$' "$D/en/f2en"
 echo "http://c.invalid/4" >> links.txt         # acrescentado no fim, depois das seções
 falso f3 -L pt download --repetir
 espera "--repetir tenta de novo os da FALHARAM" test "$(vezes c.invalid/1)" -eq 1

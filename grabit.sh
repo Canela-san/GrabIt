@@ -1488,6 +1488,7 @@ idioma_pt() {
     [s_movidos_f]="%d para a seção FALHARAM"
     [s_movidos_f0]="%d link(s) movidos para a seção FALHARAM"
     [cmd_baixar]="download"
+    [op_repetir]="--repetir"
     [ls_baixar]="Para baixar"
     [ls_falhas]="Falharam"
     [ls_baixados]="Baixados"
@@ -2302,6 +2303,7 @@ idioma_en() {
     [s_movidos_f]="%d to the FAILED section"
     [s_movidos_f0]="%d link(s) moved to the FAILED section"
     [cmd_baixar]="download"
+    [op_repetir]="--retry"
     [ls_baixar]="To download"
     [ls_falhas]="Failed"
     [ls_baixados]="Downloaded"
@@ -5154,7 +5156,7 @@ resumo_pendencias() {
     t f_soltos "${#do_cmd[@]}"; printf '  %s⚠%s  %s' "$AMARELO" "$R" "$TXT"
     if (( n_erro_lista == 0 && N_ERRO > 0 )); then t f_logs "$LOG_DIR"; printf '%s\n' "$TXT"; else printf '\n'; fi
   fi
-  if (( n_erro_lista > 0 )); then comando_repetir "${do_cmd[@]}" "${ARGS_LISTA[@]}" --repetir
+  if (( n_erro_lista > 0 )); then comando_repetir "${do_cmd[@]}" "${ARGS_LISTA[@]}" "${T[op_repetir]}"
   else comando_repetir "${do_cmd[@]}" "${ARGS_LISTA[@]}"; fi
   t f_continuar "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
 }
@@ -5604,7 +5606,7 @@ ler_links() {
       elif (( N_NA_SECAO > 1 )); then t nada_n "$N_NA_SECAO" "$FONTE_LINKS"; printf '  %s✔%s %s\n' "$VERDE" "$R" "$TXT"; fi
       if (( N_NA_FALHAS > 0 )); then
         t nada_falhas "$N_NA_FALHAS"; aviso "$TXT"
-        args_da_lista; comando_repetir "${ARGS_LISTA[@]}" --repetir; t f_repetir "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
+        args_da_lista; comando_repetir "${ARGS_LISTA[@]}" "${T[op_repetir]}"; t f_repetir "${CIANO}${FMT}${R}"; printf '%s\n' "$TXT"
       fi
       printf '\n'
       exit 0

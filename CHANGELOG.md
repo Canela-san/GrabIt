@@ -2,6 +2,12 @@
 
 Só o que muda para quem usa. As versões seguem `MAIOR.MENOR.CORREÇÃO`.
 
+## 1.1.1
+
+### Correções
+
+- Em inglês, o comando sugerido para tentar de novo os links que falharam vinha com a opção em português (`--repetir`); agora vem `--retry`.
+
 ## 1.1.0
 
 ### Lista de links
