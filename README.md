@@ -1,12 +1,8 @@
 <p align="center">
-  <img src="assets/icone.svg" alt="" width="128">
-</p>
-
-<h1 align="center">GrabIt</h1>
-
-<p align="center">
-  <strong>Baixe vídeos de qualquer site, em lote, na qualidade máxima.</strong><br>
-  Um script Bash sobre o <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>, com um painel ao vivo no terminal.
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-escuro.svg">
+    <img src="assets/banner-claro.svg" alt="GrabIt: baixe vídeos de qualquer site, em lote, na qualidade máxima" width="634">
+  </picture>
 </p>
 
 <p align="center">
