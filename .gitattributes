@@ -1,0 +1,3 @@
+# Fim de linha LF em qualquer sistema: um clone feito no Windows (para rodar no WSL) não quebra o script
+* text=auto eol=lf
+*.png binary
