@@ -1,0 +1,42 @@
+name: Algo deu errado / Something went wrong
+description: Um download que falhou, um erro, um comportamento estranho. / A failed download, an error, odd behavior.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por relatar. Escreva em português ou em inglês, como preferir.
+        Thanks for reporting. Write in Portuguese or English, whichever you prefer.
+
+        **Antes de enviar / Before sending:** rode `grabit update`; muitos erros de sites somem com o yt-dlp mais novo. / run `grabit update`; many site errors go away with the newest yt-dlp.
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que aconteceu? / What happened?
+      description: O que você esperava e o que veio no lugar. / What you expected and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: comando
+    attributes:
+      label: O comando / The command
+      description: O comando que você rodou e o site (o link exato não é necessário). / The command you ran and the site (the exact link isn't needed).
+      placeholder: "grabit -j 2 download   (site: vimeo.com)"
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostico
+    attributes:
+      label: Saída do `grabit diagnostico` / Output of `grabit diagnostic`
+      description: |
+        Versões, sistema e o fim do último log, com links e cookies apagados. Confira antes de enviar: é público.
+        Versions, system and the end of the last log, with links and cookies removed. Check it before sending: it's public.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: mais
+    attributes:
+      label: Mais alguma coisa? / Anything else?
+      description: Uma captura de tela do painel ajuda muito. / A screenshot of the panel helps a lot.

@@ -1,0 +1,20 @@
+name: Ideia / Idea
+description: Uma função nova ou um jeito melhor de fazer algo. / A new feature or a better way to do something.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: O que você quer fazer? / What do you want to do?
+      description: O problema ou a situação, antes da solução. / The problem or the situation, before the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: ideia
+    attributes:
+      label: Como você imagina? / How do you picture it?
+      description: Um comando, uma opção, uma linha no painel. / A command, an option, a line in the panel.
+  - type: textarea
+    id: hoje
+    attributes:
+      label: E hoje, como você faz? / And today, how do you do it?
