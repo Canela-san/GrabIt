@@ -1,5 +1,5 @@
 # Maintainer: Gabriel Canela (Canela-san)
-pkgname=grabit
+pkgname=grabit-dl
 pkgver=1.1.0
 pkgrel=1
 pkgdesc='Batch video downloader on top of yt-dlp, always at the highest quality'
@@ -7,6 +7,8 @@ arch=('any')
 url='https://github.com/Canela-san/GrabIt'
 license=('MIT')
 depends=('bash' 'curl' 'ffmpeg' 'yt-dlp')
+# No AUR, "grabit" é outro programa, que também instala /usr/bin/grabit
+conflicts=('grabit')
 optdepends=('aria2: direct files over several connections'
             'deno: JavaScript runtime that YouTube needs for the best resolutions'
             'python-curl-cffi: impersonate a browser when a site blocks automatic downloads'

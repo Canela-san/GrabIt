@@ -26,16 +26,23 @@ brew trust canela-san/grabit
 brew install grabit
 ```
 
-## AUR
+## Arch Linux e AUR
+
+No AUR, o nome `grabit` já é de outro programa (que também instala `/usr/bin/grabit`). O pacote do GrabIt se chama `grabit-dl` e declara conflito com o outro. Sem passar pelo AUR, ele já pode ser montado direto daqui:
+
+```bash
+cd packaging/aur
+makepkg -si
+```
 
 O AUR é um repositório à parte, com conta e chave SSH próprias. Para publicar a primeira vez:
 
 ```bash
-git clone ssh://aur@aur.archlinux.org/grabit.git aur-grabit
+git clone ssh://aur@aur.archlinux.org/grabit-dl.git aur-grabit
 cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO aur-grabit/
 cd aur-grabit
 git add PKGBUILD .SRCINFO
-git commit -m "grabit 1.0.0"
+git commit -m "grabit-dl 1.2.0"
 git push
 ```
 

@@ -977,7 +977,7 @@ fi
 
 # ───────────────────────────── Configuração ───────────────────────────────────
 # Onde o GrabIt mora de verdade (seguindo links simbólicos, como ~/.local/bin/grabit):
-# é ali, ao lado do script, que fica o grabit.config.
+# é ali, ao lado do script, que fica o grabit.config (instalado por um pacote, ele vai para ~/.config/grabit).
 resolve_caminho() {                           # resolve_caminho ARQUIVO → CAMINHO_REAL
   local f=$1 alvo dir
   while [[ -L $f ]]; do
@@ -1436,6 +1436,8 @@ idioma_pt() {
     [cmp_pronto]="Autocompletar instalado: vale nos terminais abertos daqui em diante."
     [cmp_zsh]="No zsh, ponha no ~/.zshrc, antes do compinit:  %s"
     [atu_pacote_grabit]="O GrabIt veio de um gerenciador de pacotes: para atualizá-lo, use  %s"
+    [atu_pacote_arch]="O GrabIt veio do pacote grabit-dl: atualize pelo AUR (yay -Syu, paru -Syu) ou monte de novo com makepkg -si em packaging/aur."
+    [atu_pacote_sistema]="O GrabIt veio de um gerenciador de pacotes: atualize por ele."
     [cpv_titulo]="GrabIt · comparação de dois arquivos do mesmo vídeo"
     [cpv_uso]="Diga os dois arquivos: grabit comparar A.mp4 B.mkv"
     [cpv_ilegivel]="Não deu para ler o vídeo de '%s'."
@@ -1464,6 +1466,7 @@ idioma_pt() {
     [des_pronto]="GrabIt desinstalado."
     [des_nada]="Nada para apagar."
     [des_pacote]="O GrabIt foi instalado por um gerenciador de pacotes: use  %s"
+    [des_pacote_sistema]="O GrabIt foi instalado por um gerenciador de pacotes: remova por ele."
     [des_clone]="A pasta do GrabIt continua em %s: apague-a quando quiser."
     [des_resto]="O yt-dlp, o FFmpeg e o resto continuam, porque outros programas podem usá-los. Para tirar o yt-dlp: pipx uninstall yt-dlp"
     [lista_presa]="Outro GrabIt está gravando nesta lista: tente de novo em instantes."
@@ -1825,8 +1828,9 @@ que grabit --atualizar):
   resto recomeça do zero: retomar pedaços de um stream não garante a qualidade. Só os
   interrompidos ficam em Downloads/.parciais/retomar, por até 14 dias.
 
-Configurações permanentes ficam no grabit.config, ao lado do grabit.sh (criado
-na primeira execução, com todos os padrões comentados): grabit --config
+Configurações permanentes ficam no grabit.config, criado na primeira execução
+com todos os padrões comentados, ao lado do grabit.sh (instalado por um pacote:
+~/.config/grabit). Onde ele está e o que vale: grabit --config
 Prioridade: grabit.config < variável de ambiente < opção do comando, ex.:
     DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
 
@@ -2251,6 +2255,8 @@ idioma_en() {
     [cmp_pronto]="Autocompletion installed: it works in terminals opened from now on."
     [cmp_zsh]="On zsh, add this to ~/.zshrc, before compinit:  %s"
     [atu_pacote_grabit]="GrabIt came from a package manager: to update it, use  %s"
+    [atu_pacote_arch]="GrabIt came from the grabit-dl package: update it through the AUR (yay -Syu, paru -Syu) or rebuild it with makepkg -si in packaging/aur."
+    [atu_pacote_sistema]="GrabIt came from a package manager: update it through that."
     [cpv_titulo]="GrabIt · comparing two files of the same video"
     [cpv_uso]="Name the two files: grabit compare A.mp4 B.mkv"
     [cpv_ilegivel]="Couldn't read the video in '%s'."
@@ -2279,6 +2285,7 @@ idioma_en() {
     [des_pronto]="GrabIt uninstalled."
     [des_nada]="Nothing to delete."
     [des_pacote]="GrabIt was installed by a package manager: use  %s"
+    [des_pacote_sistema]="GrabIt was installed by a package manager: remove it through that."
     [des_clone]="The GrabIt folder is still in %s: delete it whenever you like."
     [des_resto]="yt-dlp, FFmpeg and the rest stay, because other programs may use them. To remove yt-dlp: pipx uninstall yt-dlp"
     [lista_presa]="Another GrabIt is writing to this list: try again in a moment."
@@ -2643,8 +2650,9 @@ the same as grabit --atualizar):
   guarantee quality. Only the interrupted ones stay in Downloads/.parciais/retomar,
   for up to 14 days.
 
-Permanent settings live in grabit.config, next to grabit.sh (created on the
-first run, with every default commented out): grabit --config
+Permanent settings live in grabit.config, created on the first run with every
+default commented out, next to grabit.sh (installed from a package:
+~/.config/grabit). Where it is and what's in effect: grabit --config
 Priority: grabit.config < environment variable < command-line option, e.g.:
     DOWNLOADS_SIMULTANEOS=3 grabit        grabit -j 3
 
@@ -6929,7 +6937,10 @@ desinstalar() {
   case $GRABIT_PACOTE in
     brew)    t des_pacote "brew uninstall grabit"; aviso "$TXT"; return 1 ;;
     apt)     t des_pacote "sudo apt remove grabit"; aviso "$TXT"; return 1 ;;
-    sistema) t des_pacote "sudo pacman -R grabit"; aviso "$TXT"; return 1 ;;
+    sistema)
+      if command -v pacman >/dev/null 2>&1; then t des_pacote "sudo pacman -R grabit-dl"; aviso "$TXT"
+      else aviso "${T[des_pacote_sistema]}"; fi
+      return 1 ;;
   esac
   c="$HOME/.local/bin/grabit"
   if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
@@ -7088,7 +7099,10 @@ atualiza_grabit() {
   case $GRABIT_PACOTE in
     brew)    t atu_pacote_grabit "brew upgrade grabit"; printf '    %s\n' "$TXT"; return 1 ;;
     apt)     t atu_pacote_grabit "sudo apt update && sudo apt upgrade"; printf '    %s\n' "$TXT"; return 1 ;;
-    sistema) t atu_pacote_grabit "sudo pacman -Syu"; printf '    %s\n' "$TXT"; return 1 ;;
+    sistema)
+      if command -v pacman >/dev/null 2>&1; then printf '    %s\n' "${T[atu_pacote_arch]}"
+      else printf '    %s\n' "${T[atu_pacote_sistema]}"; fi
+      return 1 ;;
   esac
   [[ $CANAL_ATUALIZACAO == estavel ]] && estavel=1
   if eh_clone_grabit; then

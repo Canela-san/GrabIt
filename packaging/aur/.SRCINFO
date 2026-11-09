@@ -1,4 +1,4 @@
-pkgbase = grabit
+pkgbase = grabit-dl
 	pkgdesc = Batch video downloader on top of yt-dlp, always at the highest quality
 	pkgver = 1.1.0
 	pkgrel = 1
@@ -9,6 +9,7 @@ pkgbase = grabit
 	depends = curl
 	depends = ffmpeg
 	depends = yt-dlp
+	conflicts = grabit
 	optdepends = aria2: direct files over several connections
 	optdepends = deno: JavaScript runtime that YouTube needs for the best resolutions
 	optdepends = python-curl-cffi: impersonate a browser when a site blocks automatic downloads
@@ -20,4 +21,4 @@ pkgbase = grabit
 	sha256sums = b4548baaa79a837cfc063c421696c2cb35d6b75472232c1e353e92814d471a1f
 	sha256sums = a8c15790dc9fd32deddb389200e1554ad5ad6b151ecc79883140323f2c021be2
 
-pkgname = grabit
+pkgname = grabit-dl

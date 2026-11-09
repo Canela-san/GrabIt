@@ -60,7 +60,7 @@ curl -fsSL https://github.com/Canela-san/GrabIt/releases/latest/download/grabit.
 bash ~/.local/share/grabit/grabit.sh --instalar
 ```
 
-No Arch Linux, há um `PKGBUILD` em [`packaging/aur`](packaging/README.md).
+No Arch Linux, o pacote se chama `grabit-dl` (no AUR, `grabit` é outro programa). Para montá-lo e instalá-lo: `git clone https://github.com/Canela-san/GrabIt && cd GrabIt/packaging/aur && makepkg -si`.
 
 O `grabit install` mostra o plano antes de fazer qualquer coisa: o indispensável (FFmpeg e yt-dlp) e, um por um, o que só melhora o GrabIt. Pelo `apt`, o GrabIt se atualiza com o resto do sistema; o `grabit update` cuida do yt-dlp, do Deno e do FFmpeg, que mudam mais rápido.
 
@@ -81,7 +81,7 @@ O indispensável é o FFmpeg e o yt-dlp, pelo gerenciador do seu sistema (apt, d
 
 Para instalar sem perguntas, use `grabit install -y` (ou `--yes`): ele instala tudo. O navegador só entra se não houver nenhum compatível no computador, e aí só o Firefox. Outro navegador, só a pedido: `grabit install chrome` (ou `chromium`, `brave`, `edge`, `firefox`).
 
-**Atualizar.** `grabit update` atualiza o GrabIt, o yt-dlp com as dependências dele, o Deno e o FFmpeg (este pelo gerenciador do sistema, pedindo a senha só se houver versão nova) e instala o que estiver faltando, sem perguntar. Só não instala um navegador. O GrabIt vem da **versão publicada mais nova**, que já passou por todos os testes, e o arquivo baixado é conferido antes de trocar o script (soma SHA-256 e assinatura). O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Para seguir tudo o que entra no repositório, assim que entra, use `CANAL_ATUALIZACAO=main` no `grabit.config`. `grabit --versao` mostra a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript).
+**Atualizar.** `grabit update` atualiza o GrabIt, o yt-dlp com as dependências dele, o Deno e o FFmpeg (este pelo gerenciador do sistema, pedindo a senha só se houver versão nova) e instala o que estiver faltando, sem perguntar. Só não instala um navegador. O GrabIt vem da **versão publicada mais nova**, que já passou por todos os testes, e o arquivo baixado é conferido antes de trocar o script: a soma SHA-256 e, com o `gpg` instalado, a assinatura da versão. O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Para seguir tudo o que entra no repositório, assim que entra, use `CANAL_ATUALIZACAO=main` no `grabit.config`. `grabit --versao` mostra a versão instalada, se há outra mais nova e o que o GrabIt está usando (yt-dlp, FFmpeg, runtime JavaScript).
 
 **Pelo Git:**
 
@@ -307,7 +307,7 @@ O comando copiado é só lido, nunca executado. O nome do arquivo vem da página
 
 ## Configuração
 
-Os padrões ficam no **`grabit.config`**, ao lado do `grabit.sh`, criado na primeira execução com todas as opções comentadas. Para mudar uma, tire o `#` do começo da linha:
+Os padrões ficam no **`grabit.config`**, criado na primeira execução com todas as opções comentadas. Ele fica ao lado do `grabit.sh` ou, se o GrabIt veio de um pacote (apt, Homebrew, Arch), em `~/.config/grabit/grabit.config`; `grabit --config` mostra onde está. Para mudar uma opção, tire o `#` do começo da linha:
 
 ```ini
 PASTA_SAIDA=~/Vídeos/GrabIt

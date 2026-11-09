@@ -60,7 +60,7 @@ curl -fsSL https://github.com/Canela-san/GrabIt/releases/latest/download/grabit.
 bash ~/.local/share/grabit/grabit.sh --install
 ```
 
-On Arch Linux, there's a `PKGBUILD` in [`packaging/aur`](packaging/README.md).
+On Arch Linux, the package is called `grabit-dl` (on the AUR, `grabit` is a different program). To build and install it: `git clone https://github.com/Canela-san/GrabIt && cd GrabIt/packaging/aur && makepkg -si`.
 
 `grabit install` shows the plan before doing anything: the essentials (FFmpeg and yt-dlp) and, one by one, what only makes GrabIt better. Through `apt`, GrabIt updates along with the rest of the system; `grabit update` takes care of yt-dlp, Deno and FFmpeg, which change faster.
 
@@ -81,7 +81,7 @@ The essentials are FFmpeg and yt-dlp, through your system's package manager (apt
 
 To install with no questions, use `grabit install -y` (or `--yes`): it installs everything. The browser only comes in if there's no compatible one on the computer, and then only Firefox. Another browser, only on request: `grabit install chrome` (or `chromium`, `brave`, `edge`, `firefox`).
 
-**Updating.** `grabit update` updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter through the system's package manager, asking for the password only if there's a new version) and installs whatever is missing, without asking. It just doesn't install a browser. GrabIt comes from the **latest published version**, which has already passed every test, and the downloaded file is checked before the script is replaced (SHA-256 sum and signature). What changed in each version is in the [CHANGELOG](CHANGELOG.md). To follow everything that lands in the repository, as soon as it lands, set `CANAL_ATUALIZACAO=main` in `grabit.config`. `grabit --version` shows the installed version, whether there's a newer one and what GrabIt is using (yt-dlp, FFmpeg, JavaScript runtime).
+**Updating.** `grabit update` updates GrabIt, yt-dlp with its dependencies, Deno and FFmpeg (the latter through the system's package manager, asking for the password only if there's a new version) and installs whatever is missing, without asking. It just doesn't install a browser. GrabIt comes from the **latest published version**, which has already passed every test, and the downloaded file is checked before the script is replaced: the SHA-256 sum and, with `gpg` installed, the release signature. What changed in each version is in the [CHANGELOG](CHANGELOG.md). To follow everything that lands in the repository, as soon as it lands, set `CANAL_ATUALIZACAO=main` in `grabit.config`. `grabit --version` shows the installed version, whether there's a newer one and what GrabIt is using (yt-dlp, FFmpeg, JavaScript runtime).
 
 **With Git:**
 
@@ -307,7 +307,7 @@ The copied command is only read, never run. The file name comes from the page or
 
 ## Configuration
 
-Defaults live in **`grabit.config`**, next to `grabit.sh`, created on the first run, in your language, with every option commented out. To change one, remove the `#` at the start of the line:
+Defaults live in **`grabit.config`**, created on the first run, in your language, with every option commented out. It sits next to `grabit.sh` or, if GrabIt came from a package (apt, Homebrew, Arch), in `~/.config/grabit/grabit.config`; `grabit --config` shows where it is. To change an option, remove the `#` at the start of the line:
 
 ```ini
 IDIOMA=en
