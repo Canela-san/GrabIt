@@ -12,7 +12,9 @@ Só uma coisa precisa ser feita à mão, uma vez, pelo dono do projeto, porque q
 bash packaging/apt/criar-chave.sh
 ```
 
-Ele cria a chave, guarda nos segredos do GitHub (`APT_GPG_KEY`), sem deixar cópia, liga o GitHub Pages e publica o repositório. Se um dia a chave vazar, apague o segredo, rode de novo, e quem já instalou precisa baixar a chave nova, com o primeiro comando da instalação.
+Ele cria a chave, guarda nos segredos do GitHub (`APT_GPG_KEY`), sem deixar cópia, liga o GitHub Pages e publica o repositório. A mesma chave assina cada versão publicada (`grabit.sh.asc`), e a parte pública dela vai dentro do `grabit.sh`, em `CHAVE_VERSOES`: é com ela que o `grabit update` confere o que baixou. A CI recusa publicar se as duas não forem a mesma.
+
+Se um dia a chave vazar, apague o segredo, rode de novo e troque `CHAVE_VERSOES` pela chave nova. Quem já instalou precisa baixar a chave nova do apt, com o primeiro comando da instalação, e quem usa o script solto, baixá-lo de novo à mão: o `grabit update` antigo recusa, com razão, um arquivo assinado por outra chave.
 
 Para testar o caminho inteiro numa máquina descartável, como root: `bash packaging/apt/testar.sh`.
 

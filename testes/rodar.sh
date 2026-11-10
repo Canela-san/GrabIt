@@ -678,14 +678,35 @@ VER=$(sed -n 's/^GRABIT_VERSAO=//p' "$G")
 espera "o script diz a própria versão" test -n "$VER"
 espera "…e ela está no CHANGELOG" grep -q "^## $VER" "$RAIZ/CHANGELOG.md"
 soma_de() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
-publica() {                                   # publica VERSÃO: uma versão nova, com a soma e as novidades
+# Uma chave só dos testes assina as versões de mentira, e GRABIT_CHAVE_VERSOES a põe no lugar da do projeto.
+# Sem o gpg (ou se ele não conseguir criar a chave), o GrabIt é testado como se não houvesse gpg.
+GPG_T=""
+if command -v gpg >/dev/null 2>&1; then
+  GPG_T="$D/gpg"; mkdir -p "$GPG_T"; chmod 700 "$GPG_T"
+  if gpg --homedir "$GPG_T" --batch --quiet --pinentry-mode loopback --passphrase '' \
+       --quick-generate-key 'GrabIt Testes <testes@grabit.invalid>' ed25519 sign never >/dev/null 2>&1; then
+    gpg --homedir "$GPG_T" --batch --armor --export > "$D/chave.asc"
+  else
+    gpgconf --homedir "$GPG_T" --kill all >/dev/null 2>&1; GPG_T=""
+  fi
+fi
+publica() {                                   # publica VERSÃO: uma versão nova, com a soma, a assinatura e as novidades
   { head -n 1 "$G"; echo '[[ -n ${GRABIT_RELANCADO:-} ]] && echo "RELANCADO-COM-O-NOVO"'; tail -n +2 "$G"; } |
     sed "s/^GRABIT_VERSAO=.*/GRABIT_VERSAO=$1/" > pub/grabit.sh
   soma_de pub/grabit.sh > pub/grabit.sh.sha256
+  rm -f pub/grabit.sh.asc
+  [[ -z $GPG_T ]] || gpg --homedir "$GPG_T" --batch --yes --armor --detach-sign -o pub/grabit.sh.asc pub/grabit.sh
   printf '# Mudanças\n\n## %s\n\n- Novidade da versão nova\n\n## %s\n\n- Coisa velha\n' "$1" "$VER" > pub/CHANGELOG.md
 }
 solta() { cp "$G" solto/grabit.sh; }
-atu_pub() { local s=$1; shift; G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" falso "$s" -L pt "$@"; }
+atu_pub() {
+  local s=$1; shift
+  if [[ -n $GPG_T ]]; then
+    G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" GRABIT_CHAVE_VERSOES="$D/chave.asc" falso "$s" -L pt "$@"
+  else
+    G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" GRABIT_GPG=sem-gpg falso "$s" -L pt "$@"
+  fi
+}
 publica 99.0.0; solta
 STUB_TAG=v99.0.0 atu_pub w1 --versao
 espera "--versao mostra a versão" contem w1 "$VER"
@@ -710,6 +731,31 @@ publica 99.0.0; solta
 sed -i.x "s/^GRABIT_VERSAO=.*/GRABIT_VERSAO=98.0.0/" pub/grabit.sh; soma_de pub/grabit.sh > pub/grabit.sh.sha256
 STUB_TAG=v99.0.0 atu_pub u4 update
 espera "o arquivo diz outra versão: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+if [[ -n $GPG_T ]]; then
+  publica 99.0.0; solta
+  { head -n 1 pub/grabit.sh; echo '# mexido depois de assinar'; tail -n +2 pub/grabit.sh; } > pub/mexido
+  mv pub/mexido pub/grabit.sh; soma_de pub/grabit.sh > pub/grabit.sh.sha256
+  STUB_TAG=v99.0.0 atu_pub u9 update
+  espera "assinatura que não confere: não troca, mesmo com a soma certa" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+  espera "…e explica" contem u9 "não é a do GrabIt"
+  publica 99.0.0; solta; rm -f pub/grabit.sh.asc
+  STUB_TAG=v99.0.0 atu_pub u10 update
+  espera "versão sem assinatura, com o gpg: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+  espera "…e explica" contem u10 "sem assinatura"
+  publica 99.0.0; solta
+  STUB_TAG=v99.0.0 G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" falso u11 -L pt update
+  espera "assinada por outra chave que não a do projeto: não troca" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
+  publica 99.0.0; solta
+  STUB_TAG=v99.0.0 G="$D/solto/grabit.sh" STUB_PUBLICADA="$D/pub" STUB_JS="node-22.1.0" GRABIT_GPG=sem-gpg falso u12 -L pt update
+  espera "sem o gpg, troca só pela soma" grep -qx 'GRABIT_VERSAO=99.0.0' solto/grabit.sh
+  espera "…e avisa que só a soma foi conferida" contem u12 "só a soma foi conferida"
+  # A chave que vai dentro do script é a do projeto, e a CI sabe tirá-la de lá do mesmo jeito
+  mkdir -p "$D/gpg2"; chmod 700 "$D/gpg2"
+  sed -n "/^CHAVE_VERSOES='/,/^-----END PGP PUBLIC KEY BLOCK-----'$/p" "$G" | sed "1s/^CHAVE_VERSOES='//; \$s/'\$//" |
+    gpg --homedir "$D/gpg2" --batch --quiet --import >/dev/null 2>&1
+  espera "a chave das versões no script é a do projeto" sh -c "gpg --homedir '$D/gpg2' --batch --with-colons --fingerprint | grep -q '^fpr:.*5C6AD0B8426A210851E1052D7CDEF0480706F310'"
+  gpgconf --homedir "$D/gpg2" --kill all >/dev/null 2>&1
+fi
 publica 0.0.1; solta
 STUB_TAG=v0.0.1 atu_pub u5 update
 espera "versão publicada mais velha: não volta atrás" grep -qx "GRABIT_VERSAO=$VER" solto/grabit.sh
@@ -738,6 +784,7 @@ if command -v git >/dev/null 2>&1; then
   CANAL_ATUALIZACAO=main noclone c3 update
   espera "clone, canal main: vai até o último commit" contem clone/grabit.sh "depois da versão"
 fi
+[[ -z $GPG_T ]] || gpgconf --homedir "$GPG_T" --kill all >/dev/null 2>&1
 
 secao "--atualizar cuida de tudo"
 atu() { HOME="$TMP/casa_a" PATH="$STUB:$GBREW:$TMP/sem:$PATH" G="$D/solto/grabit.sh" roda "$@"; }
@@ -1016,6 +1063,7 @@ EOF
       mkdir -p "$TMP/casa_c" "$TMP/solto"; cp "$G" "$TMP/solto/grabit.sh"
       HOME="$TMP/casa_c" PATH="$STUB:$GAPT:$TMP/sem:$PATH" G="$TMP/solto/grabit.sh" WAYLAND_DISPLAY=wayland-9 STUB_JS="deno-2.9.8" roda ap4 -L pt --update
       espera "--atualizar instala o wl-clipboard no Wayland, mesmo com o xclip" contem "$STUB_LOG" "apt-get install -y wl-clipboard"
+      explica ap4
     fi
   fi
 fi

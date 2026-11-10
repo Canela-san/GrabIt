@@ -31,11 +31,23 @@ jobs:
           sha256sum grabit.sh > grabit.sh.sha256
           v=${GITHUB_REF_NAME#v}
           awk -v v="$v" '$1 == "##" { dentro = ($2 == v); next } dentro' CHANGELOG.md > notas.md
+      - name: Assina com a chave das versões
+        env:
+          CHAVE: ${{ secrets.APT_GPG_KEY }}
+        run: |
+          GNUPGHOME=$(mktemp -d); export GNUPGHOME
+          printf '%s\n' "$CHAVE" | gpg --batch --quiet --import
+          gpg --batch --yes --armor --detach-sign -o grabit.sh.asc grabit.sh
+          # O grabit update confere com a chave que vem dentro do script: tem que ser esta
+          GNUPGHOME=$(mktemp -d); export GNUPGHOME
+          sed -n "/^CHAVE_VERSOES='/,/^-----END PGP PUBLIC KEY BLOCK-----'$/p" grabit.sh |
+            sed "1s/^CHAVE_VERSOES='//; \$s/'\$//" | gpg --batch --quiet --import
+          gpg --batch --verify grabit.sh.asc grabit.sh
       - name: Publica
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" grabit.sh grabit.sh.sha256 CHANGELOG.md \
+          gh release create "$GITHUB_REF_NAME" grabit.sh grabit.sh.sha256 grabit.sh.asc CHANGELOG.md \
             --title "GrabIt ${GITHUB_REF_NAME#v}" --notes-file notas.md
 
   pacotes:

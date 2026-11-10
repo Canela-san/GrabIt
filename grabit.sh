@@ -1259,6 +1259,9 @@ idioma_pt() {
     [atu_baixa_versao]="baixar o GrabIt %s e conferir o arquivo"
     [atu_sem_publicada]="Não deu para saber qual é a versão publicada (sem conexão?). Para seguir o repositório direto, use CANAL_ATUALIZACAO=main."
     [atu_soma]="O arquivo baixado não bate com a soma publicada: nada foi trocado."
+    [atu_assinatura]="A assinatura do arquivo baixado não é a do GrabIt: nada foi trocado."
+    [atu_sem_assinatura]="A versão publicada veio sem assinatura: nada foi trocado."
+    [atu_sem_gpg]="(sem o gpg, só a soma foi conferida; com ele, a assinatura também)"
     [atu_novidades]="Novidades:"
     [ver_nova]="há uma versão mais nova"
     [ver_sem_net]="não deu para conferir (sem conexão?)"
@@ -2078,6 +2081,9 @@ idioma_en() {
     [atu_baixa_versao]="download GrabIt %s and check the file"
     [atu_sem_publicada]="Couldn't tell which version is published (no connection?). To follow the repository directly, use CANAL_ATUALIZACAO=main."
     [atu_soma]="The downloaded file doesn't match the published checksum: nothing was replaced."
+    [atu_assinatura]="The downloaded file's signature isn't GrabIt's: nothing was replaced."
+    [atu_sem_assinatura]="The published version came without a signature: nothing was replaced."
+    [atu_sem_gpg]="(without gpg, only the checksum was checked; with it, the signature too)"
     [atu_novidades]="What's new:"
     [ver_nova]="there's a newer version"
     [ver_sem_net]="couldn't check (no connection?)"
@@ -7071,6 +7077,41 @@ vai_para_tag() {                              # vai_para_tag TAG: só para frent
   git -C "$GRABIT_DIR" fetch --quiet origin "refs/tags/$1:refs/tags/$1" && git -C "$GRABIT_DIR" merge --ff-only --quiet "$1"
 }
 
+# A chave que assina as versões publicadas (a mesma do repositório APT; impressão digital
+# 5C6A D0B8 426A 2108 51E1 052D 7CDE F048 0706 F310). A soma SHA-256 vem do mesmo lugar que o arquivo e só
+# pega um download estragado; a assinatura é que diz que foi o projeto que publicou. GRABIT_CHAVE_VERSOES
+# aponta para outra chave (um fork que publica as próprias versões, ou os testes).
+CHAVE_VERSOES='-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEau3phxYJKwYBBAHaRw8BAQdAuBkVrOcZ3DOzdNanXBIuCFg8FSle6Nryhns1
+hbcwE3m0OUdyYWJJdCBBUFQgPDYyOTk4OTA1K0NhbmVsYS1zYW5AdXNlcnMubm9y
+ZXBseS5naXRodWIuY29tPoiTBBMWCgA7FiEEXGrQuEJqIQhR4QUtfN7wSAcG8xAF
+Amrt6YcCGwMFCwkIBwICIgIGFQoJCAsCBBYCAwECHgcCF4AACgkQfN7wSAcG8xC/
+bgD/exDiY3/eW3uoEQktfY6FmH600GBOX6UwEXY6+nSMiKUA/RPhRKZx+I5Rh/GX
+DSFgpcbwymdvIMFhkUFH/ErFNMEC
+=0mOg
+-----END PGP PUBLIC KEY BLOCK-----'
+
+# confere_assinatura ARQUIVO ASSINATURA → 0 assinado pela chave das versões, 1 não, 2 sem como conferir.
+# O gpg roda numa pasta só para isso, com essa chave e nenhuma outra: a do usuário nem é lida.
+confere_assinatura() {
+  local casa st rc=1 gpg=${GRABIT_GPG:-gpg}
+  command -v "$gpg" >/dev/null 2>&1 || return 2
+  casa=$(mktemp -d "${TMPDIR:-/tmp}/grabit-gpg.XXXXXX") || return 2
+  chmod 700 "$casa"
+  : > "$casa/common.conf"                     # sem o keyboxd: nenhum processo fica rodando depois
+  if { if [[ -n ${GRABIT_CHAVE_VERSOES:-} ]]; then cat -- "$GRABIT_CHAVE_VERSOES"; else printf '%s\n' "$CHAVE_VERSOES"; fi; } |
+       "$gpg" --homedir "$casa" --batch --quiet --no-autostart --import >/dev/null 2>&1; then
+    st=$("$gpg" --homedir "$casa" --batch --no-autostart --status-fd 1 --verify -- "$2" "$1" 2>/dev/null) &&
+      [[ $st == *"[GNUPG:] VALIDSIG "* ]] && rc=0
+  else
+    rc=2                                      # um gpg que não importa nem a chave (antigo demais?)
+  fi
+  command -v gpgconf >/dev/null 2>&1 && gpgconf --homedir "$casa" --kill all >/dev/null 2>&1
+  rm -rf -- "$casa"
+  return "$rc"
+}
+
 soma256() {                                   # soma256 ARQUIVO → SOMA
   local s=""
   if command -v sha256sum >/dev/null 2>&1; then s=$(sha256sum -- "$1" 2>/dev/null)
@@ -7079,15 +7120,24 @@ soma256() {                                   # soma256 ARQUIVO → SOMA
   SOMA=${s%%[[:space:]]*}
 }
 
-# baixa_publicada ARQUIVO VERSÃO: uma página de erro, um download cortado ou um arquivo diferente do
-# publicado nunca substituem o script.
+# baixa_publicada ARQUIVO VERSÃO: uma página de erro, um download cortado, um arquivo diferente do
+# publicado ou, com o gpg, um arquivo sem a assinatura do projeto nunca substituem o script.
 baixa_publicada() {
-  local arq=$1 ver=$2 esperada
+  local arq=$1 ver=$2 esperada rc=2
   curl -fsSL -m 300 "$URL_PUB/download/grabit.sh" -o "$arq" || return 1
   esperada=$(curl -fsSL -m 30 "$URL_PUB/download/grabit.sh.sha256") || return 1
   esperada=${esperada%%[[:space:]]*}
   soma256 "$arq"
   if [[ -z $SOMA || ${SOMA,,} != "${esperada,,}" ]]; then erro "${T[atu_soma]}"; return 1; fi
+  if command -v "${GRABIT_GPG:-gpg}" >/dev/null 2>&1; then
+    if ! curl -fsSL -m 30 "$URL_PUB/download/grabit.sh.asc" -o "$arq.asc" 2>/dev/null; then
+      rm -f -- "$arq.asc"; erro "${T[atu_sem_assinatura]}"; return 1
+    fi
+    confere_assinatura "$arq" "$arq.asc"; rc=$?
+    rm -f -- "$arq.asc"
+    (( rc == 1 )) && { erro "${T[atu_assinatura]}"; return 1; }
+  fi
+  (( rc == 2 )) && printf '    %s%s%s\n' "$DIM" "${T[atu_sem_gpg]}" "$R"
   bash -n "$arq" && grep -q "GrabIt (grabit.sh)" "$arq" && grep -qx "GRABIT_VERSAO=$ver" "$arq" && [[ $(tail -n 1 "$arq") == "exit 0" ]]
 }
 
