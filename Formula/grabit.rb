@@ -16,6 +16,7 @@ class Grabit < Formula
     chmod 0755, "grabit.sh"
     bin.install "grabit.sh" => "grabit"
     generate_completions_from_executable(bin/"grabit", "-L", "en", "completar")
+    (man1/"grabit.1").write Utils.safe_popen_read(bin/"grabit", "-L", "en", "manual")
   end
 
   test do

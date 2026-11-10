@@ -1195,6 +1195,7 @@ secao "Desinstalar"
 D="$TMP/desinstala"; mkdir -p "$D/casa/.local/bin" "$D/casa/.local/share/grabit" "$D/casa/.config/fish/completions" "$D/solto" "$D/Downloads"; cd "$D" || exit 1
 cp "$G" solto/grabit.sh; ln -s "$D/solto/grabit.sh" casa/.local/bin/grabit
 printf 'x\n' > casa/.local/share/grabit/metodos.txt; printf '# GrabIt\n' > casa/.config/fish/completions/grabit.fish
+mkdir -p casa/.local/share/man/man1; printf '.TH GRABIT 1 "" "GrabIt"\n' > casa/.local/share/man/man1/grabit.1
 printf 'x\n' > solto/grabit.config; printf 'http://a.invalid/1\n' > solto/links.txt; printf 'v\n' > Downloads/video.mkv
 des() { HOME="$D/casa" XDG_DATA_HOME="" GRABIT_CONFIG="$D/solto/grabit.config" PATH="$STUB:$PATH" bash "$D/solto/grabit.sh" "$@" > "$S" 2>&1 </dev/null; RC=$?; }
 S=d1 des -L pt desinstalar
@@ -1205,6 +1206,7 @@ S=d2 des -L pt desinstalar -y
 espera "com -y, tira o comando" test ! -e casa/.local/bin/grabit
 espera "…a memória do GrabIt" test ! -e casa/.local/share/grabit
 espera "…o autocompletar" test ! -e casa/.config/fish/completions/grabit.fish
+espera "…a página do man" test ! -e casa/.local/share/man/man1/grabit.1
 espera "…o próprio script e a configuração" test ! -e solto/grabit.sh -a ! -e solto/grabit.config
 espera "…mas não seus vídeos nem suas listas" test -f Downloads/video.mkv -a -f solto/links.txt
 if command -v git >/dev/null 2>&1; then
@@ -1320,6 +1322,36 @@ mkdir -p semfish; printf '#!/bin/sh\nexit 0\n' > semfish/fish; chmod +x semfish/
 HOME="$D/casa" XDG_DATA_HOME="$D/casa/dados" PATH="$D/semfish:$STUB:$GBREW:$TMP/sem:$PATH" STUB_JS="node-22.1.0" roda b4 -L pt install -y
 espera "o instalar põe o autocompletar no lugar" test -f casa/.config/fish/completions/grabit.fish -a -f casa/dados/bash-completion/completions/grabit
 espera "…e avisa" contem b4 "Autocompletar instalado"
+espera "…e a página do man" grep -q '^\.TH GRABIT 1' casa/dados/man/man1/grabit.1
+
+secao "Página do man"
+D="$TMP/manual"; mkdir -p "$D"; cd "$D" || exit 1
+VER_M=$(sed -n 's/^GRABIT_VERSAO=//p' "$G")
+roda m1 -L en manual
+espera "manual: uma página do man" test "$(head -n 1 m1 | cut -c1-12)" = ".TH GRABIT 1"
+espera "…com a versão" contem m1 "GrabIt $VER_M"
+espera "…e a ajuda inteira, com os traços do man" contem m1 '\-\-max\-size'
+roda m2 -L pt manual
+espera "…em português também" contem m2 ".SH SINOPSE"
+if command -v groff >/dev/null 2>&1 && command -v preconv >/dev/null 2>&1; then
+  espera "…sem nenhum aviso do groff" sh -c '! groff -k -man -Tutf8 -ww "$1" 2>&1 >/dev/null | grep -q .' _ m2
+fi
+
+secao "Diagnóstico"
+D="$TMP/diag"; mkdir -p "$D/Downloads/logs/2026-01-01_000000"; cd "$D" || exit 1
+printf '%s\n' "# https://site.example/v/segredo?token=SEGREDO1" "[download] Destination: $TMP/casa/Filme Secreto [ab1].mkv" \
+  "Cookie: s=SEGREDO2" "@@D@@interno" "ERROR: deu errado" > Downloads/logs/2026-01-01_000000/1.log
+falso g1 -L pt diagnostico
+espera "diagnostico: as versões" grep -q '^yt-dlp ' g1
+espera "…e o fim do último log que falhou" contem g1 "ERROR: deu errado"
+espera "…o link vira só o site" contem g1 "https://site.example/…"
+espera "…sem o token" nao_contem g1 "SEGREDO1"
+espera "…sem o cookie" nao_contem g1 "SEGREDO2"
+espera "…sem o nome do arquivo" nao_contem g1 "Filme Secreto"
+espera "…sem a pasta pessoal" nao_contem g1 "$TMP/casa"
+espera "…nem as linhas internas" nao_contem g1 "@@D@@"
+falso g2 -L en diagnostic -o vazio
+espera "diagnostic, em inglês, sem log nenhum" contem g2 "No failure logs in"
 
 secao "Pacotes"
 if [[ -f $RAIZ/packaging/aur/PKGBUILD ]]; then

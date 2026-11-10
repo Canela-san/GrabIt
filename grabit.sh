@@ -1436,6 +1436,42 @@ idioma_pt() {
     [cmp_substituir]="a conversão substitui o original"
     [cmp_todos]="o canal inteiro"
     [cmp_uso]="Diga para qual shell: grabit completar fish, bash ou zsh."
+    [dg_titulo]="Diagnóstico do GrabIt. Links, cookies e nomes de arquivo já saíram; confira o resto antes de publicar."
+    [dg_solto]="arquivo solto"
+    [dg_pacote]="pacote do sistema"
+    [dg_sistema]="Sistema"
+    [dg_idioma]="Idioma"
+    [dg_navegador]="Navegador"
+    [dg_sim]="sim"
+    [dg_perfis]="e %d perfil(is) por site"
+    [dg_log]="Fim do último log que falhou (%s):"
+    [dg_sem_log]="Nenhum log de falha em %s."
+    [man_titulo]="Manual do GrabIt"
+    [man_nome]="NOME"
+    [man_resumo]="baixa vídeos de qualquer site, em lote, na qualidade máxima"
+    [man_sinopse]="SINOPSE"
+    [man_sin1]="[\\fIopções\\fR] \\fILINK\\fR|\\fIARQUIVO\\fR ..."
+    [man_sin2]="\\fIcomando\\fR [\\fIopções\\fR]"
+    [man_descricao]="DESCRIÇÃO"
+    [man_texto]="O GrabIt é um script Bash sobre o yt\\-dlp e o FFmpeg. Baixa listas de links com vários vídeos ao mesmo tempo, sempre no melhor vídeo e no melhor áudio que o site oferece, com um painel ao vivo no terminal. Os links baixados e os que falharam viram seções do próprio arquivo de links."
+    [man_uso]="OPÇÕES E COMANDOS"
+    [man_arquivos]="ARQUIVOS"
+    [man_arquivos_txt]=".TP
+.I grabit.config
+As configurações: ao lado do grabit.sh ou, instalado por um pacote, em ~/.config/grabit/. \\fBgrabit config\\fR mostra onde está.
+.TP
+.I links.txt
+A lista de links, na pasta atual (\\fB\\-l\\fR escolhe outra), com as seções FALHARAM e BAIXADOS.
+.TP
+.I Downloads/.grabit\\-historico.txt
+O que já foi baixado: é pulado na próxima vez.
+.TP
+.I Downloads/logs/
+O log de cada link que falhou, por 30 dias.
+.TP
+.I ~/.local/share/grabit/
+O que o GrabIt lembra de cada site e o perfil do navegador. Apagar a pasta faz ele começar do zero."
+    [man_veja]="VEJA TAMBÉM"
     [cmp_pronto]="Autocompletar instalado: vale nos terminais abertos daqui em diante."
     [cmp_zsh]="No zsh, ponha no ~/.zshrc, antes do compinit:  %s"
     [atu_pacote_grabit]="O GrabIt veio de um gerenciador de pacotes: para atualizá-lo, use  %s"
@@ -1806,6 +1842,10 @@ que grabit --atualizar):
                      compara dois arquivos do mesmo vídeo: o quanto diferem aos olhos
   completar, completion fish|bash|zsh
                      imprime o autocompletar (o instalar já o põe no lugar)
+  diagnostico, diagnostic
+                     versões, sistema e o fim do último log que falhou, sem links,
+                     cookies nem nomes de arquivo: pronto para um relato de bug
+  manual             imprime a página do man (os pacotes e o instalar já a põem no lugar)
   desinstalar, uninstall
                      tira o que o GrabIt pôs no sistema; vídeos e listas ficam
   ajuda, help        mostra esta ajuda
@@ -2258,6 +2298,42 @@ idioma_en() {
     [cmp_substituir]="conversion replaces the original"
     [cmp_todos]="the whole channel"
     [cmp_uso]="Say which shell: grabit completion fish, bash or zsh."
+    [dg_titulo]="GrabIt diagnostic. Links, cookies and file names are already out; check the rest before posting."
+    [dg_solto]="standalone file"
+    [dg_pacote]="system package"
+    [dg_sistema]="System"
+    [dg_idioma]="Language"
+    [dg_navegador]="Browser"
+    [dg_sim]="yes"
+    [dg_perfis]="and %d per-site profile(s)"
+    [dg_log]="End of the last failed log (%s):"
+    [dg_sem_log]="No failure logs in %s."
+    [man_titulo]="GrabIt Manual"
+    [man_nome]="NAME"
+    [man_resumo]="download videos from any site, in batches, at the highest quality"
+    [man_sinopse]="SYNOPSIS"
+    [man_sin1]="[\\fIoptions\\fR] \\fILINK\\fR|\\fIFILE\\fR ..."
+    [man_sin2]="\\fIcommand\\fR [\\fIoptions\\fR]"
+    [man_descricao]="DESCRIPTION"
+    [man_texto]="GrabIt is a Bash script on top of yt\\-dlp and FFmpeg. It downloads lists of links with several videos at once, always at the best video and audio the site offers, with a live panel in the terminal. Downloaded and failed links become sections of the link file itself."
+    [man_uso]="OPTIONS AND COMMANDS"
+    [man_arquivos]="FILES"
+    [man_arquivos_txt]=".TP
+.I grabit.config
+Settings: next to grabit.sh or, when installed from a package, in ~/.config/grabit/. \\fBgrabit config\\fR shows where it is.
+.TP
+.I links.txt
+The link list, in the current folder (\\fB\\-l\\fR picks another), with the FAILED and DOWNLOADED sections.
+.TP
+.I Downloads/.grabit\\-historico.txt
+What was already downloaded: skipped next time.
+.TP
+.I Downloads/logs/
+The log of each link that failed, kept for 30 days.
+.TP
+.I ~/.local/share/grabit/
+What GrabIt remembers about each site and the browser profile. Deleting the folder makes it start from scratch."
+    [man_veja]="SEE ALSO"
     [cmp_pronto]="Autocompletion installed: it works in terminals opened from now on."
     [cmp_zsh]="On zsh, add this to ~/.zshrc, before compinit:  %s"
     [atu_pacote_grabit]="GrabIt came from a package manager: to update it, use  %s"
@@ -2627,6 +2703,10 @@ the same as grabit --atualizar):
                      compare two files of the same video: how much they differ to the eye
   completion, completar fish|bash|zsh
                      print the autocompletion (install already puts it in place)
+  diagnostic, diagnostico
+                     versions, system and the end of the last failed log, without links,
+                     cookies or file names: ready for a bug report
+  manual             print the man page (packages and install already put it in place)
   uninstall, desinstalar
                      remove what GrabIt put on the system; videos and lists stay
   help, ajuda        show this help
@@ -2893,12 +2973,15 @@ palavra_comando() {
     canais|channels)                  COMANDO=canais ;;
     completar|completion)             COMANDO=completar ;;
     comparar|compare)                 COMANDO=comparar ;;
+    diagnostico|diagnóstico|diagnostic) COMANDO=diagnostico ;;
+    manual)                           COMANDO=manual ;;
     seguir|follow)                    COMANDO=canais; SEGUIR=1 ;;
     *) return 1 ;;
   esac
 }
 PALAVRAS_COMANDO=(baixar download lista list config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
-  versao version curl converter convert canais channels seguir follow completar completion comparar compare)
+  versao version curl converter convert canais channels seguir follow completar completion comparar compare
+  diagnostico diagnostic manual)
 
 # sugere_comando PALAVRA → FMT: o comando que a pessoa provavelmente quis digitar. Um comando digitado
 # errado ("converte") nunca é um link: melhor dizer logo do que tentar baixar.
@@ -6950,7 +7033,8 @@ desinstalar() {
   esac
   c="$HOME/.local/bin/grabit"
   if [[ -L $c ]] && [[ $c -ef $GRABIT_SCRIPT ]]; then lista+=("$c"); fi
-  for c in "$HOME/.config/fish/completions/grabit.fish" "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/grabit" "$HOME/.zsh/completions/_grabit"; do
+  for c in "$HOME/.config/fish/completions/grabit.fish" "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/grabit" "$HOME/.zsh/completions/_grabit" \
+           "${XDG_DATA_HOME:-$HOME/.local/share}/man/man1/grabit.1"; do
     [[ -f $c ]] && grep -qs 'GrabIt' "$c" && lista+=("$c")
   done
   [[ -d $dados ]] && lista+=("$dados")
@@ -8091,7 +8175,98 @@ instala_completar() {
     if [[ ! -e $f ]]; then novo=1; t cmp_zsh "${CIANO}fpath+=~/.zsh/completions${R}"; printf '  %s\n' "$TXT"; fi
     mkdir -p "${f%/*}" && gera_completar zsh > "$f"
   fi
+  f="$dados/man/man1/grabit.1"                 # o man acha sozinho, ao lado do ~/.local/bin que está no PATH
+  mkdir -p "${f%/*}" && gera_manual > "$f"
   (( novo )) && printf '  %s✔%s %s\n' "$VERDE" "$R" "${T[cmp_pronto]}"
+  return 0
+}
+
+# ───────────────────────────── Página de manual (grabit manual) ───────────────
+# gera_manual: a página do man, no idioma atual, feita da própria ajuda. Os pacotes a geram na hora de
+# montar, e o instalar a põe em ~/.local/share/man: "man grabit" funciona de qualquer jeito.
+gera_manual() {
+  local l data bs='\'
+  printf -v data '%(%Y-%m-%d)T' "${SOURCE_DATE_EPOCH:--1}"
+  printf '.TH GRABIT 1 "%s" "GrabIt %s" "%s"\n.nh\n' "$data" "$GRABIT_VERSAO" "${T[man_titulo]}"   # .nh: sem hifenizar
+  printf '.SH %s\ngrabit \\- %s\n' "${T[man_nome]}" "${T[man_resumo]}"
+  printf '.SH %s\n.B grabit\n%s\n.br\n.B grabit\n%s\n' "${T[man_sinopse]}" "${T[man_sin1]}" "${T[man_sin2]}"
+  printf '.SH %s\n%s\n' "${T[man_descricao]}" "${T[man_texto]}"
+  printf '.SH %s\n.nf\n' "${T[man_uso]}"
+  while IFS= read -r l; do
+    l=${l//"$bs"/"$bs"e}; l=${l//-/"$bs"-}     # (a barra entre aspas: o Bash 4.4 e o 5.2 a tratam igual)
+    [[ $l == [.\']* ]] && l="$bs&$l"
+    printf '%s\n' "$l"
+  done <<<"${T[ajuda]}"
+  printf '.fi\n.SH %s\n%s\n' "${T[man_arquivos]}" "${T[man_arquivos_txt]}"
+  printf '.SH %s\nyt\\-dlp(1), ffmpeg(1)\n.PP\nhttps://github.com/Canela\\-san/GrabIt\n' "${T[man_veja]}"
+}
+
+# ───────────────────────────── Diagnóstico (grabit diagnostico) ───────────────
+# limpa_log ARQUIVO: o fim de um log sem o que é seu. Links viram só o site, cookies e tokens somem, o nome
+# dos arquivos baixados some (fica a extensão) e a pasta pessoal vira ~. O resto é o que ajuda a achar o erro.
+limpa_log() {
+  local l
+  grep -av '^@@' -- "$1" 2>/dev/null | tail -n 40 | sed -E \
+    -e 's#(https?|wss?)://([^/[:space:]"'"'"'<>]+)[^[:space:]"'"'"'<>]*#\1://\2/…#g' \
+    -e 's#(([Cc]ookie|[Aa]uthorization|[Ss]et-[Cc]ookie|[Pp]roxy-[Aa]uthorization|[Xx]-[A-Za-z-]*([Tt]oken|[Kk]ey))[[:space:]]*[:=]).*#\1 …#g' \
+    -e 's#(Destination: |into "|Deleting original file |to "|file: )[^"]*(\.[A-Za-z0-9]{1,5})#\1…\2#g' \
+    -e 's#^\[download\] .*( has already been)#[download] …\1#' |
+  while IFS= read -r l; do printf '  %s\n' "${l//"$HOME"/\~}"; done
+}
+
+diagnostico() {
+  local v inst so="" ult n k cfg="" pad
+  linha_dg() { printf -v pad '%*s' $(( 14 - ${#1} )) ''; printf '%s%s %s\n' "$1" "$pad" "$2"; }
+  case $GRABIT_PACOTE in
+    apt|brew) inst=$GRABIT_PACOTE ;;
+    sistema)  inst=${T[dg_pacote]} ;;
+    *) if eh_clone_grabit; then inst="git $(git -C "$GRABIT_DIR" log -1 --format=%h 2>/dev/null)"; else inst=${T[dg_solto]}; fi ;;
+  esac
+  if command -v sw_vers >/dev/null 2>&1; then so="macOS $(sw_vers -productVersion 2>/dev/null)"
+  elif [[ -r /etc/os-release ]]; then so=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"'); fi
+  grep -qi microsoft /proc/version 2>/dev/null && so+=" (WSL)"
+  printf '%s\n\n' "${T[dg_titulo]}"
+  linha_dg "GrabIt" "$GRABIT_VERSAO · $inst"
+  linha_dg "${T[dg_sistema]}" "${so:+$so · }$(uname -sr 2>/dev/null) $(uname -m 2>/dev/null)"
+  linha_dg "Bash" "$BASH_VERSION"
+  linha_dg "${T[dg_idioma]}" "$LINGUA · TERM=${TERM:-?}"
+  v=$(yt-dlp --version 2>/dev/null) || v="—"; linha_dg "yt-dlp" "$v"
+  if [[ $v != — ]] && yt-dlp --list-impersonate-targets 2>/dev/null | grep -i '^[[:space:]]*chrome' | grep -viq unavailable; then
+    linha_dg "curl_cffi" "${T[dg_sim]}"
+  else
+    linha_dg "curl_cffi" "—"
+  fi
+  v=$(ffmpeg -version 2>/dev/null | awk 'NR==1{print $3}'); linha_dg "ffmpeg" "${v:-—}"
+  v=$(aria2c --version 2>/dev/null | awk 'NR==1{print $3}'); linha_dg "aria2" "${v:-—}"
+  candidatos_js; escolhe_js "$(consulta_js)"
+  if [[ -n $JS_RUNTIME ]]; then v=$JS_RUNTIME; elif [[ -n $JS_RECUSADO ]]; then t js_velho "$JS_RECUSADO"; v=$TXT; else v=${T[js_nenhum]}; fi
+  linha_dg "JavaScript" "$v"
+  if acha_navegador; then v=${NAV_PROG##*/}; else v=—; fi; linha_dg "${T[dg_navegador]}" "$v"
+  v=$(gpg --version 2>/dev/null | awk 'NR==1{print $3}'); linha_dg "gpg" "${v:-—}"
+  # O que veio do grabit.config: os nomes, e o valor só do que não pode ser pessoal
+  for k in "${CHAVES_CONFIG[@]}"; do
+    [[ ${ORIGEM[$k]:-} == config ]] || continue
+    case $k in
+      PASTA_SAIDA|ARQUIVO_LINKS|USER_AGENT|OPCOES_YTDLP|NTFY_TOPICO|PROXY|PROGRAMA_NAVEGADOR) cfg+=" $k" ;;
+      *) cfg+=" $k=${!k}" ;;
+    esac
+  done
+  linha_dg "grabit.config" "${CONFIG_ARQ/#$HOME/\~}"
+  [[ -n $cfg ]] && linha_dg "" "${cfg# }"
+  if (( ${#PERFIL[@]} )); then
+    n=$(printf '%s\n' "${!PERFIL[@]}" | sed 's/|.*//' | sort -u | grep -c '')
+    t dg_perfis "$n"; linha_dg "" "$TXT"
+  fi
+  # O log mais recente de um link que falhou (só os que falham ou dão aviso têm log guardado)
+  ult=$(ls -t -- "$PASTA_SAIDA"/logs/*/*.log 2>/dev/null | head -n 1)
+  printf '\n'
+  if [[ -n $ult ]]; then
+    v=${ult#"$PASTA_SAIDA"/logs/}
+    t dg_log "$v"; printf '%s\n' "$TXT"
+    limpa_log "$ult"
+  else
+    t dg_sem_log "${PASTA_SAIDA/#$HOME/\~}/logs"; printf '%s\n' "$TXT"
+  fi
   return 0
 }
 
@@ -8211,6 +8386,8 @@ case $COMANDO in
   desinstalar) desinstalar; exit $? ;;
   completar) gera_completar "${ARGS_LINKS[0]:-}"; exit $? ;;
   comparar) comparar; exit $? ;;
+  diagnostico) diagnostico; exit $? ;;
+  manual) gera_manual; exit $? ;;
 esac
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM

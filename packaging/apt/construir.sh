@@ -19,7 +19,7 @@ saida=$(cd -- "$saida" && pwd)
 pacote="$saida/pacote"
 mkdir -p "$pacote/DEBIAN" "$pacote/usr/bin" "$pacote/usr/share/doc/grabit" \
   "$pacote/usr/share/bash-completion/completions" "$pacote/usr/share/zsh/vendor-completions" \
-  "$pacote/usr/share/fish/vendor_completions.d"
+  "$pacote/usr/share/fish/vendor_completions.d" "$pacote/usr/share/man/man1" "$pacote/usr/share/man/pt/man1"
 
 install -m 755 "$script" "$pacote/usr/bin/grabit"
 install -m 644 "$raiz/LICENSE" "$pacote/usr/share/doc/grabit/copyright"
@@ -32,6 +32,11 @@ printf '#compdef grabit\neval "$(grabit completar zsh)"\n' > "$pacote/usr/share/
 printf 'grabit completar fish | source\n' > "$pacote/usr/share/fish/vendor_completions.d/grabit.fish"
 chmod 644 "$pacote"/usr/share/bash-completion/completions/grabit "$pacote"/usr/share/zsh/vendor-completions/_grabit \
   "$pacote"/usr/share/fish/vendor_completions.d/grabit.fish
+
+# A página do man, feita da ajuda do próprio script: em inglês e, para quem usa o sistema em português, em português
+GRABIT_CONFIG=/dev/null bash "$script" -L en manual | gzip -9n > "$pacote/usr/share/man/man1/grabit.1.gz"
+GRABIT_CONFIG=/dev/null bash "$script" -L pt manual | gzip -9n > "$pacote/usr/share/man/pt/man1/grabit.1.gz"
+chmod 644 "$pacote/usr/share/man/man1/grabit.1.gz" "$pacote/usr/share/man/pt/man1/grabit.1.gz"
 
 # O yt-dlp fica de fora de propósito: o do apt costuma estar atrasado, e os sites mudam o tempo todo.
 # Quem instala o mais novo é o "grabit install", pelo pipx.
