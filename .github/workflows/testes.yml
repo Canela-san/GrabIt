@@ -80,15 +80,13 @@ jobs:
   pacote-apt:
     name: Pacote .deb e repositório APT
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
       - name: Instala, atualiza e remove pelo apt
-        # O espelho do Ubuntu na Azure, o mesmo do runner, só para as ferramentas do teste; depois ele
-        # roda sem rede nenhuma (veja o testar.sh)
-        run: |
-          docker run --rm -e GRABIT_ESPELHO_APT=http://azure.archive.ubuntu.com/ubuntu/ \
-            -v "$PWD:/grabit:ro" -w /grabit ubuntu:24.04 bash packaging/apt/testar.sh
+        # No próprio runner, que é descartável e já tem as ferramentas do teste: ele roda sem rede nenhuma
+        # (veja o testar.sh). Fora da CI, o mesmo teste roda num contêiner limpo do Ubuntu.
+        run: sudo bash packaging/apt/testar.sh
 
   bash-minimo:
     # O mínimo que o README promete. O Bash mais novo já é testado no Ubuntu e no macOS, na suíte completa.

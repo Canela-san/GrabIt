@@ -5,10 +5,9 @@
 #
 #    bash packaging/apt/testar.sh
 #
-#  A rede só é usada no começo, para as ferramentas do teste. Depois, o apt só enxerga o repositório
-#  local do GrabIt: um servidor do Ubuntu fora do ar não trava o teste, e o apt upgrade não baixa o
-#  sistema inteiro. GRABIT_ESPELHO_APT troca o servidor do Ubuntu dessa primeira parte (a CI usa o da
-#  Azure, o mesmo do runner).
+#  A rede só é usada no começo, e só se faltar alguma ferramenta do teste. Depois, o apt só enxerga o
+#  repositório local do GrabIt: um servidor do Ubuntu fora do ar não trava o teste, e o apt upgrade não
+#  baixa o sistema inteiro. GRABIT_ESPELHO_APT troca o servidor do Ubuntu dessa primeira parte.
 # ==============================================================================
 set -euo pipefail
 
@@ -17,9 +16,14 @@ export DEBIAN_FRONTEND=noninteractive
 if [[ -n ${GRABIT_ESPELHO_APT:-} && -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
   sed -i -E "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#$GRABIT_ESPELHO_APT#g" /etc/apt/sources.list.d/ubuntu.sources
 fi
-rede=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
-apt-get "${rede[@]}" update -qq
-apt-get "${rede[@]}" install -y -qq --no-install-recommends apt-utils gnupg python3 curl ca-certificates >/dev/null
+# As ferramentas do teste: só o que faltar (um contêiner limpo não tem nenhuma; o runner da CI tem todas)
+falta=0
+for p in apt-ftparchive gpg python3 curl; do command -v "$p" >/dev/null 2>&1 || falta=1; done
+if (( falta )); then
+  rede=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+  apt-get "${rede[@]}" update -qq
+  apt-get "${rede[@]}" install -y -qq --no-install-recommends apt-utils gnupg python3 curl ca-certificates >/dev/null
+fi
 
 trabalho=$(mktemp -d)
 
