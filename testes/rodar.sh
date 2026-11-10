@@ -873,6 +873,15 @@ letra "#compdef grabit" t zsh
 letra "Diagnóstico do GrabIt" E
 letra ".TH GRABIT 1" P
 letra "GrabIt · desinstalação" X
+falso w5 -L pt -V -G
+espera "dois comandos juntos: recusa" codigo "$RC" 2
+espera "…e diz quais" contem w5 "-V e -G não vão juntos"
+falso w6 -L pt --update -K
+espera "…também com os traços" contem w6 "--update e -K não vão juntos"
+falso w7 -L pt -V -h
+espera "a ajuda vence qualquer outro" contem w7 "Uso:  grabit"
+G="$D/solto/grabit.sh" STUB_JS="node-22.1.0" falso w8 -L pt -V --version
+espera "o mesmo comando duas vezes não é erro" contem w8 "cópia sem Git"
 falso w1 -L pt -- update
 espera "depois de -- a palavra não é comando" contem w1 "Nenhum link válido"
 falso w2 -L pt -l update --config
@@ -1348,6 +1357,38 @@ HOME="$D/casa" XDG_DATA_HOME="$D/casa/dados" PATH="$D/semfish:$STUB:$GBREW:$TMP/
 espera "o instalar põe o autocompletar no lugar" test -f casa/.config/fish/completions/grabit.fish -a -f casa/dados/bash-completion/completions/grabit
 espera "…e avisa" contem b4 "Autocompletar instalado"
 espera "…e a página do man" grep -q '^\.TH GRABIT 1' casa/dados/man/man1/grabit.1
+
+secao "Saída para programas (--json)"
+D="$TMP/json"; mkdir -p "$D"; cd "$D" || exit 1
+cat > prog.sh <<'PROG'
+printf '@@P@@1000\0372000\037500\0372\037NA\037NA\037avc1\037720\03730\037mp4\037Um clipe\n'
+sleep 2
+PROG
+jroda() { local s=$1; shift; HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" bash "$G" "$@" > "$s.json" 2> "$s.err"; RC=$?; }
+so_json() {                                   # so_json ARQUIVO: toda linha é um evento JSON válido
+  grep -qv '^{"evento":"' "$1" && return 1
+  if command -v python3 >/dev/null 2>&1; then python3 -c 'import json,sys; [json.loads(l) for l in open(sys.argv[1])]' "$1"; fi
+}
+STUB_PROG="$D/prog.sh" STUB_D=$'@@D@@720\x1f30\x1fSDR\x1fh264\x1faac\x1f31\x1fUm clipe\x1fc1\x1fDownloads/Um clipe.mkv' \
+  jroda j1 -L pt --json http://a.invalid/j1
+espera "--json: a saída padrão só tem eventos JSON" so_json j1.json
+espera "…o início" contem j1.json '{"evento":"inicio","versao":"'
+espera "…o começo do link" contem j1.json '"evento":"comecou","indice":1,"link":"http://a.invalid/j1","tentativa":1'
+espera "…o progresso, em números" contem j1.json '"baixado":1000,"total":2000,"velocidade":500,"eta":2'
+espera "…o arquivo" contem j1.json '"evento":"arquivo","indice":1,"titulo":"Um clipe"'
+espera "…o resultado" contem j1.json '"situacao":"baixado"'
+espera "…e o fim, com o código" contem j1.json '"baixados":1,'
+espera "…que é o último" sh -c 'tail -n 1 "$1" | grep -q "\"evento\":\"fim\".*\"codigo\":0}"' _ j1.json
+espera "…e o que é para gente vai para a saída de erro" contem j1.err "Um clipe"
+espera "…sem o painel" nao_contem j1.err $'\e[?25l'
+STUB_ERRO="HTTP Error 404: Not Found" jroda j2 -L en --json http://a.invalid/j2
+espera "--json: o link que falhou" contem j2.json '"situacao":"falhou"'
+espera "…com o motivo" grep -q '"motivo":"[^"]*404' j2.json
+espera "…e o código 1 no fim" sh -c 'tail -n 1 "$1" | grep -q "\"codigo\":1}"' _ j2.json
+espera "…ainda só JSON" so_json j2.json
+jroda j3 -L pt --json config
+espera "--json com outro comando: recusa" codigo "$RC" 2
+espera "…e explica" contem j3.err "vale só para baixar"
 
 secao "Página do man"
 D="$TMP/manual"; mkdir -p "$D"; cd "$D" || exit 1

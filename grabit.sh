@@ -1435,6 +1435,9 @@ idioma_pt() {
     [cmp_tamanho]="pula arquivos maiores que isso"
     [cmp_substituir]="a conversão substitui o original"
     [cmp_todos]="o canal inteiro"
+    [dois_comandos]="Um comando por vez: %s e %s não vão juntos."
+    [cmp_json]="eventos JSON para outros programas"
+    [json_so_baixar]="A opção --json vale só para baixar: os outros comandos falam com gente."
     [cmp_D]="baixa a lista do links.txt"
     [cmp_G]="mostra as configurações em uso"
     [cmp_I]="instala o que falta"
@@ -1804,6 +1807,8 @@ Uso:  grabit [opções] LINK ou ARQUIVO ...
   --simular     mostra o que seria baixado e quanto ocupa, sem baixar nada
   --repetir     inclui os links da seção FALHARAM
   --detalhes    mostra no início também as ferramentas, os recursos e o histórico
+  --json        para programas: um evento JSON por linha na saída padrão; o resto vai
+                para a saída de erro, sem o painel
   --desde DATA  só vídeos desde a data: 2026-01-31, ou a idade: 7d, 2w, 3m, 1y
   --max N       no máximo N vídeos por link
   --max-tamanho TAM
@@ -2317,6 +2322,9 @@ idioma_en() {
     [cmp_tamanho]="skip files larger than that"
     [cmp_substituir]="conversion replaces the original"
     [cmp_todos]="the whole channel"
+    [dois_comandos]="One command at a time: %s and %s don't go together."
+    [cmp_json]="JSON events for other programs"
+    [json_so_baixar]="The --json option only applies to downloading: the other commands talk to people."
     [cmp_D]="download the links.txt list"
     [cmp_G]="show the settings in use"
     [cmp_I]="install what's missing"
@@ -2686,6 +2694,8 @@ Usage:  grabit [options] LINK or FILE ...
   --simulate    show what would be downloaded and its size, without downloading
   --retry       include the links in the FAILED section
   --details     also show the tools, resources and history at the start
+  --json        for programs: one JSON event per line on standard output; the rest goes
+                to standard error, without the panel
   --since DATE  only videos since the date: 2026-01-31, or the age: 7d, 2w, 3m, 1y
   --max N       at most N videos per link
   --max-size SIZE
@@ -2997,6 +3007,16 @@ if [[ ! -e $CONFIG_ARQ && -w ${CONFIG_ARQ%/*} ]]; then
   printf '%s\n' "${T[modelo_config]}" > "$CONFIG_ARQ" 2>/dev/null && CONFIG_CRIADO=1
 fi
 
+# define_comando NOME COMO-FOI-DITO: um comando por vez. Dois diferentes juntos (grabit -V -G) são um erro claro,
+# em vez de um deles sumir calado; só a ajuda vence qualquer outro (grabit -V -h mostra a ajuda).
+define_comando() {
+  if [[ -n $COMANDO && $COMANDO != "$1" ]]; then
+    if [[ $1 == ajuda || $COMANDO == ajuda ]]; then COMANDO=ajuda; return 0; fi
+    t dois_comandos "$CMD_DITO" "$2"; erro "$TXT"; exit 2
+  fi
+  COMANDO=$1; CMD_DITO=$2
+}
+
 # palavra_comando PALAVRA → COMANDO: os comandos valem nas duas línguas, com ou sem os traços
 palavra_comando() {
   case ${1,,} in
@@ -3051,7 +3071,7 @@ sugere_comando() {
 }
 
 # Comandos longos (--config, --help) saem da lista antes do getopts; depois de "--", nada é comando
-COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; REPETIR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0; DETALHES=0
+COMANDO=""; ARGS_CURTOS=(); SO_LINKS=0; ASSUME_SIM=0; ATUALIZANDO=0; SUBSTITUIR=0; SIMULAR=0; REPETIR=0; SEGUIR=0; CANAL_TODOS=0; CANAIS_BAIXAR=0; AJUDA_COMPLETA=0; DETALHES=0; JSON=0; CMD_DITO=""
 while (( $# )); do
   a=$1; shift
   if (( SO_LINKS )); then ARGS_CURTOS+=("$a"); continue; fi
@@ -3060,8 +3080,9 @@ while (( $# )); do
     --yes|--sim) ASSUME_SIM=1 ;;
     --original|--source) ARGS_CURTOS+=(-O) ;;
     --substituir|--replace) SUBSTITUIR=1 ;;
-    --ajuda-completa|--help-all) COMANDO=ajuda; AJUDA_COMPLETA=1 ;;
+    --ajuda-completa|--help-all) define_comando ajuda "$a"; AJUDA_COMPLETA=1 ;;
     --detalhes|--details) DETALHES=1 ;;
+    --json) JSON=1 ;;
     --simular|--simulate|--dry-run) SIMULAR=1 ;;
     --repetir|--retry) REPETIR=1 ;;
     --todos|--all) CANAL_TODOS=1 ;;
@@ -3094,11 +3115,13 @@ while (( $# )); do
       esac
       shift ;;
     --*)
+      cmd_ant=$COMANDO; COMANDO=""
       if ! palavra_comando "${a#--}"; then
         t opcao_invalida "$a"; erro "$TXT"
         if sugere_comando "$a"; then t cmd_sugestao "$FMT"; printf '%s\n' "$TXT"; else uso; fi
         exit 2
-      fi ;;
+      fi
+      cmd_novo=$COMANDO; COMANDO=$cmd_ant; define_comando "$cmd_novo" "$a" ;;
     *)   ARGS_CURTOS+=("$a") ;;
   esac
 done
@@ -3136,23 +3159,23 @@ while (( $# )); do
       f) FILA_VIVA=1 ;;                  # idem: o GrabIt só fica aberto esperando links se pedido
       C) CAPTURA=1; FILA_VIVA=1 ;;       # idem: só lê a área de transferência se pedido, e só aberto
       U) UPGRADE=1 ;;
-      h) COMANDO=ajuda ;;
+      h) define_comando ajuda -h ;;
       # Os comandos pela letra (fora do comando sugerido para tentar de novo, como o -l)
-      D) COMANDO=baixar; continue ;;
-      G) COMANDO=config; continue ;;
-      I) COMANDO=instalar; continue ;;
-      N) COMANDO=atualizar; continue ;;
-      V) COMANDO=versao; continue ;;
-      K) COMANDO=verificar; continue ;;
-      S) COMANDO=lista; continue ;;
-      T) COMANDO=converter; continue ;;
-      W) COMANDO=canais; continue ;;
-      R) COMANDO=curl; continue ;;
-      M) COMANDO=comparar; continue ;;
-      t) COMANDO=completar; continue ;;
-      E) COMANDO=diagnostico; continue ;;
-      P) COMANDO=manual; continue ;;
-      X) COMANDO=desinstalar; continue ;;
+      D) define_comando baixar -D; continue ;;
+      G) define_comando config -G; continue ;;
+      I) define_comando instalar -I; continue ;;
+      N) define_comando atualizar -N; continue ;;
+      V) define_comando versao -V; continue ;;
+      K) define_comando verificar -K; continue ;;
+      S) define_comando lista -S; continue ;;
+      T) define_comando converter -T; continue ;;
+      W) define_comando canais -W; continue ;;
+      R) define_comando curl -R; continue ;;
+      M) define_comando comparar -M; continue ;;
+      t) define_comando completar -t; continue ;;
+      E) define_comando diagnostico -E; continue ;;
+      P) define_comando manual -P; continue ;;
+      X) define_comando desinstalar -X; continue ;;
       y) ASSUME_SIM=1 ;;
       :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
       *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -3197,6 +3220,13 @@ if [[ $COMANDO == ajuda ]]; then
   case ${ARGS_LINKS[0]:-} in completa|completo|tudo|full|all) AJUDA_COMPLETA=1 ;; esac
   if (( AJUDA_COMPLETA )); then uso_completo; else uso; fi
   exit 0
+fi
+# --json é para quem baixa: os outros comandos falam com gente
+if (( JSON )); then
+  case $COMANDO in
+    ""|baixar|curl|canais) ;;
+    *) erro "${T[json_so_baixar]}"; exit 2 ;;
+  esac
 fi
 if (( UPGRADE && SO_AUDIO )); then aviso "${T[up_audio]}"; UPGRADE=0; fi
 if (( UPGRADE && FILA_VIVA )); then aviso "${T[up_fila]}"; FILA_VIVA=0; CAPTURA=0; fi
@@ -4038,6 +4068,60 @@ desenha() {
   LIVE_H=$n; LIVE_ANT=("${LIVE[@]}"); PERM=(); REDESENHA=0
 }
 
+# ───────────────────────────── Eventos (--json) ───────────────────────────────
+# Com --json, a saída padrão traz só eventos, um objeto JSON por linha, para outro programa (uma interface
+# gráfica, um script) acompanhar o lote: inicio, comecou, progresso, etapa, arquivo, resultado e fim. O que é
+# para gente vai para a saída de erro, em linhas, sem o painel. Os nomes dos campos não mudam com o idioma.
+json_txt() {                                  # json_txt TEXTO → FMT: o texto como string JSON
+  local s=$1 bs='\' q='"'
+  s=${s//"$bs"/"$bs$bs"}; s=${s//"$q"/"$bs$q"}
+  s=${s//$'\n'/"${bs}n"}; s=${s//$'\r'/"${bs}r"}; s=${s//$'\t'/"${bs}t"}
+  s=${s//[[:cntrl:]]/}
+  FMT="$q$s$q"
+}
+
+# evento NOME [CAMPO VALOR]...: os campos de número e de sim/não saem como número e booleano
+evento() {
+  (( JSON )) || return 0
+  local l="{\"evento\":\"$1\"" k v
+  shift
+  while (( $# >= 2 )); do
+    k=$1; v=$2; shift 2
+    case $k in
+      indice|total|baixado|velocidade|eta|tamanho|tentativa|simultaneos|baixados|ja_existiam|falharam|filtrados|adiados|bytes|segundos|codigo)
+        [[ $v =~ ^[0-9]+$ ]] || v=null ;;
+      novo|cancelado)
+        if [[ $v == 1 ]]; then v=true; else v=false; fi ;;
+      *) json_txt "$v"; v=$FMT ;;
+    esac
+    l+=",\"$k\":$v"
+  done
+  printf '%s}\n' "$l" >&4
+}
+
+# eventos_progresso: o que mudou em cada download desde o último evento (uma vez por segundo, no máximo)
+eventos_progresso() {
+  local s idx l baixado total vel eta pidx pn vcod alt fps ext ttl
+  for (( s = 0; s < J; s++ )); do
+    idx=${SLOT_IDX[$s]}
+    (( idx > 0 )) || continue
+    le_log_slot "$s" "$idx"
+    l=${ULT_LINHA[$s]:-}
+    if [[ $l == @@P@@* ]]; then
+      IFS=$SEP read -r baixado total vel eta pidx pn vcod alt fps ext ttl <<<"${l#@@P@@}"
+      ttl=${ttl//[[:cntrl:]]/ }
+      [[ -n $ttl && $ttl != "?" ]] && TITULO[$idx]=$ttl
+      num "$baixado"; baixado=$NUM; num "$total"; total=$NUM; num "$vel"; vel=$NUM; num "$eta"; eta=$NUM
+      [[ ${EV_ANT[$idx]:-} == "p$baixado" ]] && continue
+      EV_ANT[$idx]="p$baixado"
+      evento progresso indice "$idx" titulo "${TITULO[$idx]:-}" baixado "$baixado" total "$total" velocidade "$vel" eta "$eta"
+    elif [[ -n ${ETAPA_SLOT[$s]:-} && ${EV_ANT[$idx]:-} != "e${ETAPA_SLOT[$s]}" ]]; then
+      EV_ANT[$idx]="e${ETAPA_SLOT[$s]}"
+      evento etapa indice "$idx" etapa "${ETAPA_SLOT[$s]}"
+    fi
+  done
+}
+
 # ───────────────────────────── Resultado de cada link ─────────────────────────
 salva_log() {                                 # guarda o log de todas as tentativas (sem o spam de progresso)
   local idx=$1 t tent=${TENTATIVA[$1]:-1} nome
@@ -4055,7 +4139,7 @@ salva_log() {                                 # guarda o log de todas as tentati
 processa_resultado() {                        # processa_resultado IDX CÓDIGO_DE_SAÍDA
   local idx=$1 rc=$2 url idxs d n_done n_ja n_hist t tent logs=() dones=() hist=()
   local tipo h fps hdr vc ac canais dur titulo vid caminho tam glifo cor det l hid filtrados=()
-  local nota="" n_nota=0 direto dur_site dur_arq dur_a tok
+  local nota="" n_nota=0 direto dur_site dur_arq dur_a tok novos=0 sit_ok=0 sit novo
   local -A baixados=() movido=() coube=() nao_veio=()
   url=${LINKS[$(( idx - 1 ))]}
   tent=${TENTATIVA[$idx]:-1}
@@ -4129,10 +4213,12 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       glifo="↷"; cor=$AMARELO; N_JA=$(( N_JA + 1 ))
       META="${T[r_ja_existia]}${META:+ · $META}"
     else
-      glifo="✔"; cor=$VERDE; N_OK=$(( N_OK + 1 )); BYTES_NOVOS=$(( BYTES_NOVOS + tam )); BAIXOU=1
+      glifo="✔"; cor=$VERDE; N_OK=$(( N_OK + 1 )); BYTES_NOVOS=$(( BYTES_NOVOS + tam )); BAIXOU=1; novos=$(( novos + 1 ))
     fi
     linha_resultado "$glifo" "$cor" "$idxs" "$titulo" "$META"
     PERM+=("$LINHA")
+    novo=0; [[ $tipo == N ]] && novo=1
+    evento arquivo indice "$idx" titulo "$titulo" caminho "$caminho" tamanho "$tam" novo "$novo" detalhes "$META"
     # Baixou, mas o melhor que o site tinha é pouco: talvez com login (-b) haja mais
     num "$h"
     if [[ $tipo == N ]] && (( ALERTA > 0 && NUM > 0 && NUM < ALERTA )); then
@@ -4258,7 +4344,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
       N_JA=$(( N_JA + 1 ))
       linha_resultado "↷" "$AMARELO" "$idxs" "$titulo" "${T[r_ja_existia]}"
     else
-      N_OK=$(( N_OK + 1 ))
+      N_OK=$(( N_OK + 1 )); sit_ok=1
       linha_resultado "✔" "$VERDE" "$idxs" "$titulo" "${T[r_concluido]}"
     fi
     PERM+=("$LINHA")
@@ -4324,6 +4410,18 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
     fi
     NOTA[$idx]=$nota                           # vai junto com o link para a seção BAIXADOS
   fi
+  if (( JSON )); then
+    if (( rc != 0 )); then
+      sit=falhou; (( n_done > 0 || n_hist > 0 )) && sit=parcial
+      evento resultado indice "$idx" link "$url" situacao "$sit" titulo "${TITULO[$idx]:-}" motivo "$MOTIVO" dica "$DICA"
+    else
+      if (( fora_filtro )); then sit=filtrado
+      elif (( canal_igual )); then sit=nada_novo
+      elif (( novos > 0 || sit_ok )); then sit=baixado
+      else sit=ja_baixado; fi
+      evento resultado indice "$idx" link "$url" situacao "$sit" titulo "${TITULO[$idx]:-$nota}"
+    fi
+  fi
 
   FEITO[$idx]=1
   FINALIZADOS=$(( FINALIZADOS + 1 ))
@@ -4331,7 +4429,7 @@ processa_resultado() {                        # processa_resultado IDX CÓDIGO_D
 
 # ───────────────────────────── Execução dos jobs ──────────────────────────────
 lanca_job() {                                 # lanca_job IDX
-  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs s e n
+  local i=$1 url=${LINKS[$(( $1 - 1 ))]} tent=${TENTATIVA[$1]:-1} extra=() ajuste=() idxs s e n m
   # A cascata vai do método mais rápido ao mais caro: 0 é direto; 1 manda o Referer, que os
   # vídeos protegidos contra links de fora costumam exigir, força a imitação de navegador (o
   # próprio yt-dlp avisa que forçá-la sempre pode deixar os downloads mais lentos e instáveis)
@@ -4393,6 +4491,10 @@ lanca_job() {                                 # lanca_job IDX
   ULTIMO_PID=$!
   ATIVOS_SITE[${SITE[$i]}]=$(( ${ATIVOS_SITE[${SITE[$i]}]:-0} + 1 ))
   INICIO_JOB[$i]=$SECONDS; ETA_JOB[$i]=0
+  if (( JSON )); then
+    case ${NIVEL[$i]} in 1) m=imitando ;; 2) m=navegador ;; *) m=direto ;; esac
+    evento comecou indice "$i" link "$url" tentativa "$tent" metodo "$m"
+  fi
   if (( ! INTERATIVO )); then                  # sem painel (saída redirecionada): avisa o início
     printf -v idxs "%0${#TOTAL}d/%d" "$i" "$TOTAL"
     if (( tent > 1 )); then t ni_tentativa "$tent"; PERM+=("  ↻ ${idxs}  ${url}  $TXT"); else PERM+=("  ▶ ${idxs}  ${url}"); fi
@@ -4908,6 +5010,7 @@ adia_site() {
     (( ${TENTATIVA[$i]:-1} > 1 )) && EM_REPETICAO=$(( EM_REPETICAO - 1 ))
     FALHAS+=("${LINKS[$(( i - 1 ))]}")
     FEITO[$i]=1; FICA[$i]=1; FINALIZADOS=$(( FINALIZADOS + 1 )); N_ADIADOS=$(( N_ADIADOS + 1 ))
+    evento resultado indice "$i" link "${LINKS[$(( i - 1 ))]}" situacao adiado
   done
 }
 
@@ -5390,6 +5493,10 @@ limpa() {                                     # trap EXIT: sempre devolve o term
     (( TITULO_EMPILHADO )) && printf '%s' "${ESC}[23;0t"     # devolve o título original da janela
     [[ -n $STTY_SAVE ]] && stty "$STTY_SAVE" </dev/tty 2>/dev/null
   fi
+  if (( JSON )); then
+    evento fim baixados "$N_OK" ja_existiam "$N_JA" falharam "$N_ERRO" filtrados "$N_FILTRADOS" adiados "$N_ADIADOS" \
+      bytes "$BYTES_NOVOS" segundos "$SECONDS" cancelado "$CANCELADO" codigo "$rc"
+  fi
   [[ -n $TMP ]] && rm -rf "$TMP"
   # Morre pelo mesmo sinal recebido: assim um laço que chamou o script (ex.:
   # "for l in ...; do grabit ...; done") também para no Ctrl+C.
@@ -5658,7 +5765,7 @@ links_da_linha() {
   for p in "${palavras[@]}"; do
     [[ $p == \#* ]] && break
     [[ $p == www.* || $p =~ ^([[:alnum:]-]+\.)+[[:alpha:]]{2,}/ ]] && p="https://$p"
-    [[ $p =~ ^https?:// ]] && PALAVRAS_LINK+=("$p")
+    [[ $p =~ ^https?://[^/?#[:space:]]+ ]] && PALAVRAS_LINK+=("$p")   # ("https://" sozinho não é link)
   done
   return 0
 }
@@ -8134,6 +8241,7 @@ h|help||cmp_h
 |simular simulate dry-run||cmp_simular
 |repetir retry||cmp_repetir
 |detalhes details||cmp_detalhes
+|json||cmp_json
 |desde since|?|cmp_desde
 |max|?|cmp_max
 |max-tamanho max-size|?|cmp_tamanho
@@ -8461,6 +8569,9 @@ case $COMANDO in
   diagnostico) diagnostico; exit $? ;;
   manual) gera_manual; exit $? ;;
 esac
+# --json: a saída padrão fica só com os eventos; o que é para gente vai para a saída de erro, sem o painel
+if (( JSON )); then exec 4>&1 1>&2; INTERATIVO=0; fi
+declare -A EV_ANT=(); EV_SEG=-1
 trap 'CANCELADO=1; SINAL=INT;  exit 130' INT
 trap 'CANCELADO=1; SINAL=TERM; exit 143' TERM
 trap 'CANCELADO=1; SINAL=HUP;  exit 129' HUP
@@ -8637,6 +8748,7 @@ if (( INTERATIVO )); then
   TITULO_EMPILHADO=1
 fi
 
+evento inicio versao "$GRABIT_VERSAO" total "$TOTAL" simultaneos "$J" pasta "$PASTA_SAIDA"
 while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   atualiza_largura
   if (( CAPTURA && SECONDS >= PROX_CLIP )); then captura_clip; PROX_CLIP=$(( SECONDS + 1 )); fi
@@ -8696,6 +8808,7 @@ while (( FINALIZADOS < TOTAL )) || (( FILA_VIVA && ! PARANDO )); do
   fi
 
   desenha
+  if (( JSON && SECONDS != EV_SEG )); then EV_SEG=$SECONDS; eventos_progresso; fi
   # Tecla apertada? "read -t 0" só confere, sem esperar. (Esperar no próprio read, com
   # "read -t 0.2", deixa o Ctrl+C fazer a limpeza toda de dentro do read, e o alarme dele
   # disparando no meio derruba o Bash 5.2.)
