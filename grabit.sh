@@ -1435,6 +1435,21 @@ idioma_pt() {
     [cmp_tamanho]="pula arquivos maiores que isso"
     [cmp_substituir]="a conversão substitui o original"
     [cmp_todos]="o canal inteiro"
+    [cmp_D]="baixa a lista do links.txt"
+    [cmp_G]="mostra as configurações em uso"
+    [cmp_I]="instala o que falta"
+    [cmp_N]="deixa tudo na versão mais nova"
+    [cmp_V]="mostra a versão"
+    [cmp_K]="confere os vídeos já baixados"
+    [cmp_S]="mostra a lista por partes"
+    [cmp_T]="converte um vídeo já baixado"
+    [cmp_W]="acompanha canais"
+    [cmp_R]="baixa pelo Copiar como cURL"
+    [cmp_M]="compara dois arquivos do mesmo vídeo"
+    [cmp_t]="imprime o autocompletar"
+    [cmp_E]="diagnóstico para um relato de bug"
+    [cmp_P]="imprime a página do man"
+    [cmp_X]="tira o GrabIt do sistema"
     [cmp_uso]="Diga para qual shell: grabit completar fish, bash ou zsh."
     [dg_titulo]="Diagnóstico do GrabIt. Links, cookies e nomes de arquivo já saíram; confira o resto antes de publicar."
     [dg_solto]="arquivo solto"
@@ -1752,14 +1767,14 @@ Opções mais usadas:
   --simular       mostra o que seria baixado, sem baixar
   --repetir       tenta de novo também os que falharam (a seção FALHARAM)
 
-Comandos:
-  instalar        instala o que falta
-  atualizar       deixa tudo na versão mais nova
-  converter       muda o formato de um vídeo já baixado
-  verificar       confere os vídeos já baixados
-  lista           mostra a lista por partes e muda links de seção
-  canais          acompanha canais e baixa só o que for novo
-  config          mostra as configurações em uso
+Comandos (também em inglês, ou pela letra):
+  instalar   -I   instala o que falta
+  atualizar  -N   deixa tudo na versão mais nova
+  converter  -T   muda o formato de um vídeo já baixado
+  verificar  -K   confere os vídeos já baixados
+  lista      -S   mostra a lista por partes e muda links de seção
+  canais     -W   acompanha canais e baixa só o que for novo
+  config     -G   mostra as configurações em uso
 
 Todas as opções e comandos:  grabit ajuda completa
 EOF
@@ -1811,44 +1826,49 @@ Uso:  grabit [opções] LINK ou ARQUIVO ...
   -L pt|en      idioma das mensagens (Language)
   -h            mostra esta ajuda
 
-Comandos, em português ou inglês, com ou sem os traços (grabit update é o mesmo
-que grabit --atualizar):
+Comandos, em português ou em inglês, com ou sem os traços, ou pela letra
+(grabit update, grabit --atualizar e grabit -N são o mesmo):
 
-  baixar, download   baixa a lista do arquivo links.txt (ou do que estiver em -l)
-  config             mostra o grabit.config e os valores em uso
-  instalar, install  instala o que falta (ffmpeg, yt-dlp…) e o comando grabit, e pergunta
+  baixar, download, -D
+                     baixa a lista do arquivo links.txt (ou do que estiver em -l)
+  config, configuração, -G
+                     mostra o grabit.config e os valores em uso
+  instalar, install, -I
+                     instala o que falta (ffmpeg, yt-dlp…) e o comando grabit, e pergunta
                      sobre o que é opcional; com -y, instala tudo sem perguntar (navegador, só
                      se não houver nenhum compatível, e aí só o Firefox)
   instalar NAVEGADOR instala um navegador a pedido: firefox, chromium, chrome, brave ou edge
-  atualizar, update  deixa tudo na versão mais nova (GrabIt, yt-dlp, Deno e FFmpeg)
+  atualizar, update, -N
+                     deixa tudo na versão mais nova (GrabIt, yt-dlp, Deno e FFmpeg)
                      e instala o que faltar
-  versao, version    mostra a versão instalada, se há outra mais nova e o que o GrabIt usa
-  curl [ARQUIVO]     baixa o que toca no navegador, pelo "Copiar como cURL" da aba Rede (F12):
+  versao, version, -V
+                     mostra a versão instalada, se há outra mais nova e o que o GrabIt usa
+  curl, -R [ARQUIVO] baixa o que toca no navegador, pelo "Copiar como cURL" da aba Rede (F12):
                      lê a área de transferência, um arquivo ou, com -, a entrada padrão;
                      também dá para colar o comando copiado depois de grabit
-  verificar, check [PASTA]
+  verificar, check, -K [PASTA]
                      confere os vídeos já baixados (defeitos e incompletos)
                      e oferece baixar de novo os que tiverem problema
-  lista, list [ARQUIVO] [AÇÃO]
+  lista, list, -S [ARQUIVO] [AÇÃO]
                      mostra o arquivo de links por partes: a baixar, FALHARAM e BAIXADOS;
                      ações: voltar N…, baixado N…, pular N…, limpar falhas|baixados|notas,
                      organizar, editar
-  converter, convert ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
+  converter, convert, -T ARQUIVO|PASTA… -e FORMATO e/ou -k CODEC
                      muda a extensão de um vídeo já baixado (imagem e som continuam idênticos)
                      ou recomprime em outro codec; o original fica, a não ser com --substituir
-  canais, channels [AÇÃO]
+  canais, channels, -W [AÇÃO]
                      acompanha canais: adicionar LINK, baixar (só o que for novo), remover N
-  comparar, compare A B
+  comparar, compare, -M A B
                      compara dois arquivos do mesmo vídeo: o quanto diferem aos olhos
-  completar, completion fish|bash|zsh
+  completar, completion, -t fish|bash|zsh
                      imprime o autocompletar (o instalar já o põe no lugar)
-  diagnostico, diagnostic
+  diagnostico, diagnostic, -E
                      versões, sistema e o fim do último log que falhou, sem links,
                      cookies nem nomes de arquivo: pronto para um relato de bug
-  manual             imprime a página do man (os pacotes e o instalar já a põem no lugar)
-  desinstalar, uninstall
+  manual, -P         imprime a página do man (os pacotes e o instalar já a põem no lugar)
+  desinstalar, uninstall, -X
                      tira o que o GrabIt pôs no sistema; vídeos e listas ficam
-  ajuda, help        mostra esta ajuda
+  ajuda, help, -h    mostra esta ajuda
 
 • Um arquivo de links com o nome de um comando precisa de ./ na frente: grabit ./update
 • Links e arquivos de links podem vir direto no comando, e as opções valem antes
@@ -2297,6 +2317,21 @@ idioma_en() {
     [cmp_tamanho]="skip files larger than that"
     [cmp_substituir]="conversion replaces the original"
     [cmp_todos]="the whole channel"
+    [cmp_D]="download the links.txt list"
+    [cmp_G]="show the settings in use"
+    [cmp_I]="install what's missing"
+    [cmp_N]="bring everything to the newest version"
+    [cmp_V]="show the version"
+    [cmp_K]="check the videos already downloaded"
+    [cmp_S]="show the list by parts"
+    [cmp_T]="convert a downloaded video"
+    [cmp_W]="follow channels"
+    [cmp_R]="download from Copy as cURL"
+    [cmp_M]="compare two files of the same video"
+    [cmp_t]="print the autocompletion"
+    [cmp_E]="diagnostic for a bug report"
+    [cmp_P]="print the man page"
+    [cmp_X]="remove GrabIt from the system"
     [cmp_uso]="Say which shell: grabit completion fish, bash or zsh."
     [dg_titulo]="GrabIt diagnostic. Links, cookies and file names are already out; check the rest before posting."
     [dg_solto]="standalone file"
@@ -2614,14 +2649,14 @@ Most used options:
   --simulate      show what would be downloaded, without downloading
   --retry         also try again the ones that failed (the FAILED section)
 
-Commands:
-  install         install what's missing
-  update          bring everything to the newest version
-  convert         change the format of a video you already have
-  check           check the videos you already have
-  list            show the list by parts and move links between sections
-  channels        follow channels and download only what's new
-  config          show the settings in use
+Commands (also in Portuguese, or by the letter):
+  install    -I   install what's missing
+  update     -N   bring everything to the newest version
+  convert    -T   change the format of a video you already have
+  check      -K   check the videos you already have
+  list       -S   show the list by parts and move links between sections
+  channels   -W   follow channels and download only what's new
+  config     -G   show the settings in use
 
 All options and commands:  grabit help full
 EOF
@@ -2673,43 +2708,49 @@ Usage:  grabit [options] LINK or FILE ...
   -L pt|en      language of the messages
   -h            show this help
 
-Commands, in English or Portuguese, with or without the dashes (grabit update is
-the same as grabit --atualizar):
+Commands, in English or Portuguese, with or without the dashes, or by the letter
+(grabit update, grabit --atualizar and grabit -N are the same):
 
-  config             show grabit.config and the values in use
-  install, instalar  install what's missing (ffmpeg, yt-dlp…) and the grabit command, and ask
+  download, baixar, -D
+                     download the list in the links.txt file (or the one given with -l)
+  config, configuração, -G
+                     show grabit.config and the values in use
+  install, instalar, -I
+                     install what's missing (ffmpeg, yt-dlp…) and the grabit command, and ask
                      about what's optional; with -y, install it all without asking (a browser,
                      only if there's no compatible one, and then only Firefox)
   install BROWSER    install a browser on request: firefox, chromium, chrome, brave or edge
-  update, atualizar  put everything on the newest version (GrabIt, yt-dlp, Deno and FFmpeg)
+  update, atualizar, -N
+                     put everything on the newest version (GrabIt, yt-dlp, Deno and FFmpeg)
                      and install what's missing
-  version, versao    show the installed version, whether there's a newer one and what GrabIt uses
-  curl [FILE]        download what plays in the browser, from "Copy as cURL" in the Network tab
+  version, versao, -V
+                     show the installed version, whether there's a newer one and what GrabIt uses
+  curl, -R [FILE]    download what plays in the browser, from "Copy as cURL" in the Network tab
                      (F12): reads the clipboard, a file or, with -, standard input;
                      you can also paste the copied command after grabit
-  check, verificar [FOLDER]
+  check, verificar, -K [FOLDER]
                      check the videos already downloaded (defects and incomplete files)
                      and offer to download the problem ones again
-  list, lista [FILE] [ACTION]
+  list, lista, -S [FILE] [ACTION]
                      show the link file by parts: to download, FAILED and DOWNLOADED;
                      actions: back N…, downloaded N…, skip N…, clear failed|downloaded|notes,
                      tidy, edit
-  convert, converter FILE|FOLDER… -e FORMAT and/or -k CODEC
+  convert, converter, -T FILE|FOLDER… -e FORMAT and/or -k CODEC
                      changes the extension of a downloaded video (picture and sound stay
                      identical) or re-encodes to another codec; the original stays, unless --replace
-  channels, canais [ACTION]
+  channels, canais, -W [ACTION]
                      follow channels: add LINK, download (only what's new), remove N
-  compare, comparar A B
+  compare, comparar, -M A B
                      compare two files of the same video: how much they differ to the eye
-  completion, completar fish|bash|zsh
+  completion, completar, -t fish|bash|zsh
                      print the autocompletion (install already puts it in place)
-  diagnostic, diagnostico
+  diagnostic, diagnostico, -E
                      versions, system and the end of the last failed log, without links,
                      cookies or file names: ready for a bug report
-  manual             print the man page (packages and install already put it in place)
-  uninstall, desinstalar
+  manual, -P         print the man page (packages and install already put it in place)
+  uninstall, desinstalar, -X
                      remove what GrabIt put on the system; videos and lists stay
-  help, ajuda        show this help
+  help, ajuda, -h    show this help
 
 • A link file named like a command needs ./ in front of it: grabit ./update
 • Links and link files can come straight on the command line, and options work
@@ -2959,7 +3000,7 @@ fi
 # palavra_comando PALAVRA → COMANDO: os comandos valem nas duas línguas, com ou sem os traços
 palavra_comando() {
   case ${1,,} in
-    config|configuracao|configuração) COMANDO=config ;;
+    config|configuracao|configuração|configuration) COMANDO=config ;;
     ajuda|help)                       COMANDO=ajuda ;;
     instalar|install)                 COMANDO=instalar ;;
     atualizar|update)                 COMANDO=atualizar ;;
@@ -2979,7 +3020,7 @@ palavra_comando() {
     *) return 1 ;;
   esac
 }
-PALAVRAS_COMANDO=(baixar download lista list config ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
+PALAVRAS_COMANDO=(baixar download lista list config configuracao configuration ajuda help instalar install desinstalar uninstall atualizar update verificar check baixados downloaded
   versao version curl converter convert canais channels seguir follow completar completion comparar compare
   diagnostico diagnostic manual)
 
@@ -3068,7 +3109,7 @@ OPCOES=(); LISTA_EXPLICITA=0; FORCAR=0; SUBPASTAS=0; MIDIA=0; FILA_VIVA=0; CAPTU
 # O getopts para no primeiro link; aqui ele o guarda e continua. Depois de "--", só há links.
 while (( $# )); do
   OPTIND=1
-  while getopts ":l:o:j:c:b:r:L:A:e:k:q:pausivxdmfCUFhyO" op; do
+  while getopts ":l:o:j:c:b:r:L:A:e:k:q:pausivxdmfCUFhyODGINVKSTWRMtEPX" op; do
     case $op in
       l) ARQUIVO_LINKS=$OPTARG; LISTA_EXPLICITA=1; ORIGEM[ARQUIVO_LINKS]=opção; continue ;;
       o) PASTA_SAIDA=$OPTARG;            ORIGEM[PASTA_SAIDA]=opção ;;
@@ -3096,6 +3137,22 @@ while (( $# )); do
       C) CAPTURA=1; FILA_VIVA=1 ;;       # idem: só lê a área de transferência se pedido, e só aberto
       U) UPGRADE=1 ;;
       h) COMANDO=ajuda ;;
+      # Os comandos pela letra (fora do comando sugerido para tentar de novo, como o -l)
+      D) COMANDO=baixar; continue ;;
+      G) COMANDO=config; continue ;;
+      I) COMANDO=instalar; continue ;;
+      N) COMANDO=atualizar; continue ;;
+      V) COMANDO=versao; continue ;;
+      K) COMANDO=verificar; continue ;;
+      S) COMANDO=lista; continue ;;
+      T) COMANDO=converter; continue ;;
+      W) COMANDO=canais; continue ;;
+      R) COMANDO=curl; continue ;;
+      M) COMANDO=comparar; continue ;;
+      t) COMANDO=completar; continue ;;
+      E) COMANDO=diagnostico; continue ;;
+      P) COMANDO=manual; continue ;;
+      X) COMANDO=desinstalar; continue ;;
       y) ASSUME_SIM=1 ;;
       :) t opcao_valor "$OPTARG"; erro "$TXT"; exit 2 ;;
       *) t opcao_invalida "-$OPTARG"; erro "$TXT"; uso; exit 2 ;;
@@ -8081,7 +8138,22 @@ h|help||cmp_h
 |max|?|cmp_max
 |max-tamanho max-size|?|cmp_tamanho
 |substituir replace||cmp_substituir
-|todos all||cmp_todos'
+|todos all||cmp_todos
+D|baixar download||cmp_D
+G|configuracao configuration||cmp_G
+I|instalar install||cmp_I
+N|atualizar update||cmp_N
+V|versao version||cmp_V
+K|verificar check||cmp_K
+S|lista list||cmp_S
+T|converter convert||cmp_T
+W|canais channels||cmp_W
+R|curl||cmp_R
+M|comparar compare||cmp_M
+t|completar completion|fish bash zsh|cmp_t
+E|diagnostico diagnostic||cmp_E
+P|manual||cmp_P
+X|desinstalar uninstall||cmp_X'
 
 gera_completar() {
   local curta longas vals chave d n s=${1:-} todas="" pal=${PALAVRAS_COMANDO[*]}

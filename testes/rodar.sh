@@ -848,6 +848,31 @@ formas "não existe" verificar check -- "$TMP/nao-existe"
 formas "Para baixar ·" lista list baixados downloaded -- -l "$L"
 formas "cópia sem Git" versao versão version
 formas "Diga o formato" converter convert
+formas "grabit.config" configuracao configuration
+formas ".TH GRABIT 1" manual
+formas "Diagnóstico do GrabIt" diagnostico diagnóstico diagnostic
+letra() {                                     # letra TEXTO LETRA [ARGS...]: o comando pela letra mostra o TEXTO
+  local texto=$1 l=$2
+  shift 2
+  G="$D/solto/grabit.sh" STUB_JS="node-22.1.0" falso cmd -L pt "-$l" "$@"
+  espera "grabit -$l" contem cmd "$texto"
+}
+: > vazia.txt
+letra "Nenhum link válido" D -l vazia.txt
+letra "grabit.config" G
+letra "Uso:  grabit" h
+letra "instalação das dependências" I -y
+letra "GrabIt · atualização" N
+letra "cópia sem Git" V
+letra "não existe" K "$TMP/nao-existe"
+letra "Para baixar ·" S -l "$L"
+letra "Diga o formato" T
+letra "Nenhum canal ainda" W
+letra "Diga os dois arquivos" M
+letra "#compdef grabit" t zsh
+letra "Diagnóstico do GrabIt" E
+letra ".TH GRABIT 1" P
+letra "GrabIt · desinstalação" X
 falso w1 -L pt -- update
 espera "depois de -- a palavra não é comando" contem w1 "Nenhum link válido"
 falso w2 -L pt -l update --config
