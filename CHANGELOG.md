@@ -4,9 +4,29 @@ Só o que muda para quem usa. As versões seguem `MAIOR.MENOR.CORREÇÃO`.
 
 ## 1.1.1
 
+### Comandos
+
+- Todo comando vale em português, em inglês, com ou sem os traços e, agora, por uma letra: `grabit atualizar`, `update`, `--update` e `-N` são o mesmo. As letras: `-D` baixar, `-S` lista, `-I` instalar, `-N` atualizar, `-V` versão, `-G` config, `-K` verificar, `-T` converter, `-M` comparar, `-W` canais, `-R` curl, `-E` diagnóstico, `-P` manual, `-t` completar, `-X` desinstalar e `-h` ajuda. Nenhuma opção que já existia mudou.
+- Dois comandos juntos (`grabit -V -G`) agora são um erro claro, em vez de um deles sumir calado. A ajuda vence qualquer outro.
+- `grabit diagnostico` junta as versões, o sistema e o fim do último log que falhou, sem links (fica só o site), cookies, tokens, nomes de arquivo nem a pasta pessoal: pronto para colar num relato de bug.
+- `man grabit`: a página do manual, em português e em inglês, vem nos pacotes e no `grabit install`. `grabit manual` a imprime.
+- `--json`: a saída padrão traz só eventos JSON, um por linha (início, cada link, progresso, arquivos, resultado e fim), para uma interface gráfica ou um script acompanhar o lote. O resto vai para a saída de erro, sem o painel.
+
+### Segurança
+
+- As versões publicadas são assinadas. Com o `gpg` instalado, o `grabit update` só troca o script por um arquivo com a assinatura do projeto; sem ele, continua valendo a soma SHA-256, e o update avisa.
+
+### Instalação
+
+- No Arch, o pacote se chama `grabit-dl`: no AUR, `grabit` é outro programa. O update e o desinstalar passam a dizer o comando certo para ele.
+- No Windows, o GrabIt roda pelo WSL, testado a cada mudança.
+
 ### Correções
 
 - Em inglês, o comando sugerido para tentar de novo os links que falharam vinha com a opção em português (`--repetir`); agora vem `--retry`.
+- A ajuda e o README diziam que o `grabit.config` fica sempre ao lado do `grabit.sh`. Instalado por um pacote (apt, Homebrew, Arch), ele fica em `~/.config/grabit`.
+- `https://` sozinho, sem endereço, não é mais tratado como um link.
+- A ajuda completa em inglês não tinha a linha do `download`.
 
 ## 1.1.0
 

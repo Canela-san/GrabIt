@@ -19,7 +19,7 @@ fi
 set -uo pipefail
 shopt -s extglob
 
-GRABIT_VERSAO=1.1.0
+GRABIT_VERSAO=1.1.1
 
 PATH_ORIGINAL=$PATH
 

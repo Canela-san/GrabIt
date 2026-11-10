@@ -44,7 +44,7 @@ git clone ssh://aur@aur.archlinux.org/grabit-dl.git aur-grabit
 cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO aur-grabit/
 cd aur-grabit
 git add PKGBUILD .SRCINFO
-git commit -m "grabit-dl 1.2.0"
+git commit -m "grabit-dl 1.1.1"
 git push
 ```
 

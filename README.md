@@ -8,13 +8,14 @@
 <p align="center">
   <a href="https://github.com/Canela-san/GrabIt/releases/latest"><img alt="Versão" src="https://img.shields.io/github/v/release/Canela-san/GrabIt?label=vers%C3%A3o&color=2bbf86"></a>
   <a href="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml"><img alt="Testes" src="https://github.com/Canela-san/GrabIt/actions/workflows/testes.yml/badge.svg"></a>
-  <img alt="Linux e macOS" src="https://img.shields.io/badge/Linux%20%7C%20macOS-1b5a44">
+  <img alt="Linux, macOS e Windows (WSL)" src="https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20WSL-1b5a44">
   <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-1b5a44"></a>
 </p>
 
 <p align="center">
   <a href="#instalação">Instalação</a> ·
   <a href="#primeiros-passos">Primeiros passos</a> ·
+  <a href="#comandos">Comandos</a> ·
   <a href="#opções">Opções</a> ·
   <a href="#configuração">Configuração</a> ·
   <a href="#problemas-comuns">Problemas comuns</a> ·
@@ -59,6 +60,8 @@ mkdir -p ~/.local/share/grabit
 curl -fsSL https://github.com/Canela-san/GrabIt/releases/latest/download/grabit.sh -o ~/.local/share/grabit/grabit.sh
 bash ~/.local/share/grabit/grabit.sh --instalar
 ```
+
+**Windows:** pelo WSL (o Ubuntu da Microsoft Store), com os mesmos comandos do Ubuntu. Para ver os vídeos no Explorer, salve numa pasta do Windows: `grabit -o /mnt/c/Users/VOCÊ/Videos LINK`.
 
 No Arch Linux, o pacote se chama `grabit-dl` (no AUR, `grabit` é outro programa). Para montá-lo e instalá-lo: `git clone https://github.com/Canela-san/GrabIt && cd GrabIt/packaging/aur && makepkg -si`.
 
@@ -209,6 +212,29 @@ cat lista.txt | grabit -l -                  # lê os links da entrada padrão
 
 Os links da lista que falharam vão para a seção `FALHARAM`, com o motivo, e o GrabIt mostra o comando para tentar de novo. Os passados direto no comando não têm um arquivo onde ficar: voltam no comando sugerido.
 
+## Comandos
+
+Cada comando vale em português ou em inglês, com ou sem os traços, ou pela letra: `grabit atualizar`, `grabit update`, `grabit --update` e `grabit -N` são o mesmo.
+
+| Comando | Em inglês | Letra | O que faz |
+|---|---|---|---|
+| `baixar` | `download` | `-D` | baixa a lista do `links.txt` (ou a do `-l`) |
+| `lista` | `list` | `-S` | mostra a lista por partes e muda links de seção |
+| `instalar` | `install` | `-I` | instala o que falta e pergunta sobre o opcional |
+| `atualizar` | `update` | `-N` | deixa tudo na versão mais nova |
+| `versao` | `version` | `-V` | a versão instalada, se há outra mais nova e o que o GrabIt usa |
+| `config` | `config` | `-G` | o `grabit.config` e os valores em uso |
+| `verificar` | `check` | `-K` | confere os vídeos já baixados |
+| `converter` | `convert` | `-T` | muda o formato de um vídeo já baixado |
+| `comparar` | `compare` | `-M` | compara dois arquivos do mesmo vídeo |
+| `canais` | `channels` | `-W` | acompanha canais e baixa só o que for novo |
+| `curl` | `curl` | `-R` | baixa pelo "Copiar como cURL" do navegador |
+| `diagnostico` | `diagnostic` | `-E` | versões, sistema e o último erro, prontos para um relato de bug |
+| `manual` | `manual` | `-P` | imprime a página do manual (`man grabit`) |
+| `completar` | `completion` | `-t` | imprime o autocompletar do fish, do bash ou do zsh |
+| `desinstalar` | `uninstall` | `-X` | tira o GrabIt do sistema; vídeos e listas ficam |
+| `ajuda` | `help` | `-h` | a ajuda; `grabit ajuda completa` mostra tudo |
+
 ## Opções
 
 | Opção | O que faz | Padrão |
@@ -243,6 +269,7 @@ Os links da lista que falharam vão para a seção `FALHARAM`, com o motivo, e o
 | `-y` | com `install`: instala tudo sem perguntar | — |
 | `--proxy URL` | passa tudo por um proxy: `http://host:8080` ou `socks5://host:1080` | — |
 | `--detalhes` | mostra no início também as ferramentas, os recursos e o histórico | — |
+| `--json` | para outros programas: um evento JSON por linha (veja [abaixo](#para-outros-programas---json)) | — |
 | `--desde DATA` | só vídeos desde a data (`2026-01-31`) ou a idade (`7d`, `2w`, `3m`, `1y`) | — |
 | `--max N` | no máximo N vídeos por link | — |
 | `--max-tamanho TAM` | pula arquivos maiores que isso (`2G`, `500M`) | — |
@@ -302,6 +329,31 @@ Se nem com a sessão o yt-dlp achar o vídeo (um player que é um programa da p�
 4. Rode `grabit curl`, que lê a área de transferência. Ou cole o comando depois de `grabit` (as opções do GrabIt vão antes de `curl`): `grabit -o ~/Vídeos curl 'https://…/master.m3u8' -H 'Referer: https://…'`.
 
 O comando copiado é só lido, nunca executado. O nome do arquivo vem da página ou, se o navegador não a informar, do caminho do vídeo. Esses links costumam expirar: se falhar, copie de novo. Vídeos protegidos por DRM não são baixados.
+
+</details>
+
+### Para outros programas (`--json`)
+
+Com `--json`, a saída padrão traz só eventos, um objeto JSON por linha, para uma interface gráfica ou um script acompanhar o lote. O resto (o início, a linha de cada link e o resumo) vai para a saída de erro, sem o painel. Os nomes dos campos são sempre os mesmos, em qualquer idioma.
+
+```bash
+grabit --json download 2>/dev/null | jq -r 'select(.evento == "resultado") | "\(.situacao)  \(.link)"'
+```
+
+<details>
+<summary><strong>Os eventos e os campos</strong></summary>
+
+<br>
+
+| Evento | Quando | Campos |
+|---|---|---|
+| `inicio` | o lote começou | `versao`, `total`, `simultaneos`, `pasta` |
+| `comecou` | um link começou ou recomeçou | `indice`, `link`, `tentativa`, `metodo` (`direto`, `imitando` ou `navegador`) |
+| `progresso` | enquanto baixa, no máximo uma vez por segundo | `indice`, `titulo`, `baixado` e `total` (bytes; `0` se o site não diz), `velocidade` (bytes/s), `eta` (segundos) |
+| `etapa` | mudou o que está sendo feito, fora do download | `indice`, `etapa` (texto, no idioma das mensagens) |
+| `arquivo` | um arquivo ficou pronto | `indice`, `titulo`, `caminho`, `tamanho`, `novo` (`false` se já existia), `detalhes` |
+| `resultado` | um link terminou | `indice`, `link`, `situacao` (`baixado`, `ja_baixado`, `filtrado`, `nada_novo`, `parcial`, `falhou` ou `adiado`), `titulo`; se falhou, `motivo` e `dica` |
+| `fim` | sempre, por último, até no <kbd>Ctrl</kbd>+<kbd>C</kbd> | `baixados`, `ja_existiam`, `falharam`, `filtrados`, `adiados`, `bytes`, `segundos`, `cancelado`, `codigo` |
 
 </details>
 
@@ -473,6 +525,7 @@ O GrabIt é um único script Bash. O yt-dlp faz o download e o FFmpeg junta e em
 | O yt-dlp parou de funcionar num site | `grabit update`: os sites mudam o tempo todo. Se continuar, veja o log em `Downloads/logs` |
 | Algo estranho num site que já funcionou | Apague a memória dos sites (`rm -r ~/.local/share/grabit`) e tente de novo |
 | `grabit: comando não encontrado` | Abra outro terminal. Se continuar, ponha `~/.local/bin` no `PATH` |
+| Nada disso resolveu | Rode `grabit diagnostico` e cole a saída numa [issue](https://github.com/Canela-san/GrabIt/issues/new/choose): ela traz as versões e o último erro, sem links nem cookies |
 
 <details>
 <summary><strong>Dicas, códigos de saída e como desinstalar</strong></summary>
