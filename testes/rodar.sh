@@ -1096,7 +1096,8 @@ EOF
       : > "$STUB_LOG"
       mkdir -p "$TMP/casa_c" "$TMP/solto"; cp "$G" "$TMP/solto/grabit.sh"
       HOME="$TMP/casa_c" PATH="$STUB:$GAPT:$TMP/sem:$PATH" G="$TMP/solto/grabit.sh" WAYLAND_DISPLAY=wayland-9 STUB_JS="deno-2.9.8" roda ap4 -L pt --update
-      espera "--atualizar instala o wl-clipboard no Wayland, mesmo com o xclip" contem "$STUB_LOG" "apt-get install -y wl-clipboard"
+      # (junto do que mais faltar no sistema: num WSL recém-instalado, o unzip e o aria2 vêm na mesma linha)
+      espera "--atualizar instala o wl-clipboard no Wayland, mesmo com o xclip" grep -qE '^apt-get install -y .*wl-clipboard' "$STUB_LOG"
       explica ap4
     fi
   fi
