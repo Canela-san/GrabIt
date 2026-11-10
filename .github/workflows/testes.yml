@@ -53,11 +53,24 @@ jobs:
             grupos: medidas pagina formato colecao
     steps:
       - uses: actions/checkout@v5
+      # Os .deb do FFmpeg (mais de cem pacotes) ficam no cache do GitHub, um por versão da imagem do runner:
+      # o espelho do Ubuntu às vezes leva minutos para entregá-los
+      - id: imagem
+        run: echo "nome=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/cache-apt
+          key: apt-${{ steps.imagem.outputs.nome }}
       - name: Dependências
         run: |
-          rede="-o Acquire::Retries=3 -o Acquire::http::Timeout=20"
-          sudo apt-get $rede update -qq
-          sudo apt-get $rede install -y -qq --no-install-recommends ffmpeg aria2
+          mkdir -p ~/cache-apt/partial
+          rede="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Dir::Cache::Archives=$HOME/cache-apt"
+          # Com o cache cheio, nem o índice precisa vir: só se faltar algo é que o apt vai ao espelho
+          if ! sudo apt-get $rede install -y -qq --no-install-recommends ffmpeg aria2; then
+            sudo apt-get $rede update -qq
+            sudo apt-get $rede install -y -qq --no-install-recommends ffmpeg aria2
+          fi
+          sudo chown -R "$USER" ~/cache-apt
           pipx install "yt-dlp[default]" || { sleep 10; pipx install "yt-dlp[default]"; }
       - name: Testes
         env:
@@ -101,11 +114,12 @@ jobs:
         with:
           distribution: Ubuntu-24.04
           additional-packages: python3 git
-      # No disco do próprio Linux: o checkout fica no disco do Windows (/mnt/d), várias vezes mais lento
+      # Sem as pastas do Windows no PATH: no WSL do runner (o WSL1), cada programa procurado e não achado
+      # varreria dezenas delas, e os testes procuram muitos (é assim que o GrabIt descobre o que há)
       - name: Testes rápidos no WSL
         run: |
-          rm -rf /tmp/grabit && cp -r . /tmp/grabit
-          cd /tmp/grabit && bash testes/rodar.sh --rapido
+          PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '^/mnt/' | paste -sd: -)
+          bash testes/rodar.sh --rapido
 
   macos:
     name: macOS
