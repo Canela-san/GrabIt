@@ -23,7 +23,7 @@ bash testes/rodar.sh --rapido     # só os que não baixam nada
 shellcheck -s bash -S warning grabit.sh testes/rodar.sh packaging/apt/*.sh
 ```
 
-Os testes completos sobem um servidor local com vídeos gerados pelo FFmpeg, e um yt-dlp e um navegador de mentira: nada sai da máquina. `GRABIT_TESTES_J` limita quantos grupos rodam ao mesmo tempo. Um teste novo vai na seção do assunto, em `testes/rodar.sh`.
+Os testes completos sobem um servidor local com vídeos gerados pelo FFmpeg, e um yt-dlp e um navegador de mentira: nada sai da máquina. Eles rodam em grupos, em paralelo, e o fim mostra quanto cada grupo levou. `GRABIT_TESTES_J` limita quantos grupos rodam ao mesmo tempo, e `GRABIT_TESTES_GRUPOS="direto partes"` roda só esses. Um teste novo vai na seção do assunto, em `testes/rodar.sh`.
 
 A CI roda tudo isso no Ubuntu e no macOS, com o Bash 4.4 e no WSL, a cada envio e uma vez por semana com o yt-dlp mais novo.
 

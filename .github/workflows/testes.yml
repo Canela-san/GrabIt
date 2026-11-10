@@ -26,34 +26,56 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  completos:
-    name: Testes completos (Ubuntu)
+  shellcheck:
+    name: ShellCheck
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          shellcheck -s bash -S warning grabit.sh testes/rodar.sh packaging/apt/*.sh
+
+  completos:
+    # Os testes que baixam de verdade (yt-dlp e FFmpeg contra um servidor local) usam muito processador:
+    # metade dos grupos em cada máquina, ao mesmo tempo. Os rápidos já rodam no WSL (Ubuntu), no macOS e
+    # no Bash 4.4, e aqui ficam de fora.
+    name: Testes completos (Ubuntu ${{ matrix.parte }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - parte: 1/2
+            grupos: direto partes retomar protegidos baixar
+          - parte: 2/2
+            grupos: medidas pagina formato colecao
     steps:
       - uses: actions/checkout@v5
       - name: Dependências
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg shellcheck aria2
-          pipx install "yt-dlp[default]"
-      - name: ShellCheck
-        run: shellcheck -s bash -S warning grabit.sh testes/rodar.sh packaging/apt/*.sh
+          rede="-o Acquire::Retries=3 -o Acquire::http::Timeout=20"
+          sudo apt-get $rede update -qq
+          sudo apt-get $rede install -y -qq --no-install-recommends ffmpeg aria2
+          pipx install "yt-dlp[default]" || { sleep 10; pipx install "yt-dlp[default]"; }
       - name: Testes
+        env:
+          GRABIT_TESTES_GRUPOS: ${{ matrix.grupos }}
         run: bash testes/rodar.sh
 
   pacote-apt:
     name: Pacote .deb e repositório APT
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v5
       - name: Instala, atualiza e remove pelo apt
-        # Dentro do contêiner, o espelho do Ubuntu na Azure, o mesmo que o runner usa: quando o
-        # archive.ubuntu.com sai do ar, o teste não fica parado até o tempo acabar
+        # O espelho do Ubuntu na Azure, o mesmo do runner, só para as ferramentas do teste; depois ele
+        # roda sem rede nenhuma (veja o testar.sh)
         run: |
-          docker run --rm -v "$PWD:/grabit:ro" -w /grabit ubuntu:24.04 bash -c \
-            "sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && bash packaging/apt/testar.sh"
+          docker run --rm -e GRABIT_ESPELHO_APT=http://azure.archive.ubuntu.com/ubuntu/ \
+            -v "$PWD:/grabit:ro" -w /grabit ubuntu:24.04 bash packaging/apt/testar.sh
 
   bash-minimo:
     # O mínimo que o README promete. O Bash mais novo já é testado no Ubuntu e no macOS, na suíte completa.
@@ -79,13 +101,22 @@ jobs:
         with:
           distribution: Ubuntu-24.04
           additional-packages: python3 git
+      # No disco do próprio Linux: o checkout fica no disco do Windows (/mnt/d), várias vezes mais lento
       - name: Testes rápidos no WSL
-        run: bash testes/rodar.sh --rapido
+        run: |
+          rm -rf /tmp/grabit && cp -r . /tmp/grabit
+          cd /tmp/grabit && bash testes/rodar.sh --rapido
 
   macos:
     name: macOS
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      # O Homebrew sem se atualizar nem conferir o resto a cada install: só o que o teste precisa
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      HOMEBREW_NO_ANALYTICS: 1
     steps:
       - uses: actions/checkout@v5
       - name: O Bash 3.2 do sistema é recusado com uma mensagem clara

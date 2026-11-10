@@ -6,7 +6,9 @@
 #    bash testes/rodar.sh --rapido   só os que não baixam nada (sem yt-dlp nem ffmpeg)
 #
 #  As seções rodam em grupos, em paralelo: cada grupo tem a sua pasta, o seu log do yt-dlp
-#  de mentira e a sua memória. GRABIT_TESTES_J limita quantos grupos rodam ao mesmo tempo.
+#  de mentira e a sua memória. GRABIT_TESTES_J limita quantos grupos rodam ao mesmo tempo, e
+#  GRABIT_TESTES_GRUPOS="direto partes" roda só esses (a CI divide os completos entre máquinas assim).
+#  No fim, o tempo de cada grupo: o mais lento é quem dita o total.
 #
 #  Os testes completos sobem um servidor HTTP local (python3) com vídeos gerados
 #  pelo ffmpeg e rodam o GrabIt de verdade contra ele: nada sai da máquina.
@@ -80,6 +82,10 @@ vaga() {                                      # espera até poder começar mais 
 }
 grupo_ini() {                                 # (dentro do grupo) pasta, log e memória próprios
   local x d="$TMP_RAIZ/g/$1"
+  # Fora da escolha de GRABIT_TESTES_GRUPOS: o grupo sai sem rodar nada, e sem contar como falha
+  if [[ -n ${GRABIT_TESTES_GRUPOS:-} && " $GRABIT_TESTES_GRUPOS " != *" $1 "* ]]; then
+    printf '0\n' > "$TMP_RAIZ/g/$1.res"; exit 0
+  fi
   GRUPO=$1
   mkdir -p "$d/casa"
   for x in sem com bun terminal.py; do
@@ -87,19 +93,22 @@ grupo_ini() {                                 # (dentro do grupo) pasta, log e m
   done
   TMP=$d
   export XDG_DATA_HOME="$d/dados" STUB_LOG="$d/stub.log" CLIP_ARQ="$d/clip" CLIP_LIDO="$d/clip.lido"
-  N_OK=0; FALHAS=()
+  N_OK=0; FALHAS=(); GRUPO_T0=$SECONDS
   : > "$STUB_LOG"
 }
 grupo_fim() {                                 # (dentro do grupo) o resultado, para o juntar_grupos
   { printf '%d\n' "$N_OK"; if (( ${#FALHAS[@]} )); then printf '%s\n' "${FALHAS[@]}"; fi; } > "$TMP_RAIZ/g/$GRUPO.res"
+  printf '%d\n' $(( SECONDS - GRUPO_T0 )) > "$TMP_RAIZ/g/$GRUPO.tempo"
 }
 novo_grupo() { GRUPOS_NOME+=("$1"); GRUPOS_PID+=("$2"); }
+TEMPOS=()                                     # quanto cada grupo levou: o mais lento é quem dita o total
 juntar_grupos() {                             # espera todos; soma os resultados e mostra a saída, na ordem
   local i g n l
   for i in "${!GRUPOS_PID[@]}"; do
     wait "${GRUPOS_PID[$i]}" 2>/dev/null
     g=${GRUPOS_NOME[$i]}
     cat "$TMP_RAIZ/g/$g.log"
+    [[ -s $TMP_RAIZ/g/$g.tempo ]] && TEMPOS+=("$g $(<"$TMP_RAIZ/g/$g.tempo")s")
     if [[ -s $TMP_RAIZ/g/$g.res ]]; then
       { read -r n; N_OK=$(( N_OK + n )); while IFS= read -r l; do FALHAS+=("$l"); done; } < "$TMP_RAIZ/g/$g.res"
     else
@@ -523,7 +532,8 @@ sys.exit(0 if ok else 3)
 EOF
 fi
 
-vaga; (
+vaga; T_PRELUDIO=$SECONDS                           # o que roda antes dos grupos, em fila
+(
 grupo_ini sistema
 secao "Runtime JavaScript"
 D="$TMP/js"; mkdir -p "$D"; cd "$D" || exit 1
@@ -1729,7 +1739,16 @@ STUB_D=$'[generic] x: Extracting URL\n[download] x: has already been recorded in
 d2=$(( SECONDS - ini ))
 espera "…se acessou o site para descobrir, espera ($d2 s)" test "$d2" -ge 5
 
+grupo_fim
+) > "$TMP_RAIZ/g/ritmo.log" 2>&1 & novo_grupo ritmo $!
+
+# (separado do ritmo, que também espera de verdade: os dois correm ao mesmo tempo)
+vaga; (
+grupo_ini calma
+unset GRABIT_INTERVALO
+primeiros() { grep -oE -- '-- http://[a-z0-9]+\.invalid/[0-9]+' "$STUB_LOG" | head -n "$1" | sed 's/^-- http:..//' | sort | tr '\n' ' '; }
 secao "Quando o site pede calma"
+D="$TMP/calma"; mkdir -p "$D"; cd "$D" || exit 1
 : > "$STUB_LOG"
 INICIO=$SECONDS
 GRABIT_ESPERA_BASE=2 STUB_429_UMA="$TMP/ja-pediu" falso p1 -L pt -j 2 http://c1.invalid/1 http://c2.invalid/1
@@ -1770,7 +1789,7 @@ espera "…com o outro ainda baixando" kill -0 "$P"
 wait "$P" 2>/dev/null
 espera "…e no fim vão todos" grep -qF "w.invalid/2  # ✔" links.txt
 grupo_fim
-) > "$TMP_RAIZ/g/ritmo.log" 2>&1 & novo_grupo ritmo $!
+) > "$TMP_RAIZ/g/calma.log" 2>&1 & novo_grupo calma $!
 
 vaga; (
 grupo_ini instalador
@@ -1807,12 +1826,8 @@ espera "com um navegador instalado, nem o menciona" nao_contem i4 "Nenhum navega
 grupo_fim
 ) > "$TMP_RAIZ/g/instalador.log" 2>&1 & novo_grupo instalador $!
 
-vaga; (
-grupo_ini painel
-# ───── O painel e as teclas só existem num terminal: aqui, um de verdade (pseudo-terminal) ─────
-if command -v python3 >/dev/null 2>&1; then
-  secao "Painel e teclas, num terminal de verdade"
-  D="$TMP/painel"; mkdir -p "$D"; cd "$D" || exit 1
+# prepara_tela: o terminal de verdade e um download que mostra progresso, para os grupos do painel
+prepara_tela() {
   tela() { local s=$1 r=$2; shift 2; TERM=xterm-256color HOME="$TMP/casa" PATH="$STUB:$GBREW:$TMP/sem:$PATH" python3 "$TMP/terminal.py" "$s" "${LINHAS_TELA:-40}" "$r" bash "$G" "$@" > "$s.rc" 2>&1; }
   progresso='@@P@@1048576\03710485760\037524288\03718\037\037\037h264\0371080\03730\037mp4\037Filme de teste'
   cat > "$TMP/prog.sh" <<EOF
@@ -1823,6 +1838,14 @@ sleep \${STUB_PAINEL:-4}
 printf '@@D@@1080\03730\037SDR\037h264\037aac\03760\037Filme de teste\037abc\037Downloads/Filme.mkv\n'
 EOF
   export STUB_PROG="$TMP/prog.sh"
+}
+vaga; (
+grupo_ini painel
+# ───── O painel e as teclas só existem num terminal: aqui, um de verdade (pseudo-terminal) ─────
+if command -v python3 >/dev/null 2>&1; then
+  secao "Painel e teclas, num terminal de verdade"
+  D="$TMP/painel"; mkdir -p "$D"; cd "$D" || exit 1
+  prepara_tela
   tela p1 'espera:Filme de teste|espera:1080p|espera:⇣ |fim' -L pt -j 1 http://a.invalid/painel1
   espera "o painel mostra o título do vídeo" contem p1 "Filme de teste"
   espera "…a barra de progresso" contem p1 "━"
@@ -1845,6 +1868,16 @@ EOF
   espera "…termina com código 0" contem p1.rc "rc 0"
   espera "…e devolve o cursor" contem p1 $'\e[?25h'
   espera "…e a quebra de linha" contem p1 $'\e[?7h'
+fi
+grupo_fim
+) > "$TMP_RAIZ/g/painel.log" 2>&1 & novo_grupo painel $!
+
+vaga; (
+grupo_ini teclas
+if command -v python3 >/dev/null 2>&1; then
+  secao "Teclas do painel e tamanho da janela"
+  D="$TMP/teclas"; mkdir -p "$D"; cd "$D" || exit 1
+  prepara_tela
   : > "$STUB_LOG"; rm -f "$TMP/conc"
   STUB_PAINEL=2 tela p2 'espera:Filme de teste|tecla:p|espera:pausado|pausa:3|tecla:p|fim' -L pt -j 1 http://a.invalid/p2a http://a.invalid/p2b
   espera "p pausa, e o painel avisa" grep -qi "pausado" p2
@@ -1908,11 +1941,12 @@ sys.exit(0 if antes.rfind(b"\x1b[?25h") > antes.rfind(b"\x1b[?25l") and antes.rf
   contem p8 "[S/n]" || { cat p8.rc; head -c 1500 p8 2>/dev/null; }
 fi
 grupo_fim
-) > "$TMP_RAIZ/g/painel.log" 2>&1 & novo_grupo painel $!
+) > "$TMP_RAIZ/g/teclas.log" 2>&1 & novo_grupo teclas $!
 
 juntar_grupos
 
 if (( RAPIDO )); then
+  printf '\n◷ %ss no total · antes dos grupos: %ss · grupos: %s\n' "$SECONDS" "$T_PRELUDIO" "${TEMPOS[*]}"
   printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
   (( ${#FALHAS[@]} == 0 ))
   exit
@@ -2089,6 +2123,41 @@ nucleos=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 (( nucleos > 6 )) && nucleos=6
 MAX_GRUPOS=${GRABIT_TESTES_J:-$nucleos}
 
+# ───── O que as seções de arquivo direto usam (vídeos, páginas e funções), preparado uma vez só, antes dos
+# ───── grupos: assim elas se dividem em grupos que correm ao mesmo tempo
+mkdir -p "$W/dir"
+if command -v aria2c >/dev/null 2>&1; then
+  ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1280x720:rate=30:duration=45" -f lavfi -i "sine=duration=45" \
+    -c:v libx264 -preset ultrafast -b:v 11M -c:a aac "$W/grande.mp4"
+  for r in recusa429 recusa403 limita calmo lento; do ln -sfn . "$W/$r"; done
+  REF=$(imagens "$W/grande.mp4")
+fi
+video "$W/dir/video720.mp4" 1280x720 2
+video "$W/dir/video180.mp4" 320x180 2
+video "$W/dir/filme_inteiro.mp4" 1280x720 9
+ffmpeg -loglevel error -y -i "$W/dir/video720.mp4" -an -c copy "$W/dir/mudo.mp4"
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=60:duration=2" -f lavfi -i "sine=duration=2" \
+  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/video60.mp4"
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=160x90:rate=10:duration=31" -f lavfi -i "sine=duration=31" \
+  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/longo31.mp4"
+pagina() {                                    # pagina NOME CORPO → $B/dir/NOME.html, com o stream de 360p
+  printf '<!doctype html><html><head><title>Titulo: %s</title></head><body>%s</body></html>\n' "$1" "$2" > "$W/dir/$1.html"
+}
+printf '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\np360.m3u8\n' > "$W/res/so360.m3u8"   # com a resolução informada
+STREAM='<video controls src="/res/so360.m3u8"></video>'
+pagina fontes '<video controls><source src="/dir/video720.mp4" type="video/mp4"><source src="/res/so360.m3u8" type="application/x-mpegURL"></video>'
+pagina script "$STREAM<script>var p={\"file\":\"http:\\/\\/127.0.0.1:$PORTA\\/dir\\/video720.mp4\"};</script>"
+pagina botao "$STREAM<a href=\"video720.mp4\" download>Baixar</a>"
+pagina fps "$STREAM<a href=\"/dir/video60.mp4\">Baixar</a>"
+pagina outro_video "$STREAM<a href=\"/dir/filme_inteiro.mp4\">Filme</a>"
+pagina sem_audio "$STREAM<a href=\"/dir/mudo.mp4\">Baixar</a>"
+pagina menor "$STREAM<a href=\"/dir/video180.mp4\">Baixar</a>"
+pagina quebrado "$STREAM<a href=\"/dir/nao-existe.mp4\">Baixar</a>"
+pagina comando "$STREAM<a href=\"/\$(touch invadiu)/\`touch invadiu\`.mp4\">Baixar</a>"
+pagina so_script '<div id="player"></div><script>carrega("/dir/longo31.mp4")</script>'
+pagina so_previa '<div id="player"></div><script>carrega("/dir/video720.mp4")</script>'
+acha() { find "$1" -name '*.mkv' -print -quit; }
+
 vaga; (
 grupo_ini baixar
 secao "Download, histórico e seção BAIXADOS"
@@ -2137,6 +2206,11 @@ espera "-U de novo não baixa nada" contem saida3 "nenhuma versão melhor que 72
 roda saida4 -L pt -r 240 -i "$B/res/mestre.m3u8"
 espera "sem versão dentro do limite, falha com aviso" contem saida4 "nenhuma versão até 240p (-r)"
 
+grupo_fim
+) > "$TMP_RAIZ/g/baixar.log" 2>&1 & novo_grupo baixar $!
+
+vaga; (
+grupo_ini pagina
 secao "Página com vários vídeos: só o dela"
 D="$TMP/dpag"; mkdir -p "$D"; cd "$D" || exit 1
 N_EXPLICADAS=${#FALHAS[@]}
@@ -2184,7 +2258,7 @@ espera "…sem pô-lo no histórico" nao_contem Verif/.grabit-historico.txt "gen
 roda saida5 -L pt "$B/curto.mp4" -d -o ./Sub
 espera "-d separa por site (e vale depois do link)" test -n "$(find Sub -path '*127.0.0.1*' -name '*.mkv')"
 grupo_fim
-) > "$TMP_RAIZ/g/baixar.log" 2>&1 & novo_grupo baixar $!
+) > "$TMP_RAIZ/g/pagina.log" 2>&1 & novo_grupo pagina $!
 
 vaga; (
 grupo_ini protegidos
@@ -2227,31 +2301,6 @@ espera "stream: idem" test "$(imagens "$(find V -name '*p720*.mkv' | head -n 1)"
 
 secao "Arquivo direto melhor que o stream"
 D="$TMP/d8"; mkdir -p "$D" "$W/dir"; cd "$D" || exit 1
-video "$W/dir/video720.mp4" 1280x720 2
-video "$W/dir/video180.mp4" 320x180 2
-video "$W/dir/filme_inteiro.mp4" 1280x720 9
-ffmpeg -loglevel error -y -i "$W/dir/video720.mp4" -an -c copy "$W/dir/mudo.mp4"
-ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=60:duration=2" -f lavfi -i "sine=duration=2" \
-  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/video60.mp4"
-ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=160x90:rate=10:duration=31" -f lavfi -i "sine=duration=31" \
-  -c:v libx264 -preset ultrafast -c:a aac -shortest "$W/dir/longo31.mp4"
-pagina() {                                    # pagina NOME CORPO → $B/dir/NOME.html, com o stream de 360p
-  printf '<!doctype html><html><head><title>Titulo: %s</title></head><body>%s</body></html>\n' "$1" "$2" > "$W/dir/$1.html"
-}
-printf '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\np360.m3u8\n' > "$W/res/so360.m3u8"   # com a resolução informada
-STREAM='<video controls src="/res/so360.m3u8"></video>'
-pagina fontes '<video controls><source src="/dir/video720.mp4" type="video/mp4"><source src="/res/so360.m3u8" type="application/x-mpegURL"></video>'
-pagina script "$STREAM<script>var p={\"file\":\"http:\\/\\/127.0.0.1:$PORTA\\/dir\\/video720.mp4\"};</script>"
-pagina botao "$STREAM<a href=\"video720.mp4\" download>Baixar</a>"
-pagina fps "$STREAM<a href=\"/dir/video60.mp4\">Baixar</a>"
-pagina outro_video "$STREAM<a href=\"/dir/filme_inteiro.mp4\">Filme</a>"
-pagina sem_audio "$STREAM<a href=\"/dir/mudo.mp4\">Baixar</a>"
-pagina menor "$STREAM<a href=\"/dir/video180.mp4\">Baixar</a>"
-pagina quebrado "$STREAM<a href=\"/dir/nao-existe.mp4\">Baixar</a>"
-pagina comando "$STREAM<a href=\"/\$(touch invadiu)/\`touch invadiu\`.mp4\">Baixar</a>"
-pagina so_script '<div id="player"></div><script>carrega("/dir/longo31.mp4")</script>'
-pagina so_previa '<div id="player"></div><script>carrega("/dir/video720.mp4")</script>'
-acha() { find "$1" -name '*.mkv' -print -quit; }
 for c in fontes script botao; do
   XDG_DATA_HOME="$TMP/dir-$c" roda "s-$c" -L pt -o "./$c" "$B/dir/$c.html"
   espera "$c: baixa o .mp4 de 720p, não o stream de 360p" codigo "$(altura "$(acha "$c")")" 720
@@ -2293,6 +2342,13 @@ bash "$G" --procura-direto "$PWD/marca" 0 "$PWD/vazio.site" "" 0 "$B/dir/botao.h
   360 640 30 400 2 SDR aac 5 NA >/dev/null 2>&1
 espera "um vídeo de uma lista longa: não procura (a página fala de vários)" test ! -e marca
 
+grupo_fim
+) > "$TMP_RAIZ/g/direto.log" 2>&1 & novo_grupo direto $!
+
+vaga; (
+grupo_ini medidas
+secao "Arquivo direto: formatos, vários candidatos e medidas"
+D="$TMP/d8b"; mkdir -p "$D"; cd "$D" || exit 1
 # Qualquer formato de arquivo vale, e o que decide é a medida
 filme() { ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1280x720:rate=25:duration=2" -f lavfi -i "sine=duration=2" "$@" </dev/null; }
 filme -c:v mpeg4 -c:a mp2 "$W/dir/filme.avi"
@@ -2406,7 +2462,7 @@ espera "…a página é lida por ele" grep -qE '^GET so-pelo-proxy.invalid /dir/
 espera "…e a medição do arquivo direto também: sem ela, ficaria o stream de 360p" codigo "$(altura "$(find a -name '*.mkv' -print -quit)")" 720
 kill "$SRV_P" 2>/dev/null
 grupo_fim
-) > "$TMP_RAIZ/g/direto.log" 2>&1 & novo_grupo direto $!
+) > "$TMP_RAIZ/g/medidas.log" 2>&1 & novo_grupo medidas $!
 
 vaga; (
 grupo_ini formato
@@ -2579,10 +2635,6 @@ grupo_ini partes
 if command -v aria2c >/dev/null 2>&1; then
   secao "Várias conexões, de verdade"
   D="$TMP/d11"; mkdir -p "$D"; cd "$D" || exit 1
-  ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1280x720:rate=30:duration=45" -f lavfi -i "sine=duration=45" \
-    -c:v libx264 -preset ultrafast -b:v 11M -c:a aac "$W/grande.mp4"
-  for r in recusa429 recusa403 limita calmo; do ln -sfn . "$W/$r"; done
-  REF=$(imagens "$W/grande.mp4")
   : > "$W/pedidos.log"
   roda s1 -L pt -O -o ./a "$B/calmo/grande.mp4"
   # (60 MiB, com o mínimo de 20 MiB por parte: a primeira conexão mais um pedido parcial)
@@ -2606,9 +2658,16 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "…e o download sai sem elas" test "$(imagens "$(so_um l mp4)")" = "$REF"
   espera "…sem erro" codigo "$RC" 0
   espera "…e sem marcar o site como difícil" nao_contem "$XDG_DATA_HOME/grabit/metodos.txt" "127.0.0.1"
+fi
+grupo_fim
+) > "$TMP_RAIZ/g/partes.log" 2>&1 & novo_grupo partes $!
 
+# (separado das várias conexões: os dois baixam o vídeo grande várias vezes, e correm ao mesmo tempo)
+vaga; (
+grupo_ini retomar
+if command -v aria2c >/dev/null 2>&1; then
   secao "Retomar um arquivo direto"
-  ln -sfn . "$W/lento"
+  D="$TMP/d11r"; mkdir -p "$D"; cd "$D" || exit 1
   tem_marca() { test -n "$(find "$1" -name '*.grabit' -print -quit 2>/dev/null)"; }
   interrompe() {                              # interrompe PASTA: começa a baixar e para no meio
     bash "$G" -L pt -O -o "$1" "$B/lento/grande.mp4" >"$1.log" 2>&1 &
@@ -2664,7 +2723,7 @@ if command -v aria2c >/dev/null 2>&1; then
   espera "…sem o arquivo" test -z "$(find p2 -maxdepth 1 -name '*.mp4' -print -quit)"
 fi
 grupo_fim
-) > "$TMP_RAIZ/g/partes.log" 2>&1 & novo_grupo partes $!
+) > "$TMP_RAIZ/g/retomar.log" 2>&1 & novo_grupo retomar $!
 
 vaga; (
 grupo_ini colecao
@@ -2768,5 +2827,6 @@ grupo_fim
 juntar_grupos
 
 # ───────────────────────────── Resultado ───────────────────────────────────────
+printf '\n◷ %ss no total · antes dos grupos: %ss · grupos: %s\n' "$SECONDS" "$T_PRELUDIO" "${TEMPOS[*]}"
 printf '\n%d ok, %d falha(s)\n' "$N_OK" "${#FALHAS[@]}"
 (( ${#FALHAS[@]} == 0 ))
