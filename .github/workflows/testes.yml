@@ -49,7 +49,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Instala, atualiza e remove pelo apt
-        run: docker run --rm -v "$PWD:/grabit:ro" -w /grabit ubuntu:24.04 bash packaging/apt/testar.sh
+        # Dentro do contêiner, o espelho do Ubuntu na Azure, o mesmo que o runner usa: quando o
+        # archive.ubuntu.com sai do ar, o teste não fica parado até o tempo acabar
+        run: |
+          docker run --rm -v "$PWD:/grabit:ro" -w /grabit ubuntu:24.04 bash -c \
+            "sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources && bash packaging/apt/testar.sh"
 
   bash-minimo:
     # O mínimo que o README promete. O Bash mais novo já é testado no Ubuntu e no macOS, na suíte completa.
